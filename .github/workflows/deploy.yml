@@ -14,7 +14,7 @@ env:
   CLOUDFLARE_API_TOKEN:   ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
 jobs:
-  # ── 1. Type-check & lint ───────────────────────────────────────────
+  # ── 1. Type-check ─────────────────────────────────────────────────
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -45,18 +45,9 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
 
-      - name: Set Wrangler secrets
-        working-directory: artifacts/cloudflare-worker
-        run: |
-          echo "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" | pnpm exec wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-          echo "${{ secrets.TERMII_API_KEY }}"            | pnpm exec wrangler secret put TERMII_API_KEY
-          echo "${{ secrets.TERMII_SENDER_ID }}"          | pnpm exec wrangler secret put TERMII_SENDER_ID
-          echo "${{ secrets.LOOP_JWT_SECRET }}"           | pnpm exec wrangler secret put LOOP_JWT_SECRET
-          echo "${{ secrets.OPENROUTER_API_KEY || '' }}"  | pnpm exec wrangler secret put OPENROUTER_API_KEY || true
-
       - name: Deploy Worker
         working-directory: artifacts/cloudflare-worker
-        run: pnpm exec wrangler deploy --env production
+        run: pnpm exec wrangler deploy
 
   # ── 3. Build & Deploy Frontend to Cloudflare Pages ───────────────
   deploy-pages:
@@ -83,9 +74,8 @@ jobs:
           NODE_ENV: production
         run: pnpm run build
 
+      - name: Install Wrangler globally
+        run: npm install -g wrangler@latest
+
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy artifacts/loop/dist/public --project-name=loop --branch=${{ github.ref_name }}
+        run: wrangler pages deploy artifacts/loop/dist/public --project-name=loop --branch=${{ github.ref_name }}
