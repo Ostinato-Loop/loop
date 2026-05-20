@@ -209,10 +209,19 @@
     background-image: linear-gradient(135deg, var(--terracotta), oklch(0.72 0.18 48));
   }
 
-  /* ── Keep mint aliases for backward compat ── */
-  .text-gradient-mint    { @apply text-gradient-sungold; }
-  .bg-gradient-mint      { @apply bg-gradient-sungold; }
-  .shadow-mint           { @apply shadow-sungold; }
+  /* ── Keep mint aliases for backward compat (inlined — no @apply across custom utils) ── */
+  .text-gradient-mint {
+    background-image: linear-gradient(135deg, var(--sungold-glow), var(--sungold));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .bg-gradient-mint {
+    background-image: linear-gradient(135deg, var(--sungold), var(--sungold-glow));
+  }
+  .shadow-mint {
+    box-shadow: 0 10px 40px -10px color-mix(in oklab, var(--sungold) 50%, transparent);
+  }
 
   /* ── Live indicator ── */
   .live-dot {
