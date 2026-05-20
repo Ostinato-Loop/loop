@@ -77,5 +77,8 @@ jobs:
       - name: Install Wrangler globally
         run: npm install -g wrangler@latest
 
+      - name: Create Pages project (idempotent)
+        run: wrangler pages project create loop --production-branch=main || true
+
       - name: Deploy to Cloudflare Pages
         run: wrangler pages deploy artifacts/loop/dist/public --project-name=loop --branch=${{ github.ref_name }}
