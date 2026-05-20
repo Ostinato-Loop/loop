@@ -1,0 +1,73 @@
+# ============================================================
+# Loop V1 — Cloudflare Worker
+# ============================================================
+name            = "loop-api"
+main            = "src/index.ts"
+compatibility_date = "2025-06-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ── D1 — Primary SQL database ─────────────────────────────
+[[d1_databases]]
+binding       = "DB"
+database_name = "loop-db"
+database_id   = "4616fcac-96e0-4150-a42f-3d020f45cd1d"
+
+# ── KV — Sessions, rate limits, OTP store ─────────────────
+[[kv_namespaces]]
+binding    = "CACHE"
+id         = "3c71da01b3174d6c9353adbfde7491a3"
+preview_id = "3c71da01b3174d6c9353adbfde7491a3"
+
+# ── R2 — Object storage ───────────────────────────────────
+[[r2_buckets]]
+binding     = "MEDIA"
+bucket_name = "loop-media"
+
+# ── Queues ────────────────────────────────────────────────
+[[queues.producers]]
+binding = "TASK_QUEUE"
+queue   = "loop-tasks"
+
+[[queues.consumers]]
+queue             = "loop-tasks"
+max_batch_size    = 10
+max_batch_timeout = 5
+
+# ── Durable Objects ───────────────────────────────────────
+[[durable_objects.bindings]]
+name       = "ROOM_SESSION"
+class_name = "RoomSession"
+
+[[migrations]]
+tag                = "v1"
+new_sqlite_classes = ["RoomSession"]
+
+# ── Workers AI ────────────────────────────────────────────
+[ai]
+binding = "AI"
+
+# ── Observability ─────────────────────────────────────────
+[observability]
+enabled = true
+
+# ── Environment variables (non-secret) ───────────────────
+[vars]
+ENVIRONMENT  = "development"
+SUPABASE_URL = "https://onxdcikfttdmnhofsuwo.supabase.co"
+CORS_ORIGIN  = "*"
+
+# ── Production environment ────────────────────────────────
+[env.production]
+name = "loop-api"
+
+[env.production.vars]
+ENVIRONMENT  = "production"
+SUPABASE_URL = "https://onxdcikfttdmnhofsuwo.supabase.co"
+CORS_ORIGIN  = "https://loop.ostinato-loop.pages.dev"
+
+# ── Secrets (set via `wrangler secret put`) ───────────────
+# wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+# wrangler secret put TERMII_API_KEY
+# wrangler secret put TERMII_SENDER_ID
+# wrangler secret put OPENROUTER_API_KEY
+# wrangler secret put LOOP_JWT_SECRET

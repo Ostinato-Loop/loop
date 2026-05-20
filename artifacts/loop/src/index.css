@@ -1,0 +1,241 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Sans:wght@400;500;600&family=Bricolage+Grotesque:wght@600;700;800&display=swap');
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm:  calc(var(--radius) - 4px);
+  --radius-md:  calc(var(--radius) - 2px);
+  --radius-lg:  var(--radius);
+  --radius-xl:  calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+
+  --color-background:    var(--background);
+  --color-foreground:    var(--foreground);
+  --color-card:          var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover:       var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary:       var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary:     var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted:         var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent:        var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive:   var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border:        var(--border);
+  --color-input:         var(--input);
+  --color-ring:          var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring:   var(--sidebar-ring);
+
+  --font-display: "Bricolage Grotesque", "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-sans:    "DM Sans", ui-sans-serif, system-ui, sans-serif;
+
+  /* ── Loop African palette tokens ── */
+  --color-sungold:       var(--sungold);
+  --color-sungold-glow:  var(--sungold-glow);
+  --color-savanna:       var(--savanna);
+  --color-kente-green:   var(--kente-green);
+  --color-terracotta:    var(--terracotta);
+  --color-surface:       var(--surface);
+  --color-surface-elev:  var(--surface-elev);
+  /* ── Backward-compat mint aliases → sungold amber ── */
+  --color-mint:          var(--mint);
+  --color-mint-glow:     var(--mint-glow);
+}
+
+/* ══════════════════════════════════════════════════════════
+   Dark theme (default) — deep savanna night
+   Primary: Sungold amber  #E8853D → oklch(0.72 0.18 48)
+   Accent:  Kente green    #2A9D5C → oklch(0.62 0.16 158)
+   BG:      Deep earth     #1A1410 → oklch(0.16 0.03 50)
+   ══════════════════════════════════════════════════════════ */
+:root {
+  --radius: 0.875rem;
+
+  --background:   oklch(0.16 0.03 50);
+  --foreground:   oklch(0.97 0.01 60);
+  --surface:      oklch(0.21 0.035 50);
+  --surface-elev: oklch(0.26 0.04  48);
+
+  --card:             oklch(0.21 0.035 50);
+  --card-foreground:  oklch(0.97 0.01 60);
+  --popover:          oklch(0.24 0.04 48);
+  --popover-foreground: oklch(0.97 0.01 60);
+
+  /* Primary — sungold amber (Kente cloth gold) */
+  --primary:            oklch(0.72 0.18 48);
+  --primary-foreground: oklch(0.14 0.03 50);
+  --sungold:            oklch(0.72 0.18 48);
+  --sungold-glow:       oklch(0.82 0.20 50);
+
+  /* Secondary — muted earth */
+  --secondary:            oklch(0.28 0.04 50);
+  --secondary-foreground: oklch(0.97 0.01 60);
+
+  /* Accent — kente green (forest, life) */
+  --accent:             oklch(0.57 0.16 158);
+  --accent-foreground:  oklch(0.14 0.03 158);
+  --kente-green:        oklch(0.57 0.16 158);
+
+  /* Terracotta — warm red-clay */
+  --terracotta:  oklch(0.62 0.18 30);
+  --savanna:     oklch(0.72 0.18 48);
+  /* Mint aliases → sungold (backward compat for existing Tailwind classes) */
+  --mint:        oklch(0.72 0.18 48);
+  --mint-glow:   oklch(0.82 0.20 50);
+
+  --muted:            oklch(0.26 0.03 50);
+  --muted-foreground: oklch(0.68 0.025 55);
+
+  --destructive:            oklch(0.62 0.22 25);
+  --destructive-foreground: oklch(0.97 0.01 60);
+
+  --border: oklch(0.30 0.03 50);
+  --input:  oklch(0.28 0.035 50);
+  --ring:   oklch(0.72 0.18 48);
+
+  --chart-1: oklch(0.72 0.18 48);
+  --chart-2: oklch(0.57 0.16 158);
+  --chart-3: oklch(0.62 0.18 30);
+  --chart-4: oklch(0.80 0.18 65);
+  --chart-5: oklch(0.55 0.15 200);
+
+  --sidebar:                  oklch(0.21 0.035 50);
+  --sidebar-foreground:       oklch(0.97 0.01 60);
+  --sidebar-primary:          oklch(0.72 0.18 48);
+  --sidebar-primary-foreground: oklch(0.14 0.03 50);
+  --sidebar-accent:           oklch(0.28 0.04 50);
+  --sidebar-accent-foreground: oklch(0.97 0.01 60);
+  --sidebar-border:           oklch(0.30 0.03 50);
+  --sidebar-ring:             oklch(0.72 0.18 48);
+}
+
+.dark {
+  --background:   oklch(0.16 0.03 50);
+  --foreground:   oklch(0.97 0.01 60);
+  --surface:      oklch(0.21 0.035 50);
+  --surface-elev: oklch(0.26 0.04 48);
+  --card:             oklch(0.21 0.035 50);
+  --card-foreground:  oklch(0.97 0.01 60);
+  --popover:          oklch(0.24 0.04 48);
+  --popover-foreground: oklch(0.97 0.01 60);
+  --primary:            oklch(0.72 0.18 48);
+  --primary-foreground: oklch(0.14 0.03 50);
+  --secondary:            oklch(0.28 0.04 50);
+  --secondary-foreground: oklch(0.97 0.01 60);
+  --accent:             oklch(0.57 0.16 158);
+  --accent-foreground:  oklch(0.14 0.03 158);
+  --muted:            oklch(0.26 0.03 50);
+  --muted-foreground: oklch(0.68 0.025 55);
+  --destructive:            oklch(0.62 0.22 25);
+  --destructive-foreground: oklch(0.97 0.01 60);
+  --border: oklch(0.30 0.03 50);
+  --input:  oklch(0.28 0.035 50);
+  --ring:   oklch(0.72 0.18 48);
+  --sidebar:                  oklch(0.21 0.035 50);
+  --sidebar-foreground:       oklch(0.97 0.01 60);
+  --sidebar-primary:          oklch(0.72 0.18 48);
+  --sidebar-primary-foreground: oklch(0.14 0.03 50);
+  --sidebar-accent:           oklch(0.28 0.04 50);
+  --sidebar-accent-foreground: oklch(0.97 0.01 60);
+  --sidebar-border:           oklch(0.30 0.03 50);
+  --sidebar-ring:             oklch(0.72 0.18 48);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: none;
+  }
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+}
+
+@layer utilities {
+  /* ── Sungold gradient (primary CTA) ── */
+  .text-gradient-sungold {
+    background-image: linear-gradient(135deg, var(--sungold-glow), var(--sungold));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .bg-gradient-sungold {
+    background-image: linear-gradient(135deg, var(--sungold), var(--sungold-glow));
+  }
+  .shadow-sungold {
+    box-shadow: 0 10px 40px -10px color-mix(in oklab, var(--sungold) 50%, transparent);
+  }
+
+  /* ── Kente green gradient ── */
+  .text-gradient-kente {
+    background-image: linear-gradient(135deg, var(--kente-green), oklch(0.72 0.16 140));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .bg-gradient-kente {
+    background-image: linear-gradient(135deg, var(--kente-green), oklch(0.72 0.16 140));
+  }
+
+  /* ── Terracotta gradient ── */
+  .bg-gradient-terra {
+    background-image: linear-gradient(135deg, var(--terracotta), oklch(0.72 0.18 48));
+  }
+
+  /* ── Keep mint aliases for backward compat ── */
+  .text-gradient-mint    { @apply text-gradient-sungold; }
+  .bg-gradient-mint      { @apply bg-gradient-sungold; }
+  .shadow-mint           { @apply shadow-sungold; }
+
+  /* ── Live indicator ── */
+  .live-dot {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--sungold) 70%, transparent);
+    animation: live-pulse 1.6s ease-out infinite;
+  }
+  @keyframes live-pulse {
+    0%   { box-shadow: 0 0 0 0   color-mix(in oklab, var(--sungold) 70%, transparent); }
+    100% { box-shadow: 0 0 0 12px transparent; }
+  }
+
+  /* ── Adire pattern border ── */
+  .adire-border {
+    border-image: repeating-linear-gradient(
+      90deg,
+      var(--sungold) 0px, var(--sungold) 6px,
+      var(--kente-green) 6px, var(--kente-green) 12px,
+      var(--terracotta) 12px, var(--terracotta) 18px,
+      transparent 18px, transparent 24px
+    ) 2;
+  }
+
+  .hide-scrollbar::-webkit-scrollbar { display: none; }
+  .hide-scrollbar { scrollbar-width: none; }
+  .safe-pb { padding-bottom: max(env(safe-area-inset-bottom), 0.5rem); }
+}

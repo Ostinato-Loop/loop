@@ -1,0 +1,26 @@
+# ============================================================
+# Loop Worker — local development secrets
+# Copy to .dev.vars (git-ignored), fill in real values.
+# wrangler dev reads this file automatically.
+# ============================================================
+
+# Supabase (for JWT verification and optional server-side queries)
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
+
+# AI / LLM gateway
+OPENROUTER_API_KEY=sk-or-...
+
+# Sports data
+SPORTSMONKS_API_KEY=your-sportsmonks-key
+
+# Media streaming
+MUX_TOKEN=your-mux-token
+LIVEKIT_API_KEY=your-livekit-key
+
+# African content APIs
+COSON_API_KEY=your-coson-key
+TENCENT_API_KEY=your-tencent-key
+
+# Cloudflare account
+CLOUDFLARE_API_TOKEN=your-cf-api-token
