@@ -157,7 +157,12 @@ auth.post("/send-otp", async (c) => {
 
 /* ── POST /api/auth/verify-otp ───────────────────────────────────────── */
 auth.post("/verify-otp", async (c) => {
-  const { phone, token } = await c.req.json<{ phone: string; token: string }>();
+  const { phone, token, displayName, mode } = await c.req.json<{
+    phone: string;
+    token: string;
+    displayName?: string;
+    mode?: "signin" | "signup" | "forgot";
+  }>();
 
   if (!phone || !token) return c.json({ error: "phone and token are required" }, 400);
 
@@ -197,50 +202,38 @@ auth.post("/verify-otp", async (c) => {
 
     // Check if user exists by phone
     let userId: string;
+    let isNewUser = false;
     const listRes = await supabaseAdminRequest(
       `${supabaseUrl}/auth/v1/admin/users?phone=${encodeURIComponent(normalized)}&per_page=1`,
       serviceKey,
       "GET",
     );
 
-    if (listRes.ok) {
-      const listData = await listRes.json<{ users: Array<{ id: string }> }>();
-      if (listData.users && listData.users.length > 0) {
-        userId = listData.users[0].id;
-      } else {
-        // Create new user
-        const createRes = await supabaseAdminRequest(
-          `${supabaseUrl}/auth/v1/admin/users`,
-          serviceKey,
-          "POST",
-          { phone: normalized, phone_confirm: true },
-        );
-        if (!createRes.ok) {
-          const errText = await createRes.text();
-          console.error("[auth/verify-otp] create user error:", errText);
-          return c.json({ error: "Account creation failed. Please try again." }, 500);
-        }
-        const newUser = await createRes.json<{ id: string }>();
-        userId = newUser.id;
-      }
-    } else {
-      // Create new user
+    // Helper to create new Supabase auth user
+    const createNewUser = async (): Promise<string> => {
       const createRes = await supabaseAdminRequest(
         `${supabaseUrl}/auth/v1/admin/users`,
-        serviceKey,
-        "POST",
+        serviceKey, "POST",
         { phone: normalized, phone_confirm: true },
       );
       if (!createRes.ok) {
         const errText = await createRes.text();
         console.error("[auth/verify-otp] create user error:", errText);
-        return c.json({ error: "Account creation failed. Please try again." }, 500);
+        throw new Error("Account creation failed. Please try again.");
       }
       const newUser = await createRes.json<{ id: string }>();
-      userId = newUser.id;
+      isNewUser = true;
+      return newUser.id;
+    };
+
+    if (listRes.ok) {
+      const listData = await listRes.json<{ users: Array<{ id: string }> }>();
+      userId = listData.users?.length > 0 ? listData.users[0].id : await createNewUser();
+    } else {
+      userId = await createNewUser();
     }
 
-    // Ensure profile row exists (upsert — ignore if already there)
+    // Upsert profile row — sets display_name only on first create (ignore-duplicates)
     await fetch(`${supabaseUrl}/rest/v1/profiles`, {
       method: "POST",
       headers: {
@@ -249,7 +242,10 @@ auth.post("/verify-otp", async (c) => {
         apikey: serviceKey,
         Prefer: "resolution=ignore-duplicates",
       },
-      body: JSON.stringify({ id: userId }),
+      body: JSON.stringify({
+        id: userId,
+        ...(displayName ? { display_name: displayName.trim() } : {}),
+      }),
     });
 
     // Sign our Loop JWT
@@ -268,6 +264,7 @@ auth.post("/verify-otp", async (c) => {
     return c.json({
       ok: true,
       access_token: accessToken,
+      is_new_user: isNewUser,
       user: { id: userId, phone: normalized },
     });
   } catch (err) {
