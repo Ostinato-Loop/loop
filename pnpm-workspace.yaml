@@ -76,7 +76,12 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
-  # replit uses linux-x64 only, we can exclude all other platforms
+  # ── Security patches (CVE overrides) ────────────────────────────────────────
+  # ws CVE-2026-45736: Uninitialized memory disclosure — fixed in 8.20.1
+  ws: ">=8.20.1"
+  # qs CVE-2026-8723: DoS via null/undefined entries in comma-format arrays — fixed in 6.15.2
+  qs: ">=6.15.2"
+  # ── replit uses linux-x64 only, exclude all other platforms ─────────────────
   "esbuild>@esbuild/darwin-arm64": "-"
   "esbuild>@esbuild/darwin-x64": "-"
   "esbuild>@esbuild/freebsd-arm64": "-"
