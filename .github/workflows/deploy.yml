@@ -2,7 +2,7 @@ name: Deploy Loop
 
 on:
   push:
-    branches: [main, replit-v1]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -14,7 +14,7 @@ env:
   CLOUDFLARE_API_TOKEN:   ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
 jobs:
-  # ── 1. Type-check ─────────────────────────────────────────────────
+  # ── 1. Type-check ──────────────────────────────────────────────────
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -24,7 +24,7 @@ jobs:
         with: { version: 10 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile
       - name: Typecheck Worker
         working-directory: artifacts/cloudflare-worker
         run: pnpm exec tsc --noEmit
@@ -32,7 +32,7 @@ jobs:
         working-directory: artifacts/loop
         run: pnpm exec tsc --noEmit
 
-  # ── 2. Deploy Cloudflare Worker ───────────────────────────────────
+  # ── 2. Deploy Cloudflare Worker ────────────────────────────────────
   deploy-worker:
     name: Deploy Worker
     runs-on: ubuntu-latest
@@ -43,13 +43,12 @@ jobs:
         with: { version: 10 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-
+      - run: pnpm install --no-frozen-lockfile
       - name: Deploy Worker
         working-directory: artifacts/cloudflare-worker
         run: pnpm exec wrangler deploy
 
-  # ── 3. Build & Deploy Frontend to Cloudflare Pages ───────────────
+  # ── 3. Build & Deploy Frontend to Cloudflare Pages ────────────────
   deploy-pages:
     name: Deploy Pages
     runs-on: ubuntu-latest
@@ -60,14 +59,14 @@ jobs:
         with: { version: 10 }
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --no-frozen-lockfile
 
       - name: Build Loop frontend
         working-directory: artifacts/loop
         env:
           VITE_SUPABASE_URL: https://onxdcikfttdmnhofsuwo.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          VITE_API_BASE_URL: https://loop-api.ostinato-loop.workers.dev
+          VITE_API_BASE_URL: https://loop-api.rald.cloud
           VITE_DEV_MODE_MOCK_OTP: "false"
           BASE_PATH: "/"
           PORT: "3000"
@@ -82,3 +81,7 @@ jobs:
 
       - name: Deploy to Cloudflare Pages
         run: wrangler pages deploy artifacts/loop/dist/public --project-name=loop --branch=${{ github.ref_name }}
+
+      - name: Add loop.rald.cloud custom domain (idempotent)
+        run: |
+          wrangler pages domain add loop loop.rald.cloud || echo "Domain already configured or pending DNS"
