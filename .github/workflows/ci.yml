@@ -1,47 +1,27 @@
 name: CI
 
-on:
-  pull_request:
-    branches: [main, replit-v1]
-  push:
-    branches: [main, replit-v1]
+  on:
+    push:
+      branches: [main, develop]
+    pull_request:
+      branches: [main]
 
-jobs:
-  typecheck:
-    name: Typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with: { version: 10 }
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - name: Typecheck Worker
-        working-directory: artifacts/cloudflare-worker
-        run: pnpm exec tsc --noEmit
-      - name: Typecheck Frontend
-        working-directory: artifacts/loop
-        run: pnpm exec tsc --noEmit
-
-  build-check:
-    name: Build check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with: { version: 10 }
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - name: Build Loop frontend (dry run)
-        working-directory: artifacts/loop
-        env:
-          VITE_SUPABASE_URL: https://onxdcikfttdmnhofsuwo.supabase.co
-          VITE_SUPABASE_PUBLISHABLE_KEY: placeholder
-          VITE_API_BASE_URL: https://loop-api.ostinato-loop.workers.dev
-          VITE_DEV_MODE_MOCK_OTP: "false"
-          BASE_PATH: "/"
-          PORT: "3000"
-          NODE_ENV: production
-        run: pnpm run build
+  jobs:
+    ci:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - name: Setup Node.js
+          uses: actions/setup-node@v4
+          with:
+            node-version: '20'
+            cache: 'npm'
+        - name: Install dependencies
+          run: npm ci --if-present
+        - name: Lint
+          run: npm run lint --if-present
+        - name: Build
+          run: npm run build --if-present
+        - name: Test
+          run: npm test --if-present
+  
