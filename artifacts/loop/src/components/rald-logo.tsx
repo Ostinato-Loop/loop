@@ -1,46 +1,75 @@
-import { useId } from "react";
+/**
+ * Loop brand mark — engraved infinity (∞) SVG
+ * Loop is an independent African social audio platform.
+ * Brand color: #3EDE72 (vivid spring green)
+ * This file replaces the previous RALD logo — Loop is its own product.
+ */
 
-interface RaldLogoProps {
-  height?: number;
-  theme?: "dark" | "light";
-  accentColor?: string;
+interface LoopIconProps {
+  size?: number;
+  color?: string;
   className?: string;
 }
 
-export function RaldLogo({ height = 32, theme = "dark", accentColor, className = "" }: RaldLogoProps) {
-  const uid = useId().replace(/:/g, "");
-  const mainColor = theme === "dark" ? "#FFFFFF" : "#1C3557";
-  const teal  = "#00C87A";
-  const red   = "#D42B2B";
-  const amber = "#E8A200";
-
-  const fs  = height;
-  const vbH = height;
-  const vbW = Math.round(height * 3.15);
-  const y   = Math.round(height * 0.82);
-  const aX  = Math.round(height * 0.87);
-  const aW  = Math.round(height * 0.73);
-  const midY = Math.round(height * 0.48);
-
-  const shadow = accentColor
-    ? { filter: `drop-shadow(0 0 ${Math.round(height * 0.35)}px ${accentColor}55)` }
-    : {};
-
-  const font = "'Inter', 'Helvetica Neue', Arial, sans-serif";
-  const fp = { fontSize: fs, fontWeight: 900 as const, fontFamily: font, letterSpacing: "-0.03em" };
-
+/** The Loop infinity mark — square, scales to any size */
+export function LoopIcon({ size = 36, color = "#3EDE72", className = "" }: LoopIconProps) {
   return (
-    <svg width={vbW} height={vbH} viewBox={`0 0 ${vbW} ${vbH}`} className={className} style={shadow} aria-label="RALD" role="img">
-      <defs>
-        <clipPath id={`${uid}au`}><rect x={aX} y={0} width={aW} height={midY} /></clipPath>
-        <clipPath id={`${uid}al`}><rect x={aX} y={midY} width={Math.round(aW * 0.5)} height={vbH - midY} /></clipPath>
-        <clipPath id={`${uid}ar`}><rect x={aX + Math.round(aW * 0.5)} y={midY} width={Math.round(aW * 0.5)} height={vbH - midY} /></clipPath>
-      </defs>
-      <text x={0} y={y} {...fp} fill={mainColor}>R</text>
-      <text x={aX} y={y} {...fp} fill={teal}  clipPath={`url(#${uid}au)`}>A</text>
-      <text x={aX} y={y} {...fp} fill={red}   clipPath={`url(#${uid}al)`}>A</text>
-      <text x={aX} y={y} {...fp} fill={amber} clipPath={`url(#${uid}ar)`}>A</text>
-      <text x={aX + aW} y={y} {...fp} fill={mainColor}>LD</text>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      fill="none"
+      className={className}
+      aria-label="Loop"
+      role="img"
+    >
+      <path
+        d="M50 50C42 25 8 25 8 50C8 75 42 75 50 50C58 25 92 25 92 50C92 75 58 75 50 50"
+        stroke={color}
+        strokeWidth="9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
+
+/** Loop wordmark — infinity mark + "Loop" label, 2.8:1 aspect ratio */
+export function LoopLogo({ size = 36, color = "#3EDE72", className = "" }: LoopIconProps) {
+  const w = Math.round(size * 2.8);
+  return (
+    <svg
+      width={w}
+      height={size}
+      viewBox={`0 0 ${w} ${size}`}
+      fill="none"
+      className={className}
+      aria-label="Loop"
+      role="img"
+    >
+      <g transform={`scale(${size / 100})`}>
+        <path
+          d="M50 50C42 25 8 25 8 50C8 75 42 75 50 50C58 25 92 25 92 50C92 75 58 75 50 50"
+          stroke={color}
+          strokeWidth="9"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </g>
+      <text
+        x={size + Math.round(size * 0.2)}
+        y={Math.round(size * 0.75)}
+        fontFamily="'Inter','Helvetica Neue',Arial,sans-serif"
+        fontWeight="700"
+        fontSize={Math.round(size * 0.72)}
+        fill={color}
+        letterSpacing="-0.02em"
+      >
+        Loop
+      </text>
+    </svg>
+  );
+}
+
+/** @deprecated RALD logo was incorrectly placed in this product's codebase. Use LoopLogo or LoopIcon. */
+export const RaldLogo = LoopLogo;
