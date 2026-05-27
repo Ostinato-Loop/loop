@@ -51,116 +51,121 @@
   --font-display: "Bricolage Grotesque", "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
   --font-sans:    "DM Sans", ui-sans-serif, system-ui, sans-serif;
 
-  /* ── Loop African palette tokens ── */
-  --color-sungold:       var(--sungold);
-  --color-sungold-glow:  var(--sungold-glow);
-  --color-savanna:       var(--savanna);
-  --color-kente-green:   var(--kente-green);
-  --color-terracotta:    var(--terracotta);
-  --color-surface:       var(--surface);
-  --color-surface-elev:  var(--surface-elev);
-  /* ── Backward-compat mint aliases → sungold amber ── */
-  --color-mint:          var(--mint);
-  --color-mint-glow:     var(--mint-glow);
+  /* ── Loop neon green token aliases ── */
+  --color-neon-green:       var(--neon-green);
+  --color-neon-green-glow:  var(--neon-green-glow);
+  --color-neon-green-dim:   var(--neon-green-dim);
+  --color-loop-bg:          var(--loop-bg);
+  --color-surface:          var(--surface);
+  --color-surface-elev:     var(--surface-elev);
+  /* ── Backward-compat sungold → neon green aliases ── */
+  --color-sungold:      var(--neon-green);
+  --color-sungold-glow: var(--neon-green-glow);
+  --color-mint:         var(--neon-green);
+  --color-mint-glow:    var(--neon-green-glow);
 }
 
 /* ══════════════════════════════════════════════════════════
-   Dark theme (default) — deep savanna night
-   Primary: Sungold amber  #E8853D → oklch(0.72 0.18 48)
-   Accent:  Kente green    #2A9D5C → oklch(0.62 0.16 158)
-   BG:      Deep earth     #1A1410 → oklch(0.16 0.03 50)
+   LOOP — Neon Green Identity
+   Primary: Neon Green    #00FF88 — futuristic social commerce
+   Accent:  Electric Mint #00D96F — commerce pulse
+   BG:      Deep Commerce #0A1F16 — dark operational surface
    ══════════════════════════════════════════════════════════ */
 :root {
   --radius: 0.875rem;
 
-  --background:   oklch(0.16 0.03 50);
-  --foreground:   oklch(0.97 0.01 60);
-  --surface:      oklch(0.21 0.035 50);
-  --surface-elev: oklch(0.26 0.04  48);
+  --background:   #0A1F16;
+  --foreground:   #ECFDF5;
+  --surface:      #0D2419;
+  --surface-elev: #112E1E;
 
-  --card:             oklch(0.21 0.035 50);
-  --card-foreground:  oklch(0.97 0.01 60);
-  --popover:          oklch(0.24 0.04 48);
-  --popover-foreground: oklch(0.97 0.01 60);
+  --card:             #0D2419;
+  --card-foreground:  #ECFDF5;
+  --popover:          #112E1E;
+  --popover-foreground: #ECFDF5;
 
-  /* Primary — sungold amber (Kente cloth gold) */
-  --primary:            oklch(0.72 0.18 48);
-  --primary-foreground: oklch(0.14 0.03 50);
-  --sungold:            oklch(0.72 0.18 48);
-  --sungold-glow:       oklch(0.82 0.20 50);
+  /* ── Primary: Neon Green ──────────────────────────────── */
+  --primary:            #00FF88;
+  --primary-foreground: #041A0D;
+  --neon-green:         #00FF88;
+  --neon-green-glow:    #4DFFA8;
+  --neon-green-dim:     #00D96F;
+  --loop-bg:            #0A1F16;
 
-  /* Secondary — muted earth */
-  --secondary:            oklch(0.28 0.04 50);
-  --secondary-foreground: oklch(0.97 0.01 60);
+  /* ── Secondary: deep green surface ───────────────────── */
+  --secondary:            #112E1E;
+  --secondary-foreground: #ECFDF5;
 
-  /* Accent — kente green (forest, life) */
-  --accent:             oklch(0.57 0.16 158);
-  --accent-foreground:  oklch(0.14 0.03 158);
-  --kente-green:        oklch(0.57 0.16 158);
+  /* ── Accent: commerce pulse orange ───────────────────── */
+  --accent:             #FF7A00;
+  --accent-foreground:  #041A0D;
 
-  /* Terracotta — warm red-clay */
-  --terracotta:  oklch(0.62 0.18 30);
-  --savanna:     oklch(0.72 0.18 48);
-  /* Mint aliases → sungold (backward compat for existing Tailwind classes) */
-  --mint:        oklch(0.72 0.18 48);
-  --mint-glow:   oklch(0.82 0.20 50);
+  /* ── Terracotta → commerce signal ─────────────────────── */
+  --savanna:     #00FF88;
+  --terracotta:  #FF7A00;
+  /* Backward-compat aliases */
+  --sungold:      #00FF88;
+  --sungold-glow: #4DFFA8;
+  --mint:         #00FF88;
+  --mint-glow:    #4DFFA8;
+  --kente-green:  #00D96F;
 
-  --muted:            oklch(0.26 0.03 50);
-  --muted-foreground: oklch(0.68 0.025 55);
+  --muted:            #0F2C1C;
+  --muted-foreground: #5A9E76;
 
-  --destructive:            oklch(0.62 0.22 25);
-  --destructive-foreground: oklch(0.97 0.01 60);
+  --destructive:            #FF2E2E;
+  --destructive-foreground: #ECFDF5;
 
-  --border: oklch(0.30 0.03 50);
-  --input:  oklch(0.28 0.035 50);
-  --ring:   oklch(0.72 0.18 48);
+  --border: #163828;
+  --input:  #122B1F;
+  --ring:   #00FF88;
 
-  --chart-1: oklch(0.72 0.18 48);
-  --chart-2: oklch(0.57 0.16 158);
-  --chart-3: oklch(0.62 0.18 30);
-  --chart-4: oklch(0.80 0.18 65);
-  --chart-5: oklch(0.55 0.15 200);
+  --chart-1: #00FF88;
+  --chart-2: #00BFFF;
+  --chart-3: #FFD400;
+  --chart-4: #FF7A00;
+  --chart-5: #A855F7;
 
-  --sidebar:                  oklch(0.21 0.035 50);
-  --sidebar-foreground:       oklch(0.97 0.01 60);
-  --sidebar-primary:          oklch(0.72 0.18 48);
-  --sidebar-primary-foreground: oklch(0.14 0.03 50);
-  --sidebar-accent:           oklch(0.28 0.04 50);
-  --sidebar-accent-foreground: oklch(0.97 0.01 60);
-  --sidebar-border:           oklch(0.30 0.03 50);
-  --sidebar-ring:             oklch(0.72 0.18 48);
+  --sidebar:                    #0D2419;
+  --sidebar-foreground:         #ECFDF5;
+  --sidebar-primary:            #00FF88;
+  --sidebar-primary-foreground: #041A0D;
+  --sidebar-accent:             #112E1E;
+  --sidebar-accent-foreground:  #ECFDF5;
+  --sidebar-border:             #163828;
+  --sidebar-ring:               #00FF88;
 }
 
 .dark {
-  --background:   oklch(0.16 0.03 50);
-  --foreground:   oklch(0.97 0.01 60);
-  --surface:      oklch(0.21 0.035 50);
-  --surface-elev: oklch(0.26 0.04 48);
-  --card:             oklch(0.21 0.035 50);
-  --card-foreground:  oklch(0.97 0.01 60);
-  --popover:          oklch(0.24 0.04 48);
-  --popover-foreground: oklch(0.97 0.01 60);
-  --primary:            oklch(0.72 0.18 48);
-  --primary-foreground: oklch(0.14 0.03 50);
-  --secondary:            oklch(0.28 0.04 50);
-  --secondary-foreground: oklch(0.97 0.01 60);
-  --accent:             oklch(0.57 0.16 158);
-  --accent-foreground:  oklch(0.14 0.03 158);
-  --muted:            oklch(0.26 0.03 50);
-  --muted-foreground: oklch(0.68 0.025 55);
-  --destructive:            oklch(0.62 0.22 25);
-  --destructive-foreground: oklch(0.97 0.01 60);
-  --border: oklch(0.30 0.03 50);
-  --input:  oklch(0.28 0.035 50);
-  --ring:   oklch(0.72 0.18 48);
-  --sidebar:                  oklch(0.21 0.035 50);
-  --sidebar-foreground:       oklch(0.97 0.01 60);
-  --sidebar-primary:          oklch(0.72 0.18 48);
-  --sidebar-primary-foreground: oklch(0.14 0.03 50);
-  --sidebar-accent:           oklch(0.28 0.04 50);
-  --sidebar-accent-foreground: oklch(0.97 0.01 60);
-  --sidebar-border:           oklch(0.30 0.03 50);
-  --sidebar-ring:             oklch(0.72 0.18 48);
+  --background:   #0A1F16;
+  --foreground:   #ECFDF5;
+  --surface:      #0D2419;
+  --surface-elev: #112E1E;
+  --card:             #0D2419;
+  --card-foreground:  #ECFDF5;
+  --popover:          #112E1E;
+  --popover-foreground: #ECFDF5;
+  --primary:            #00FF88;
+  --primary-foreground: #041A0D;
+  --secondary:            #112E1E;
+  --secondary-foreground: #ECFDF5;
+  --accent:             #FF7A00;
+  --accent-foreground:  #041A0D;
+  --muted:            #0F2C1C;
+  --muted-foreground: #5A9E76;
+  --destructive:            #FF2E2E;
+  --destructive-foreground: #ECFDF5;
+  --border: #163828;
+  --input:  #122B1F;
+  --ring:   #00FF88;
+  --sidebar:                    #0D2419;
+  --sidebar-foreground:         #ECFDF5;
+  --sidebar-primary:            #00FF88;
+  --sidebar-primary-foreground: #041A0D;
+  --sidebar-accent:             #112E1E;
+  --sidebar-accent-foreground:  #ECFDF5;
+  --sidebar-border:             #163828;
+  --sidebar-ring:               #00FF88;
 }
 
 @layer base {
@@ -179,67 +184,62 @@
 }
 
 @layer utilities {
-  /* ── Sungold gradient (primary CTA) ── */
-  .text-gradient-sungold {
-    background-image: linear-gradient(135deg, var(--sungold-glow), var(--sungold));
+  /* ── Neon Green gradient (Loop CTA) ────────────────────── */
+  .text-gradient-loop {
+    background-image: linear-gradient(135deg, #4DFFA8, #00FF88);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
   }
-  .bg-gradient-sungold {
-    background-image: linear-gradient(135deg, var(--sungold), var(--sungold-glow));
+  .bg-gradient-loop {
+    background-image: linear-gradient(135deg, #00FF88, #00D96F);
   }
-  .shadow-sungold {
-    box-shadow: 0 10px 40px -10px color-mix(in oklab, var(--sungold) 50%, transparent);
+  .shadow-loop {
+    box-shadow: 0 10px 40px -10px rgba(0, 255, 136, 0.45);
   }
-
-  /* ── Kente green gradient ── */
-  .text-gradient-kente {
-    background-image: linear-gradient(135deg, var(--kente-green), oklch(0.72 0.16 140));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-  .bg-gradient-kente {
-    background-image: linear-gradient(135deg, var(--kente-green), oklch(0.72 0.16 140));
+  .glow-loop {
+    box-shadow: 0 0 20px rgba(0,255,136,0.35), 0 0 1px #00FF88;
   }
 
-  /* ── Terracotta gradient ── */
-  .bg-gradient-terra {
-    background-image: linear-gradient(135deg, var(--terracotta), oklch(0.72 0.18 48));
-  }
-
-  /* ── Keep mint aliases for backward compat (inlined — no @apply across custom utils) ── */
-  .text-gradient-mint {
-    background-image: linear-gradient(135deg, var(--sungold-glow), var(--sungold));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-  .bg-gradient-mint {
-    background-image: linear-gradient(135deg, var(--sungold), var(--sungold-glow));
-  }
-  .shadow-mint {
-    box-shadow: 0 10px 40px -10px color-mix(in oklab, var(--sungold) 50%, transparent);
-  }
-
-  /* ── Live indicator ── */
+  /* ── Commerce pulse ────────────────────────────────────── */
   .live-dot {
-    box-shadow: 0 0 0 0 color-mix(in oklab, var(--sungold) 70%, transparent);
+    box-shadow: 0 0 0 0 rgba(0, 255, 136, 0.7);
     animation: live-pulse 1.6s ease-out infinite;
   }
   @keyframes live-pulse {
-    0%   { box-shadow: 0 0 0 0   color-mix(in oklab, var(--sungold) 70%, transparent); }
+    0%   { box-shadow: 0 0 0 0   rgba(0, 255, 136, 0.7); }
     100% { box-shadow: 0 0 0 12px transparent; }
   }
 
-  /* ── Adire pattern border ── */
+  /* ── Commerce signal scan ──────────────────────────────── */
+  .commerce-scan {
+    background-image: linear-gradient(90deg,
+      transparent 0%, rgba(0,255,136,0.05) 50%, transparent 100%);
+    animation: commerce-scan 2.5s ease-in-out infinite;
+  }
+  @keyframes commerce-scan {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  /* ── Backward-compat aliases ───────────────────────────── */
+  .text-gradient-sungold { background-image: linear-gradient(135deg, #4DFFA8, #00FF88); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .bg-gradient-sungold   { background-image: linear-gradient(135deg, #00FF88, #00D96F); }
+  .shadow-sungold        { box-shadow: 0 10px 40px -10px rgba(0, 255, 136, 0.45); }
+  .text-gradient-mint    { background-image: linear-gradient(135deg, #4DFFA8, #00FF88); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .bg-gradient-mint      { background-image: linear-gradient(135deg, #00FF88, #00D96F); }
+  .shadow-mint           { box-shadow: 0 10px 40px -10px rgba(0, 255, 136, 0.45); }
+  .text-gradient-kente   { background-image: linear-gradient(135deg, #00D96F, #009B50); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .bg-gradient-kente     { background-image: linear-gradient(135deg, #00D96F, #009B50); }
+  .bg-gradient-terra     { background-image: linear-gradient(135deg, #FF7A00, #FF9B3D); }
+
+  /* ── Adire pattern border ──────────────────────────────── */
   .adire-border {
     border-image: repeating-linear-gradient(
       90deg,
-      var(--sungold) 0px, var(--sungold) 6px,
-      var(--kente-green) 6px, var(--kente-green) 12px,
-      var(--terracotta) 12px, var(--terracotta) 18px,
+      #00FF88 0px, #00FF88 6px,
+      #00D96F 6px, #00D96F 12px,
+      #FF7A00 12px, #FF7A00 18px,
       transparent 18px, transparent 24px
     ) 2;
   }
