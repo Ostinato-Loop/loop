@@ -1,3 +1,10 @@
-<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="180" height="180" rx="36" fill="#FF3C00"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <!-- Loop infinity mark — brand color #3EDE72 -->
+  <path
+    d="M50 50C42 25 8 25 8 50C8 75 42 75 50 50C58 25 92 25 92 50C92 75 58 75 50 50"
+    stroke="#3EDE72"
+    stroke-width="9"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
 </svg>
