@@ -20,4 +20,7 @@ export interface CloudflareEnv {
   TERMII_SENDER_ID: string;
   LOOP_JWT_SECRET: string;
   OPENROUTER_API_KEY: string;
+
+  // RALD SSO — validates RALD tokens from rald-auth-core
+  RALD_AUTH_URL: string; // "https://auth.rald.cloud"
 }
