@@ -681,6 +681,21 @@ export default function LoginPage() {
               </AnimatePresence>
             </div>
 
+                        {/* RALD SSO */}
+            <div className="relative mx-7 mb-2 flex items-center gap-3">
+              <div className="h-px flex-1 bg-white/[0.06]" />
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/40">or</span>
+              <div className="h-px flex-1 bg-white/[0.06]" />
+            </div>
+            <div className="px-7 pb-4">
+              <a
+                href="https://profile.rald.cloud?redirect_to=https%3A%2F%2Floop.rald.cloud%2Flogin&app_id=loop"
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] text-xs font-semibold text-muted-foreground transition-all hover:border-white/20 hover:bg-white/[0.07] hover:text-foreground"
+              >
+                <span className="font-black" style={gradientText}>RALD</span>
+                Sign in with RALD Profile
+              </a>
+            </div>
             {/* bottom bar */}
             <div className="border-t border-white/[0.06] px-7 py-3">
               <p className="text-center text-[10px] text-muted-foreground/35">
