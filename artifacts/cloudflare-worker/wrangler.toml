@@ -63,7 +63,7 @@ name = "loop-api"
 [env.production.vars]
 ENVIRONMENT  = "production"
 SUPABASE_URL = "https://onxdcikfttdmnhofsuwo.supabase.co"
-CORS_ORIGIN  = "https://loop.ostinato-loop.pages.dev"
+CORS_ORIGIN  = "https://loop.rald.cloud,https://loop.ostinato-loop.pages.dev"
 
 # ── Secrets (set via `wrangler secret put`) ───────────────
 # wrangler secret put SUPABASE_SERVICE_ROLE_KEY
