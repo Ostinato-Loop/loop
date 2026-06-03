@@ -58,7 +58,7 @@ const TOKEN_KEY       = "loop_token";
 const RALD_TOKEN_KEY  = "rald_master_token";
 const API_BASE        = import.meta.env.VITE_API_BASE_URL ?? "";
 
-const RALD_AUTH_UI    = "https://accounts.rald.cloud";
+const RALD_AUTH_UI    = (import.meta.env.VITE_RALD_AUTH_URL as string | undefined) ?? "https://profiles.rald.cloud";
 const MESSENGER_URL   = "https://messenger.rald.cloud";
 const PROFILES_URL    = "https://profiles.rald.cloud";
 
