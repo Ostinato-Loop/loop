@@ -689,7 +689,7 @@ export default function LoginPage() {
             </div>
             <div className="px-7 pb-4">
               <a
-                href="https://profile.rald.cloud?redirect_to=https%3A%2F%2Floop.rald.cloud%2Flogin&app_id=loop"
+                href="https://accounts.rald.cloud?redirect_to=https%3A%2F%2Floop.rald.cloud%2Flogin&app_id=loop"
                 className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] text-xs font-semibold text-muted-foreground transition-all hover:border-white/20 hover:bg-white/[0.07] hover:text-foreground"
               >
                 <span className="font-black" style={gradientText}>RALD</span>
