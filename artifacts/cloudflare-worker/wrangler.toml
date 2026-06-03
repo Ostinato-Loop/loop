@@ -50,7 +50,7 @@ binding = "AI"
 [observability]
 enabled = true
 
-# ── Environment variables (non-secret) ───────────────────
+# ── Default env vars (development) ───────────────────────
 [vars]
 ENVIRONMENT  = "development"
 SUPABASE_URL = "https://onxdcikfttdmnhofsuwo.supabase.co"
@@ -58,8 +58,39 @@ CORS_ORIGIN  = "*"
 RALD_AUTH_URL = "https://auth.rald.cloud"
 
 # ── Production environment ────────────────────────────────
+# Wrangler v4: named envs do NOT auto-inherit top-level bindings.
+# All bindings must be declared explicitly for [env.production].
 [env.production]
 name = "loop-api"
+
+[[env.production.d1_databases]]
+binding       = "DB"
+database_name = "loop-db"
+database_id   = "4616fcac-96e0-4150-a42f-3d020f45cd1d"
+
+[[env.production.kv_namespaces]]
+binding    = "CACHE"
+id         = "3c71da01b3174d6c9353adbfde7491a3"
+
+[[env.production.r2_buckets]]
+binding     = "MEDIA"
+bucket_name = "loop-media"
+
+[[env.production.queues.producers]]
+binding = "TASK_QUEUE"
+queue   = "loop-tasks"
+
+[[env.production.queues.consumers]]
+queue             = "loop-tasks"
+max_batch_size    = 10
+max_batch_timeout = 5
+
+[[env.production.durable_objects.bindings]]
+name       = "ROOM_SESSION"
+class_name = "RoomSession"
+
+[env.production.ai]
+binding = "AI"
 
 [env.production.vars]
 ENVIRONMENT  = "production"
@@ -70,11 +101,3 @@ RALD_AUTH_URL = "https://auth.rald.cloud"
 [[env.production.routes]]
 pattern   = "loop-api.rald.cloud/*"
 zone_name = "rald.cloud"
-
-# ── Secrets (set via deploy.yml wrangler secret put) ──────
-# SUPABASE_SERVICE_ROLE_KEY
-# TERMII_API_KEY
-# TERMII_SENDER_ID
-# OPENROUTER_API_KEY
-# LOOP_JWT_SECRET
-# RALD_AUTH_URL (overrides var if manually set wrong — deploy pushes correct value)
