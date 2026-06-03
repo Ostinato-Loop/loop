@@ -21,6 +21,6 @@ export interface CloudflareEnv {
   LOOP_JWT_SECRET: string;
   OPENROUTER_API_KEY: string;
 
-  // RALD SSO — validates RALD tokens from rald-auth-core
-  RALD_AUTH_URL: string; // "https://auth.rald.cloud"
+  // RALD SSO — shared secret for local JWT verification (mirrors rald-auth-core)
+  RALD_JWT_SECRET: string;
 }
