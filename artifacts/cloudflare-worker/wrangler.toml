@@ -55,6 +55,7 @@ enabled = true
 ENVIRONMENT  = "development"
 SUPABASE_URL = "https://onxdcikfttdmnhofsuwo.supabase.co"
 CORS_ORIGIN  = "*"
+RALD_AUTH_URL = "https://auth.rald.cloud"
 
 # ── Production environment ────────────────────────────────
 [env.production]
@@ -64,6 +65,7 @@ name = "loop-api"
 ENVIRONMENT  = "production"
 SUPABASE_URL = "https://onxdcikfttdmnhofsuwo.supabase.co"
 CORS_ORIGIN  = "https://loop.rald.cloud,https://loop.ostinato-loop.pages.dev"
+RALD_AUTH_URL = "https://auth.rald.cloud"
 
 # ── Secrets (set via `wrangler secret put`) ───────────────
 # wrangler secret put SUPABASE_SERVICE_ROLE_KEY
