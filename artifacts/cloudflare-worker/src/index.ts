@@ -31,32 +31,6 @@ app.route("/api/auth/rald-sso",  raldSso);
 app.route("/api/trending",       trending);
 app.route("/api/rooms",          rooms);
 
-// ── Debug: test auth.rald.cloud reachability from Worker ──────────────
-// GET /api/debug/sso-verify?token=<rald_sso_token>
-// Returns exact status + body from auth.rald.cloud/sso/verify
-// Used to diagnose CF-Worker-to-auth-server connectivity issues.
-app.get("/api/debug/sso-verify", async (c) => {
-  const token = c.req.query("token") ?? "";
-  const raldBase = c.env.RALD_AUTH_URL ?? "https://auth.rald.cloud";
-  try {
-    const res = await fetch(`${raldBase}/sso/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
-    const body = await res.text();
-    return c.json({
-      status: res.status,
-      ok: res.ok,
-      rald_auth_url_used: raldBase,
-      response_body: body,
-      cf_ray: res.headers.get("cf-ray"),
-    });
-  } catch (err) {
-    return c.json({ error: String(err), rald_auth_url_used: raldBase }, 502);
-  }
-});
-
 // ── 404 ───────────────────────────────────────────────────────────────
 app.notFound((c) =>
   c.json({ error: "Not found", path: c.req.path }, 404),
