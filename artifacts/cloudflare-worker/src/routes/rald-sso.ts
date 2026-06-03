@@ -2,16 +2,12 @@
  * Loop × RALD SSO Bridge
  *
  * POST /api/auth/rald-sso  { rald_token }
- *   → Validates RALD JWT via auth.rald.cloud/sso/verify (POST)
+ *   → Validates RALD JWT via auth.rald.cloud/sso/verify (POST, no auth middleware)
  *   → Upserts user in Supabase
  *   → Returns Loop JWT  { access_token, user }
  *
- * Loop frontend calls this after being redirected back from
- * profiles.rald.cloud with ?rald_token=...&app_id=loop
- *
- * Uses POST /sso/verify (not GET /auth/me) for server-to-server
- * token validation — avoids auth middleware and works reliably
- * from Cloudflare Worker context.
+ * Uses POST /sso/verify instead of GET /auth/me for reliable
+ * server-to-server token validation from Cloudflare Worker context.
  */
 
 import { Hono } from "hono";
@@ -42,56 +38,45 @@ async function supabaseReq(url: string, key: string, method: string, body?: unkn
 
 /* ── POST /api/auth/rald-sso ──────────────────────────────────────── */
 raldSso.post("/", async (c) => {
-  const bodyData = await c.req.json<{ rald_token?: string }>().catch(() => ({}));
-  const rald_token = bodyData.rald_token;
+  const { rald_token } = await c.req.json<{ rald_token: string }>();
 
   if (!rald_token) return c.json({ error: "rald_token is required" }, 400);
 
   const raldBase = c.env.RALD_AUTH_URL ?? RALD_AUTH_DEFAULT;
 
   // 1. Validate RALD token via POST /sso/verify (server-to-server, no auth middleware)
-  let raldUser: {
-    id: string;
-    email?: string;
-    phone?: string;
-    name?: string | null;
-    raldId?: string | null;
-    role?: string;
-  };
-
+  let verifyRes: Response;
   try {
-    const verifyRes = await fetch(`${raldBase}/sso/verify`, {
+    verifyRes = await fetch(`${raldBase}/sso/verify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: rald_token }),
     });
-
-    if (!verifyRes.ok) {
-      return c.json({ error: "Invalid or expired RALD token" }, 401);
-    }
-
-    const verifyData = await verifyRes.json() as {
-      valid: boolean;
-      user?: {
-        id: string;
-        email?: string;
-        phone?: string;
-        name?: string | null;
-        role?: string;
-      };
-      error?: string;
-    };
-
-    if (!verifyData.valid || !verifyData.user) {
-      return c.json({ error: "Invalid or expired RALD token" }, 401);
-    }
-
-    raldUser = verifyData.user;
   } catch (err) {
-    console.error("[rald-sso] verify fetch error:", err);
+    console.error("[rald-sso] sso/verify fetch error:", err);
     return c.json({ error: "Auth service unreachable" }, 502);
   }
 
+  if (!verifyRes.ok) {
+    return c.json({ error: "Invalid or expired RALD token" }, 401);
+  }
+
+  const verifyData = await verifyRes.json() as {
+    valid: boolean;
+    user?: {
+      id: string;
+      email?: string;
+      phone?: string;
+      name?: string | null;
+      role?: string;
+    };
+  };
+
+  if (!verifyData.valid || !verifyData.user) {
+    return c.json({ error: "Invalid or expired RALD token" }, 401);
+  }
+
+  const raldUser = verifyData.user;
   const phone = raldUser.phone ?? raldUser.email ?? raldUser.id;
 
   // 2. Upsert user in Supabase
@@ -100,7 +85,7 @@ raldSso.post("/", async (c) => {
 
   let userId: string;
 
-  // Try find by rald_id
+  // Find by rald_id
   const findRes = await supabaseReq(
     `${sbUrl}/rest/v1/users?rald_id=eq.${encodeURIComponent(raldUser.id)}&select=id,phone`,
     sbKey, "GET",
@@ -128,12 +113,11 @@ raldSso.post("/", async (c) => {
       console.error("[rald-sso] create user error:", err);
       return c.json({ error: "Failed to provision user" }, 500);
     }
-    const created = await createRes.json() as { id: string }[];
-    userId = created[0]?.id;
-    if (!userId) {
-      console.error("[rald-sso] create returned no id", created);
+    const [created] = await createRes.json() as { id: string }[];
+    if (!created?.id) {
       return c.json({ error: "Failed to provision user" }, 500);
     }
+    userId = created.id;
   }
 
   // 3. Issue Loop JWT (7-day)
@@ -141,7 +125,7 @@ raldSso.post("/", async (c) => {
   const accessToken = await signJwt(
     {
       sub:   userId,
-      phone: raldUser.phone ?? raldUser.email ?? "",
+      phone: phone,
       role:  raldUser.role ?? "user",
       iss:   "loop.rald.cloud",
       iat:   now,
@@ -154,7 +138,7 @@ raldSso.post("/", async (c) => {
     access_token: accessToken,
     user: {
       id:    userId,
-      phone: raldUser.phone ?? raldUser.email ?? "",
+      phone: phone,
       role:  raldUser.role ?? "user",
     },
   });
