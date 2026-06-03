@@ -67,9 +67,14 @@ SUPABASE_URL = "https://onxdcikfttdmnhofsuwo.supabase.co"
 CORS_ORIGIN  = "https://loop.rald.cloud,https://loop.ostinato-loop.pages.dev"
 RALD_AUTH_URL = "https://auth.rald.cloud"
 
-# ── Secrets (set via `wrangler secret put`) ───────────────
-# wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-# wrangler secret put TERMII_API_KEY
-# wrangler secret put TERMII_SENDER_ID
-# wrangler secret put OPENROUTER_API_KEY
-# wrangler secret put LOOP_JWT_SECRET
+[[env.production.routes]]
+pattern   = "loop-api.rald.cloud/*"
+zone_name = "rald.cloud"
+
+# ── Secrets (set via deploy.yml wrangler secret put) ──────
+# SUPABASE_SERVICE_ROLE_KEY
+# TERMII_API_KEY
+# TERMII_SENDER_ID
+# OPENROUTER_API_KEY
+# LOOP_JWT_SECRET
+# RALD_AUTH_URL (overrides var if manually set wrong — deploy pushes correct value)
