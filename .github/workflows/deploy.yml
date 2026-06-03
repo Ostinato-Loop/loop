@@ -55,7 +55,7 @@ jobs:
           RALD_JWT_SECRET: ${{ secrets.RALD_JWT_SECRET }}
         run: |
           if [ -z "$RALD_JWT_SECRET" ]; then
-            echo "WARNING: RALD_JWT_SECRET not in GitHub secrets — SSO login will fail until this is added"
+            echo "FATAL: RALD_JWT_SECRET is not set in GitHub secrets — loop RALD SSO will silently fail" && exit 1
           else
             echo "$RALD_JWT_SECRET" | pnpm exec wrangler secret put RALD_JWT_SECRET --env production
             echo "RALD_JWT_SECRET pushed"
