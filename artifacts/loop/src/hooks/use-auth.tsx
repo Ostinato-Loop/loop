@@ -8,7 +8,7 @@
  *   4. We store access_token in localStorage as "loop_token"
  *
  * Flow (RALD SSO):
- *   1. User redirected to accounts.rald.cloud?redirect_to=loop.rald.cloud/login&app_id=loop
+ *   1. User redirected to profiles.rald.cloud?redirect_to=loop.rald.cloud/login&app_id=loop
  *   2. RALD Auth sends back to loop.rald.cloud/login?rald_token=TOKEN&app_id=loop
  *   3. AuthProvider detects rald_token → stores it for cross-app use →
  *      calls /api/auth/rald-sso → gets loop JWT
@@ -50,6 +50,7 @@ type AuthContextValue = {
   session: LoopSession | null;
   profile: Profile | null;
   loading: boolean;
+  ssoError: string | null;
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -129,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<LoopSession | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [ssoError, setSsoError] = useState<string | null>(null);
 
   const loadSession = useCallback(async () => {
     const raw = localStorage.getItem(TOKEN_KEY);
@@ -175,9 +177,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (res.ok) {
             const data = await res.json() as { access_token: string };
             localStorage.setItem(TOKEN_KEY, data.access_token);
+            setSsoError(null);
+          } else {
+            const err = await res.json().catch(() => ({})) as { error?: string };
+            const msg = err.error ?? `RALD SSO failed (${res.status})`;
+            console.error("[rald-sso] exchange rejected:", msg);
+            setSsoError(msg);
+            // Remove invalid token so user is prompted to sign in again
+            localStorage.removeItem(RALD_TOKEN_KEY);
           }
         } catch (e) {
           console.error("[rald-sso] exchange failed:", e);
+          setSsoError("Sign-in failed. Please try again.");
         }
 
         // Clean URL — remove SSO params
@@ -211,7 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user: session?.user ?? null, session, profile, loading, refreshProfile, signOut }}>
+    <AuthContext.Provider value={{ user: session?.user ?? null, session, profile, loading, ssoError, refreshProfile, signOut }}>
       {children}
     </AuthContext.Provider>
   );
