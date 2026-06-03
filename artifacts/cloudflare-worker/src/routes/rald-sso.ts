@@ -74,7 +74,7 @@ async function sbAdmin(supabaseUrl: string, serviceKey: string, method: string, 
 
 /* ── POST /api/auth/rald-sso ──────────────────────────────────────────── */
 raldSso.post("/", async (c) => {
-  const body = await c.req.json<{ rald_token?: string }>().catch(() => ({}));
+  const body = (await c.req.json().catch(() => ({}))) as { rald_token?: string };
   if (!body.rald_token) return c.json({ error: "rald_token is required" }, 400);
 
   // 1. Verify RALD JWT locally (no HTTP call → no CF 522)
