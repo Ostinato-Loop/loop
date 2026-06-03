@@ -44,9 +44,62 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --no-frozen-lockfile
-      - name: Deploy Worker
+
+      - name: Deploy Worker (production environment)
         working-directory: artifacts/cloudflare-worker
-        run: pnpm exec wrangler deploy
+        run: pnpm exec wrangler deploy --env production
+
+      - name: Push LOOP_JWT_SECRET to worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          LOOP_JWT_SECRET: ${{ secrets.LOOP_JWT_SECRET }}
+        run: |
+          if [ -z "$LOOP_JWT_SECRET" ]; then
+            echo "FATAL: LOOP_JWT_SECRET is not set in GitHub secrets" && exit 1
+          fi
+          echo "$LOOP_JWT_SECRET" | pnpm exec wrangler secret put LOOP_JWT_SECRET --env production
+          echo "LOOP_JWT_SECRET pushed"
+
+      - name: Push SUPABASE_SERVICE_ROLE_KEY to worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "FATAL: SUPABASE_SERVICE_ROLE_KEY is not set in GitHub secrets" && exit 1
+          fi
+          echo "$SUPABASE_SERVICE_ROLE_KEY" | pnpm exec wrangler secret put SUPABASE_SERVICE_ROLE_KEY --env production
+          echo "SUPABASE_SERVICE_ROLE_KEY pushed"
+
+      - name: Push TERMII_API_KEY to worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          TERMII_API_KEY: ${{ secrets.TERMII_API_KEY }}
+        run: |
+          if [ -n "$TERMII_API_KEY" ]; then
+            echo "$TERMII_API_KEY" | pnpm exec wrangler secret put TERMII_API_KEY --env production
+            echo "TERMII_API_KEY pushed"
+          fi
+
+      - name: Push TERMII_SENDER_ID to worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          TERMII_SENDER_ID: ${{ secrets.TERMII_SENDER_ID }}
+        run: |
+          if [ -n "$TERMII_SENDER_ID" ]; then
+            echo "$TERMII_SENDER_ID" | pnpm exec wrangler secret put TERMII_SENDER_ID --env production
+            echo "TERMII_SENDER_ID pushed"
+          fi
+
+      - name: Push OPENROUTER_API_KEY to worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          if [ -n "$OPENROUTER_API_KEY" ]; then
+            echo "$OPENROUTER_API_KEY" | pnpm exec wrangler secret put OPENROUTER_API_KEY --env production
+            echo "OPENROUTER_API_KEY pushed"
+          fi
 
   # ── 3. Build & Deploy Frontend to Cloudflare Pages ────────────────
   deploy-pages:
