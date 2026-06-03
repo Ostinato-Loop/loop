@@ -55,10 +55,11 @@ jobs:
           RALD_JWT_SECRET: ${{ secrets.RALD_JWT_SECRET }}
         run: |
           if [ -z "$RALD_JWT_SECRET" ]; then
-            echo "FATAL: RALD_JWT_SECRET is not set in loop GitHub secrets" && exit 1
+            echo "WARNING: RALD_JWT_SECRET not in GitHub secrets — SSO login will fail until this is added"
+          else
+            echo "$RALD_JWT_SECRET" | pnpm exec wrangler secret put RALD_JWT_SECRET --env production
+            echo "RALD_JWT_SECRET pushed"
           fi
-          echo "$RALD_JWT_SECRET" | pnpm exec wrangler secret put RALD_JWT_SECRET --env production
-          echo "RALD_JWT_SECRET pushed"
 
       - name: Push LOOP_JWT_SECRET to worker
         working-directory: artifacts/cloudflare-worker
