@@ -21,7 +21,7 @@ export const RALD_APPS = {
 export type RaldAppId = keyof typeof RALD_APPS;
 
 const RALD_TOKEN_KEY = "rald_master_token";
-const RALD_AUTH_UI   = "https://accounts.rald.cloud";
+const RALD_AUTH_UI   = (import.meta.env.VITE_RALD_AUTH_URL as string | undefined) ?? "https://profiles.rald.cloud";
 
 function getRaldToken(): string | null {
   return localStorage.getItem(RALD_TOKEN_KEY);
@@ -38,7 +38,7 @@ function isTokenAlive(token: string): boolean {
 /**
  * Navigate to any RALD app with cross-app SSO.
  * If the user has a valid rald_master_token, passes it directly.
- * Otherwise routes through accounts.rald.cloud for sign-in/sign-up.
+ * Otherwise routes through profiles.rald.cloud for sign-in/sign-up.
  */
 export function openRaldApp(appId: RaldAppId, path = "/"): void {
   const appUrl    = RALD_APPS[appId];
