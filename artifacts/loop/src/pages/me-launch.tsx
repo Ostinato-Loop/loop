@@ -13,6 +13,7 @@ import { useState } from "react";
 import { me, people } from "@/lib/loop-mock";
 import { useLoop, type NotifLevel } from "@/lib/loop-store";
 import { useAuth } from "@/hooks/use-auth";
+import { AppShell } from "@/components/layout/app-shell";
 
 type Tab = "activity" | "followers" | "following" | "saved";
 
@@ -26,7 +27,8 @@ export default function MeLaunchPage() {
   const followersList = people.filter((p) => !follows[p.handle]).concat(people.slice(0, 2));
 
   return (
-    <div className="pb-24">
+    <AppShell>
+    <div className="pb-6">
       <div className="relative h-32 bg-gradient-to-br from-neon/30 via-accent to-orange/20">
         <button className="absolute top-3 right-3 h-9 w-9 rounded-full bg-background/80 backdrop-blur flex items-center justify-center" aria-label="Settings">
           <Settings className="h-4 w-4" />
@@ -167,6 +169,7 @@ export default function MeLaunchPage() {
         </div>
       </div>
     </div>
+    </AppShell>
   );
 }
 
