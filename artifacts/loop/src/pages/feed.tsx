@@ -8,16 +8,17 @@ import { Search, Bell, MapPin, Mic, MessageCircle, Share2, Heart, Calendar, Spar
 import { feed, userRegion, type FeedItem, type Room } from "@/lib/loop-mock";
 import { LoopMark } from "@/components/loop-logo";
 import { useAuth } from "@/hooks/use-auth";
+import { AppShell } from "@/components/layout/app-shell";
 
 export default function FeedPage() {
   return (
-    <div>
+    <AppShell>
       <FeedHeader />
-      <div className="px-4 pt-3 pb-24 space-y-3">
+      <div className="px-4 pt-3 pb-6 space-y-3">
         <LiveStrip />
         {feed.map((it, i) => <FeedCard key={i} item={it} />)}
       </div>
-    </div>
+    </AppShell>
   );
 }
 
@@ -38,9 +39,9 @@ function FeedHeader() {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <Link to="/search" className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center" aria-label="Search">
+          <button className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center" aria-label="Search" onClick={() => {}}>
             <Search className="h-4 w-4" />
-          </Link>
+          </button>
           <button className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center relative" aria-label="Notifications">
             <Bell className="h-4 w-4" />
             <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-neon" />
