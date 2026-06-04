@@ -1,14 +1,21 @@
 // Loop — Feed Page (Launch UI)
 // Adopted from loop-audio-ui-ux reference design.
 // Adapted for React Router DOM.
+// LiveStrip uses real Supabase rooms; content cards use curated mock data.
 // LILCKY STUDIO LIMITED
 
 import { Link } from "react-router-dom";
-import { Search, Bell, MapPin, Mic, MessageCircle, Share2, Heart, Calendar, Sparkles, TrendingUp, Newspaper, Users } from "lucide-react";
-import { feed, userRegion, type FeedItem, type Room } from "@/lib/loop-mock";
+import { useEffect, useState } from "react";
+import {
+  Search, Bell, MapPin, Mic, MessageCircle, Share2,
+  Heart, Calendar, Newspaper, TrendingUp, Users, Radio,
+} from "lucide-react";
+import { feed, userRegion, type FeedItem } from "@/lib/loop-mock";
+import { listRooms, type Room as ApiRoom } from "@/lib/api/rooms";
 import { LoopMark } from "@/components/loop-logo";
 import { useAuth } from "@/hooks/use-auth";
 import { AppShell } from "@/components/layout/app-shell";
+import { cn } from "@/lib/utils";
 
 export default function FeedPage() {
   return (
@@ -16,14 +23,15 @@ export default function FeedPage() {
       <FeedHeader />
       <div className="px-4 pt-3 pb-6 space-y-3">
         <LiveStrip />
-        {feed.map((it, i) => <FeedCard key={i} item={it} />)}
+        {feed
+          .filter((it) => it.kind !== "room")
+          .map((it, i) => <FeedCard key={i} item={it} />)}
       </div>
     </AppShell>
   );
 }
 
 function FeedHeader() {
-  const { user } = useAuth();
   return (
     <header className="sticky top-0 z-30 bg-background/85 backdrop-blur-xl border-b border-border">
       <div className="px-4 pt-3 pb-2 flex items-center justify-between">
@@ -39,10 +47,17 @@ function FeedHeader() {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <button className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center" aria-label="Search" onClick={() => {}}>
+          <button
+            className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center"
+            aria-label="Search"
+            onClick={() => {}}
+          >
             <Search className="h-4 w-4" />
           </button>
-          <button className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center relative" aria-label="Notifications">
+          <button
+            className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center relative"
+            aria-label="Notifications"
+          >
             <Bell className="h-4 w-4" />
             <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-neon" />
           </button>
@@ -60,9 +75,10 @@ function RegionScroller() {
       {tabs.map((t, i) => (
         <button
           key={t}
-          className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition ${
-            i === 0 ? "bg-foreground text-background" : "bg-secondary text-foreground"
-          }`}
+          className={cn(
+            "shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition",
+            i === 0 ? "bg-foreground text-background" : "bg-secondary text-foreground",
+          )}
         >
           {t}
         </button>
@@ -72,7 +88,14 @@ function RegionScroller() {
 }
 
 function LiveStrip() {
-  const live = feed.filter((f): f is { kind: "room"; room: Room } => f.kind === "room" && f.room.live);
+  const [rooms, setRooms] = useState<ApiRoom[] | null>(null);
+
+  useEffect(() => {
+    listRooms({ limit: 10 })
+      .then(setRooms)
+      .catch(() => setRooms([]));
+  }, []);
+
   return (
     <div className="-mx-4 px-4">
       <div className="flex items-center justify-between mb-2">
@@ -80,76 +103,64 @@ function LiveStrip() {
           <span className="h-2 w-2 rounded-full bg-live animate-pulse" />
           <span className="text-xs font-bold uppercase tracking-wider">Live near you</span>
         </div>
-        <button className="text-xs text-muted-foreground">See all</button>
+        <Link to="/discover" className="text-xs text-muted-foreground hover:text-foreground transition">
+          See all
+        </Link>
       </div>
-      <div className="flex gap-2 overflow-x-auto scrollbar-none -mx-4 px-4 pb-1">
-        {live.map(({ room }) => (
-          <Link
-            key={room.id}
-            to={`/rooms/${room.id}`}
-            className="shrink-0 w-44 rounded-2xl bg-card border border-border p-3 hover:border-neon transition"
-          >
-            <div className="flex items-center gap-1.5 mb-2">
-              <span className="h-1.5 w-1.5 rounded-full bg-live animate-pulse" />
-              <span className="text-[10px] font-bold uppercase text-live">Live</span>
-              <span className="text-[10px] text-muted-foreground ml-auto">{room.region}</span>
-            </div>
-            <div className="text-xs font-semibold line-clamp-2 mb-2 min-h-[2rem]">{room.title}</div>
-            <div className="flex items-center gap-1">
-              {room.speakers.slice(0, 3).map((s) => (
-                <img key={s.name} src={s.avatar} alt="" className="h-5 w-5 rounded-full border-2 border-card -ml-1 first:ml-0" />
-              ))}
-              <span className="text-[10px] text-muted-foreground ml-1">{formatN(room.listeners)}</span>
-            </div>
-          </Link>
-        ))}
-      </div>
+
+      {rooms === null && (
+        <div className="flex gap-2 overflow-x-auto scrollbar-none -mx-4 px-4 pb-1">
+          {[1, 2, 3].map((k) => (
+            <div key={k} className="shrink-0 w-44 h-28 rounded-2xl bg-card border border-border animate-pulse" />
+          ))}
+        </div>
+      )}
+
+      {rooms !== null && rooms.length === 0 && (
+        <div className="flex items-center gap-3 rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
+          <Radio className="h-5 w-5 shrink-0 text-muted-foreground/50" />
+          <span>No live rooms right now — be the first to start one.</span>
+        </div>
+      )}
+
+      {rooms !== null && rooms.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto scrollbar-none -mx-4 px-4 pb-1">
+          {rooms.map((room) => (
+            <Link
+              key={room.id}
+              to={`/rooms/${room.id}`}
+              className="shrink-0 w-44 rounded-2xl bg-card border border-border p-3 hover:border-neon transition"
+            >
+              <div className="flex items-center gap-1.5 mb-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-live animate-pulse" />
+                <span className="text-[10px] font-bold uppercase text-live">Live</span>
+                <span className="text-[10px] text-neon ml-auto uppercase font-bold">{room.category}</span>
+              </div>
+              <div className="text-xs font-semibold line-clamp-2 mb-2 min-h-[2rem]">{room.title}</div>
+              <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                {room.host?.avatar_url ? (
+                  <img src={room.host.avatar_url} alt="" className="h-5 w-5 rounded-full border-2 border-card" />
+                ) : (
+                  <div className="h-5 w-5 rounded-full bg-secondary border-2 border-card flex items-center justify-center text-[8px] font-bold">
+                    {(room.host?.display_name ?? "?")[0]}
+                  </div>
+                )}
+                <span className="ml-1">{formatN(room.audience_count)} listening</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
 function FeedCard({ item }: { item: FeedItem }) {
-  if (item.kind === "room") return <RoomCard room={item.room} />;
   if (item.kind === "discussion") return <DiscussionCard item={item} />;
   if (item.kind === "event") return <EventCard item={item} />;
   if (item.kind === "opportunity") return <OpportunityCard item={item} />;
-  return <NewsCard item={item} />;
-}
-
-function RoomCard({ room }: { room: Room }) {
-  return (
-    <Link to={`/rooms/${room.id}`} className="block rounded-2xl bg-card border border-border overflow-hidden">
-      <div className="p-4">
-        <div className="flex items-center gap-2 mb-2">
-          {room.live && (
-            <>
-              <span className="h-1.5 w-1.5 rounded-full bg-live animate-pulse" />
-              <span className="text-[10px] font-bold uppercase text-live tracking-wider">Live</span>
-            </>
-          )}
-          <span className="text-[10px] uppercase font-bold tracking-wider text-neon">{room.category} Room</span>
-          <span className="text-[10px] text-muted-foreground ml-auto">{room.region}</span>
-        </div>
-        <h3 className="text-[15px] font-bold leading-snug mb-2">{room.title}</h3>
-        <p className="text-xs text-muted-foreground mb-3">{room.context}</p>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <div className="flex -space-x-2">
-              {room.speakers.slice(0, 3).map((s) => (
-                <img key={s.name} src={s.avatar} alt="" className="h-7 w-7 rounded-full border-2 border-card" />
-              ))}
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              <span className="font-semibold text-foreground">{formatN(room.listeners)}</span> listening
-            </div>
-          </div>
-          <button className="px-4 py-1.5 rounded-full bg-neon text-neon-foreground text-xs font-bold neon-glow">
-            <Mic className="h-3 w-3 inline -mt-0.5 mr-1" />Join
-          </button>
-        </div>
-      </div>
-    </Link>
-  );
+  if (item.kind === "news") return <NewsCard item={item} />;
+  return null;
 }
 
 function DiscussionCard({ item }: { item: Extract<FeedItem, { kind: "discussion" }> }) {
