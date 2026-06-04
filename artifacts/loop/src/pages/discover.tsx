@@ -6,7 +6,7 @@ import { RoomCard } from "@/components/rooms/room-card";
 import { listRooms, type Room, type RoomCategory } from "@/lib/api/rooms";
 import {
   Search, Sparkles, Radio, Globe2, TrendingUp,
-  Mic, MessageSquare, Calendar, Briefcase, Newspaper, ChevronRight,
+  Mic, Calendar, Briefcase, Newspaper, ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,81 +31,39 @@ const CATEGORIES: { key: RoomCategory | "all"; label: string; emoji: string }[] 
   { key: "news",          label: "News",    emoji: "📡" },
 ];
 
-/* ── mock enrichment items (real rooms come from API) ─────────────── */
-type DiscussionItem = {
-  kind: "discussion"; id: string; title: string; author: string;
-  region: string; replies: number; reactions: number; preview: string;
-};
-type OpportunityItem = {
-  kind: "opportunity"; id: string; title: string; org: string;
-  type: string; deadline: string;
-};
-type NewsItem = {
-  kind: "news"; id: string; title: string; source: string;
-  region: string; comments: number; trending: boolean;
-};
-
-const DISCUSSIONS: DiscussionItem[] = [
-  { kind: "discussion", id: "d1", title: "Why is rent in Lekki up 80% this year?", author: "Chioma O.", region: "Lagos", replies: 312, reactions: 2104, preview: "Landlords pricing in dollars, salaries in naira. We need this conversation." },
-  { kind: "discussion", id: "d2", title: "Top moments from yesterday's Afrobeats Room", author: "Loop Highlights", region: "Africa", replies: 88, reactions: 4500, preview: "AI extracted the 5 sharpest takes from a 4-hour session." },
-];
-const OPPORTUNITIES: OpportunityItem[] = [
-  { kind: "opportunity", id: "o1", title: "MTN Pulse Scholarship 2026", org: "MTN Foundation", type: "Scholarship · ₦500k", deadline: "Closes in 12 days" },
-];
-const NEWS: NewsItem[] = [
-  { kind: "news", id: "n1", title: "CBN announces new FX policy — markets react", source: "Premium Times", region: "Nigeria", comments: 1284, trending: true },
-  { kind: "news", id: "n2", title: "AFCON 2027 host cities confirmed — Nigeria in", source: "Goal Africa", region: "Africa", comments: 872, trending: false },
-];
-
-/* ── small card components ───────────────────────────────────────────── */
-function DiscussionCard({ d }: { d: DiscussionItem }) {
+/* ── Sprint 01: honest empty states — no mock enrichment items ──────── */
+function DiscussionsEmpty() {
   return (
-    <div className="rounded-2xl border border-border bg-surface p-4 space-y-2">
-      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-        <MessageSquare className="h-3 w-3 text-primary" />
-        <span className="font-bold uppercase tracking-wider">Discussion · {d.region}</span>
+    <div className="rounded-2xl border border-dashed border-border bg-surface/50 p-5 text-center space-y-1.5">
+      <p className="text-sm font-semibold">Discussions coming soon</p>
+      <p className="text-xs text-muted-foreground">Community discussions will appear here once the feed API ships.</p>
+    </div>
+  );
+}
+
+function OpportunitiesEmpty() {
+  return (
+    <div className="rounded-2xl border border-dashed border-primary/20 bg-primary/5 p-5 flex items-start gap-3">
+      <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+        <Briefcase className="h-5 w-5 text-primary/50" />
       </div>
-      <h3 className="font-display text-sm font-bold leading-snug">{d.title}</h3>
-      <p className="text-xs text-muted-foreground line-clamp-2">{d.preview}</p>
-      <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-        <span>{d.replies} replies</span>
-        <span>·</span>
-        <span>{d.reactions.toLocaleString()} ♥</span>
+      <div>
+        <p className="text-sm font-bold">Opportunities coming soon</p>
+        <p className="text-xs text-muted-foreground mt-0.5">Scholarships, grants, and jobs from your community.</p>
       </div>
     </div>
   );
 }
 
-function OpportunityCard({ o }: { o: OpportunityItem }) {
+function NewsEmpty() {
   return (
-    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 flex items-start gap-3">
-      <div className="h-10 w-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
-        <Briefcase className="h-5 w-5 text-primary" />
+    <div className="flex items-start gap-3 p-3 rounded-2xl border border-dashed border-border bg-surface/50">
+      <div className="h-10 w-10 rounded-xl bg-secondary flex items-center justify-center shrink-0">
+        <Newspaper className="h-5 w-5 text-muted-foreground/50" />
       </div>
-      <div className="min-w-0">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-primary mb-0.5">{o.type}</p>
-        <p className="text-sm font-bold leading-snug">{o.title}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">{o.org} · {o.deadline}</p>
-      </div>
-    </div>
-  );
-}
-
-function NewsCard({ n }: { n: NewsItem }) {
-  return (
-    <div className="flex items-start gap-3 p-3 rounded-2xl border border-border bg-surface">
-      <div className="h-10 w-10 rounded-xl bg-surface-elev flex items-center justify-center shrink-0">
-        <Newspaper className="h-5 w-5 text-muted-foreground" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          {n.trending && (
-            <span className="text-[9px] font-extrabold uppercase tracking-wider text-primary-foreground bg-primary px-1.5 py-0.5 rounded-sm">Trending</span>
-          )}
-          <span className="text-[10px] text-muted-foreground">{n.source} · {n.region}</span>
-        </div>
-        <p className="text-xs font-semibold leading-snug">{n.title}</p>
-        <p className="text-[11px] text-muted-foreground mt-0.5">{n.comments.toLocaleString()} comments</p>
+      <div>
+        <p className="text-xs font-semibold">News & updates coming soon</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">Verified stories curated for your region.</p>
       </div>
     </div>
   );
@@ -252,8 +210,8 @@ export default function DiscoverPage() {
               )}
             </section>
 
-            {/* Discussions injection */}
-            {DISCUSSIONS.map((d) => <DiscussionCard key={d.id} d={d} />)}
+            {/* Discussions — Sprint 01 honest empty state */}
+            <DiscussionsEmpty />
 
             {/* More rooms */}
             {allRooms.length > 3 && (
@@ -265,24 +223,20 @@ export default function DiscoverPage() {
               </section>
             )}
 
-            {/* Opportunities */}
+            {/* Opportunities — Sprint 01 honest empty state */}
             <section>
               <h2 className="font-display text-sm font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <Briefcase className="h-3.5 w-3.5 text-primary" />Opportunities
               </h2>
-              <div className="space-y-3">
-                {OPPORTUNITIES.map((o) => <OpportunityCard key={o.id} o={o} />)}
-              </div>
+              <OpportunitiesEmpty />
             </section>
 
-            {/* News */}
+            {/* News — Sprint 01 honest empty state */}
             <section>
               <h2 className="font-display text-sm font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <Newspaper className="h-3.5 w-3.5 text-primary" />News & updates
               </h2>
-              <div className="space-y-2">
-                {NEWS.map((n) => <NewsCard key={n.id} n={n} />)}
-              </div>
+              <NewsEmpty />
             </section>
           </>
         )}

@@ -1,6 +1,7 @@
-// Loop — Profile / Me Page (Launch UI)
-// Adopted from loop-audio-ui-ux reference design with RALD Identity section.
-// Adapted for React Router DOM.
+// Loop — Profile / Me Page
+// Sprint 01 Priority 3: No mock identity data. All user data from real auth.
+// Relationship counts (followers/following/trust) show honest zeros until
+// the relationship graph API is wired (Sprint 02).
 // LILCKY STUDIO LIMITED
 
 import { Link } from "react-router-dom";
@@ -10,7 +11,7 @@ import {
   Bell, BellOff, BellRing, LogOut,
 } from "lucide-react";
 import { useState } from "react";
-import { me, people } from "@/lib/loop-mock";
+import { userRegion } from "@/lib/loop-mock";
 import { useLoop, type NotifLevel } from "@/lib/loop-store";
 import { useAuth } from "@/hooks/use-auth";
 import { AppShell } from "@/components/layout/app-shell";
@@ -19,12 +20,18 @@ type Tab = "activity" | "followers" | "following" | "saved";
 
 export default function MeLaunchPage() {
   const { follows, toggleFollow, notifPrefs, setNotifPref } = useLoop();
-  const { signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const [tab, setTab] = useState<Tab>("activity");
   const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");
 
-  const followingList = people.filter((p) => follows[p.handle]);
-  const followersList = people.filter((p) => !follows[p.handle]).concat(people.slice(0, 2));
+  const displayName  = profile?.display_name ?? user?.phone ?? "You";
+  const handle       = profile?.username ?? "";
+  const avatarUrl    = profile?.avatar_url ?? "";
+  const bio          = profile?.bio ?? "";
+  const isVerified   = profile?.is_verified ?? false;
+
+  const followingList: unknown[] = [];
+  const followersList: unknown[] = [];
 
   return (
     <AppShell>
@@ -36,32 +43,35 @@ export default function MeLaunchPage() {
       </div>
       <div className="px-4 -mt-10">
         <div className="flex items-end justify-between">
-          <img src={me.avatar} alt="" className="h-20 w-20 rounded-2xl ring-4 ring-background object-cover" />
+          {avatarUrl
+            ? <img src={avatarUrl} alt="" className="h-20 w-20 rounded-2xl ring-4 ring-background object-cover" />
+            : <div className="h-20 w-20 rounded-2xl ring-4 ring-background bg-secondary flex items-center justify-center text-2xl font-extrabold text-foreground">{displayName.slice(0, 1).toUpperCase()}</div>
+          }
           <button className="px-4 py-1.5 rounded-full bg-foreground text-background text-xs font-bold">Edit profile</button>
         </div>
         <div className="mt-3">
           <div className="flex items-center gap-1.5">
-            <h1 className="text-xl font-extrabold">{me.name}</h1>
-            <BadgeCheck className="h-5 w-5 text-neon fill-neon/20" />
+            <h1 className="text-xl font-extrabold">{displayName}</h1>
+            {isVerified && <BadgeCheck className="h-5 w-5 text-neon fill-neon/20" />}
           </div>
-          <div className="text-xs text-muted-foreground">@{me.handle} · {me.handle}@rald.me</div>
+          {handle && <div className="text-xs text-muted-foreground">@{handle} · {handle}@rald.me</div>}
           <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-            <MapPin className="h-3 w-3" />{me.region}
+            <MapPin className="h-3 w-3" />{userRegion.city}
           </div>
-          <p className="text-sm mt-2 leading-snug">{me.bio}</p>
+          {bio && <p className="text-sm mt-2 leading-snug">{bio}</p>}
         </div>
 
         <div className="grid grid-cols-3 gap-2 mt-4">
           <button onClick={() => setTab("followers")} className={`rounded-2xl p-3 text-center transition ${tab === "followers" ? "bg-secondary ring-2 ring-neon/40" : "bg-secondary"}`}>
-            <div className="text-lg font-extrabold">{fmt(me.followers)}</div>
+            <div className="text-lg font-extrabold">{followersList.length || 0}</div>
             <div className="text-[10px] text-muted-foreground">Followers</div>
           </button>
           <button onClick={() => setTab("following")} className={`rounded-2xl p-3 text-center transition ${tab === "following" ? "bg-secondary ring-2 ring-neon/40" : "bg-secondary"}`}>
-            <div className="text-lg font-extrabold">{followingList.length || me.following}</div>
+            <div className="text-lg font-extrabold">{followingList.length}</div>
             <div className="text-[10px] text-muted-foreground">Following</div>
           </button>
           <div className="rounded-2xl p-3 text-center bg-neon/10 border border-neon/40">
-            <div className="text-lg font-extrabold text-neon">{me.trust}</div>
+            <div className="text-lg font-extrabold text-neon">—</div>
             <div className="text-[10px] text-muted-foreground">Trust</div>
           </div>
         </div>
@@ -76,8 +86,8 @@ export default function MeLaunchPage() {
           </div>
           <div className="space-y-2 text-xs">
             <IdRow k="RALD ID"     v="rald_8f2c…a91" copy />
-            <IdRow k="Mail"        v={`${me.handle}@rald.me`} copy />
-            <IdRow k="Trust score" v={`${me.trust} / 100`} badge />
+            <IdRow k="Mail"        v={handle ? `${handle}@rald.me` : "—"} copy={!!handle} />
+            <IdRow k="Trust score" v="— / 100" badge />
             <IdRow k="Badge"       v="Verified contributor" />
           </div>
           <div className="mt-3 pt-3 border-t border-border">
@@ -149,21 +159,24 @@ export default function MeLaunchPage() {
           </div>
           <div className="mt-3 space-y-2">
             {tab === "activity" && (
-              <>
-                <Activity icon={Mic}           text="Spoke in Lagos Traffic Reform" meta="2h · 38 reactions" />
-                <Activity icon={MessageCircle} text="Top comment in Afrobeats Room" meta="Yesterday · 412 likes" />
-                <Activity icon={Heart}         text="Joined University of Lagos room" meta="Mon" />
-                <Activity icon={Users}         text="Connected with Wanjiku M." meta="From Nairobi Devs Room" />
-              </>
+              <EmptyTab
+                icon={Mic}
+                title="No activity yet"
+                body="Your rooms, reactions, and connections will appear here."
+              />
             )}
-            {tab === "following" && (followingList.length ? followingList : people.slice(0, 3)).map((p) => (
-              <PersonRow key={p.handle} p={p} following={!!follows[p.handle]} onToggle={() => toggleFollow(p.handle)} notifLevel={notifPrefs[p.handle] ?? "all"} onNotif={(l) => setNotifPref(p.handle, l)} showNotif />
-            ))}
-            {tab === "followers" && followersList.slice(0, 6).map((p) => (
-              <PersonRow key={p.handle + "f"} p={p} following={!!follows[p.handle]} onToggle={() => toggleFollow(p.handle)} notifLevel={notifPrefs[p.handle] ?? "all"} onNotif={(l) => setNotifPref(p.handle, l)} />
-            ))}
+            {tab === "following" && (
+              followingList.length === 0
+                ? <EmptyTab icon={Users} title="Not following anyone yet" body="Join a room to discover and follow people." />
+                : null
+            )}
+            {tab === "followers" && (
+              followersList.length === 0
+                ? <EmptyTab icon={Users} title="No followers yet" body="People who follow you will appear here." />
+                : null
+            )}
             {tab === "saved" && (
-              <div className="text-center text-xs text-muted-foreground py-10">Saved rooms, comments and events show up here.</div>
+              <EmptyTab icon={Heart} title="Nothing saved yet" body="Saved rooms, comments and events show up here." />
             )}
           </div>
         </div>
@@ -173,8 +186,27 @@ export default function MeLaunchPage() {
   );
 }
 
+type Person = {
+  handle: string; name: string; avatar: string;
+  region: string; verified?: boolean; metVia?: string;
+};
+
+function EmptyTab({ icon: Icon, title, body }: { icon: typeof Mic; title: string; body: string }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-10 text-center">
+      <div className="h-11 w-11 rounded-xl bg-secondary flex items-center justify-center">
+        <Icon className="h-5 w-5 text-muted-foreground/50" />
+      </div>
+      <div>
+        <p className="text-sm font-semibold">{title}</p>
+        <p className="text-xs text-muted-foreground mt-1">{body}</p>
+      </div>
+    </div>
+  );
+}
+
 function PersonRow({ p, following, onToggle, notifLevel, onNotif, showNotif }: {
-  p: typeof people[number];
+  p: Person;
   following: boolean;
   onToggle: () => void;
   notifLevel: NotifLevel;

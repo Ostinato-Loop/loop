@@ -1,16 +1,15 @@
-// Loop — Feed Page (Launch UI)
-// Adopted from loop-audio-ui-ux reference design.
-// Adapted for React Router DOM.
-// LiveStrip uses real Supabase rooms; content cards use curated mock data.
+// Loop — Feed Page
+// Sprint 01 Priority 3: No mock data. Every object is backed by real data.
+// LiveStrip: real Supabase rooms. Content feed: honest empty state until API ships.
 // LILCKY STUDIO LIMITED
 
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import {
-  Search, Bell, MapPin, Mic, MessageCircle, Share2,
-  Heart, Calendar, Newspaper, TrendingUp, Users, Radio,
+  Search, Bell, MapPin, Mic, MessageCircle,
+  Users, Radio,
 } from "lucide-react";
-import { feed, userRegion, type FeedItem } from "@/lib/loop-mock";
+import { userRegion } from "@/lib/loop-mock";
 import { listRooms, type Room as ApiRoom } from "@/lib/api/rooms";
 import { LoopMark } from "@/components/loop-logo";
 import { useAuth } from "@/hooks/use-auth";
@@ -23,9 +22,7 @@ export default function FeedPage() {
       <FeedHeader />
       <div className="px-4 pt-3 pb-6 space-y-3">
         <LiveStrip />
-        {feed
-          .filter((it) => it.kind !== "room")
-          .map((it, i) => <FeedCard key={i} item={it} />)}
+        <ContentFeedEmpty />
       </div>
     </AppShell>
   );
@@ -155,109 +152,22 @@ function LiveStrip() {
   );
 }
 
-function FeedCard({ item }: { item: FeedItem }) {
-  if (item.kind === "discussion") return <DiscussionCard item={item} />;
-  if (item.kind === "event") return <EventCard item={item} />;
-  if (item.kind === "opportunity") return <OpportunityCard item={item} />;
-  if (item.kind === "news") return <NewsCard item={item} />;
-  return null;
-}
-
-function DiscussionCard({ item }: { item: Extract<FeedItem, { kind: "discussion" }> }) {
+/** Sprint 01 — Honest empty state. No mock content cards. */
+function ContentFeedEmpty() {
   return (
-    <article className="rounded-2xl bg-card border border-border p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <img src={item.avatar} alt="" className="h-7 w-7 rounded-full" />
-        <div className="text-xs">
-          <div className="font-semibold leading-tight">{item.author}</div>
-          <div className="text-[10px] text-muted-foreground">{item.region} · Discussion</div>
+    <div className="rounded-2xl border border-dashed border-border bg-card/30 p-6 text-center space-y-2 mt-2">
+      <div className="flex justify-center mb-3">
+        <div className="h-10 w-10 rounded-xl bg-secondary flex items-center justify-center">
+          <MessageCircle className="h-5 w-5 text-muted-foreground/50" />
         </div>
       </div>
-      <h3 className="text-[15px] font-bold leading-snug mb-1.5">{item.title}</h3>
-      <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{item.preview}</p>
-      <div className="rounded-xl bg-secondary px-3 py-2 mb-3 text-xs text-foreground border-l-2 border-neon">
-        {item.topComment}
-      </div>
-      <ActionRow likes={item.reactions} comments={item.replies} />
-    </article>
-  );
-}
-
-function EventCard({ item }: { item: Extract<FeedItem, { kind: "event" }> }) {
-  return (
-    <article className="rounded-2xl bg-card border border-border overflow-hidden">
-      <div className="relative h-32">
-        <img src={item.image} alt="" className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
-        <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-card/90 text-[10px] font-bold uppercase tracking-wider">
-          <Calendar className="h-2.5 w-2.5 inline -mt-0.5 mr-1" />Event
-        </span>
-      </div>
-      <div className="p-4">
-        <h3 className="text-[15px] font-bold leading-snug mb-1">{item.title}</h3>
-        <div className="text-xs text-muted-foreground mb-3">{item.date} · {item.location}</div>
-        <div className="flex items-center justify-between">
-          <div className="text-[11px] text-muted-foreground">
-            <Users className="h-3 w-3 inline mr-1" />
-            <span className="font-semibold text-foreground">{formatN(item.attendees)}</span> going
-          </div>
-          <button className="px-4 py-1.5 rounded-full bg-foreground text-background text-xs font-bold">RSVP</button>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function OpportunityCard({ item }: { item: Extract<FeedItem, { kind: "opportunity" }> }) {
-  return (
-    <article className="rounded-2xl bg-gradient-to-br from-accent to-card border border-border p-4">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-neon">
-        Opportunity · {item.region}
-      </span>
-      <h3 className="text-[15px] font-bold leading-snug mt-1.5 mb-1">{item.title}</h3>
-      <div className="text-xs text-muted-foreground mb-1">{item.org}</div>
-      <div className="text-xs font-semibold mb-3">{item.type}</div>
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] text-live font-semibold">{item.deadline}</span>
-        <button className="px-4 py-1.5 rounded-full bg-neon text-neon-foreground text-xs font-bold">Apply</button>
-      </div>
-    </article>
-  );
-}
-
-function NewsCard({ item }: { item: Extract<FeedItem, { kind: "news" }> }) {
-  return (
-    <article className="rounded-2xl bg-card border border-border p-4">
-      <div className="flex items-center gap-1.5 mb-2 text-[10px] font-bold uppercase tracking-wider">
-        <Newspaper className="h-3 w-3 text-neon" />
-        <span className="text-neon">Verified News</span>
-        {item.trending && (
-          <>
-            <span className="text-muted-foreground">·</span>
-            <TrendingUp className="h-3 w-3" />
-            <span>Trending</span>
-          </>
-        )}
-      </div>
-      <h3 className="text-[15px] font-bold leading-snug mb-1.5">{item.title}</h3>
-      <div className="text-xs text-muted-foreground mb-3">{item.source} · {item.region}</div>
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">
-          <MessageCircle className="h-3 w-3 inline mr-1" />
-          {formatN(item.comments)} in discussion
-        </span>
-        <button className="px-3 py-1.5 rounded-full bg-secondary text-foreground text-xs font-bold">Open room</button>
-      </div>
-    </article>
-  );
-}
-
-function ActionRow({ likes, comments }: { likes: number; comments: number }) {
-  return (
-    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-      <button className="flex items-center gap-1.5"><Heart className="h-4 w-4" /> {formatN(likes)}</button>
-      <button className="flex items-center gap-1.5"><MessageCircle className="h-4 w-4" /> {formatN(comments)}</button>
-      <button className="flex items-center gap-1.5 ml-auto"><Share2 className="h-4 w-4" /></button>
+      <p className="text-sm font-semibold text-foreground">Discussions coming soon</p>
+      <p className="text-xs text-muted-foreground leading-relaxed max-w-xs mx-auto">
+        Civic discussions, events, and opportunities from your community will appear here once the feed API ships.
+      </p>
+      <p className="text-[10px] text-muted-foreground/50 pt-1">
+        Sprint 01 · Production data only
+      </p>
     </div>
   );
 }
