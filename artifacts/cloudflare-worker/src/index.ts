@@ -2,8 +2,9 @@
  * Loop API — Cloudflare Worker entrypoint
  *
  *   React frontend (Vite)
- *     ↓ /api/auth/*       → Termii OTP auth + RALD SSO bridge
- *     ↓ /api/auth/rald-sso → RALD token exchange → Loop JWT
+ *     ↓ /api/auth/*       → RALD SSO bridge (Identity Axiom)
+ *     ↓ /api/auth/rald-sso → validates RALD JWT, provisions Supabase user
+ *     ↓ /api/auth/silent  → cookie-based silent session check
  *     ↓ /api/*            → Business logic, AI, civic data (Worker)
  *     ↓ Supabase          → DB, Realtime (via service role from Worker)
  */
@@ -61,7 +62,6 @@ export default {
     // ── FAIL FAST — exit with 503 if critical secrets are absent ─────────
     const missing: string[] = [];
     if (!env.RALD_JWT_SECRET)           missing.push('RALD_JWT_SECRET');
-    if (!env.LOOP_JWT_SECRET)           missing.push('LOOP_JWT_SECRET');
     if (!env.SUPABASE_URL)              missing.push('SUPABASE_URL');
     if (!env.SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY');
     if (missing.length) {
