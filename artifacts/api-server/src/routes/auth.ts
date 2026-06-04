@@ -1,9 +1,11 @@
 // Loop API Server — Auth Routes
 // Phase H: Identity Axiom — Loop does NOT own identity; it proxies RALD Auth.
+// Foundation Lockdown Sprint — Phase 1: Identity Completion
 //
 // POST /api/auth/rald-sso  — exchange RALD JWT, bootstrap Loop session
 // GET  /api/auth/me        — return current user + Loop profile from Supabase
 // GET  /api/auth/silent    — validate rald_session cookie (no re-login)
+// POST /api/auth/logout    — revoke Loop session, clear session cookie
 //
 // RALD JWT (HS256) is issued by auth.rald.cloud and accepted directly.
 // Loop re-uses the master RALD token as its own session token — no re-signing.
@@ -164,6 +166,24 @@ router.get("/silent", async (req: Request, res: Response) => {
       role:  payload.role ?? "user",
     },
   });
+});
+
+// ── POST /api/auth/logout ─────────────────────────────────────────────────────
+// Header:  Authorization: Bearer <token>  (optional — best-effort revocation)
+// Returns: { ok: true }
+//
+// Phase 1 — Identity Completion: called by the Loop SPA before redirecting to
+// profiles.rald.cloud/logout.  Clears the rald_session cookie on this domain.
+// Since Loop re-uses the RALD master token, there is no server-side session
+// database to purge — this endpoint exists to clear the Set-Cookie header and
+// provide a clean shutdown hook for future server-side state.
+router.post("/logout", async (req: Request, res: Response) => {
+  // Clear the session cookie if one was set by /silent
+  res.setHeader("Set-Cookie", [
+    "rald_session=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0",
+    "loop_session=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0",
+  ]);
+  res.json({ ok: true });
 });
 
 export default router;
