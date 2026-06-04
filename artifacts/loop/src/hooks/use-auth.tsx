@@ -133,17 +133,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [ssoError, setSsoError] = useState<string | null>(null);
 
   const loadSession = useCallback(async () => {
-    const raw = localStorage.getItem(TOKEN_KEY);
+    let raw = localStorage.getItem(TOKEN_KEY);
     if (!raw || !isTokenValid(raw)) {
       localStorage.removeItem(TOKEN_KEY);
-      setSession(null); setProfile(null); setLoading(false);
-      return;
+      // ── Silent auth: check if rald_session cookie gives us a session ──────
+      try {
+        const silentRes = await fetch(`${API_BASE}/api/auth/silent`, { credentials: 'include' });
+        if (silentRes.ok) {
+          const silentData = await silentRes.json() as { valid: boolean; access_token?: string };
+          if (silentData.valid && silentData.access_token) {
+            localStorage.setItem(TOKEN_KEY, silentData.access_token);
+            raw = silentData.access_token;
+          }
+        }
+      } catch { /* no cookie session — fall through */ }
+      if (!raw) {
+        setSession(null); setProfile(null); setLoading(false);
+        return;
+      }
     }
     const payload = decodeJwtPayload(raw)!;
     const user: LoopUser = {
-      id:    payload.sub as string,
-      phone: payload.phone as string,
-      role:  payload.role as string | undefined,
+      // RALD JWT uses id (Phase H); fall back to sub for backward compat
+      id:    (payload.id ?? payload.sub) as string,
+      phone: (payload.phone ?? payload.email ?? "") as string,
+      role:  (payload.role ?? "user") as string | undefined,
     };
     setSession({ access_token: raw, user });
     try {
