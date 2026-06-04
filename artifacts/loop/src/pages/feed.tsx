@@ -1,18 +1,16 @@
 // Loop — Feed Page
-// Sprint 01 Priority 3: No mock data. Every object is backed by real data.
+// Sprint 02 Trust & Retention: removed hardcoded "Lagos · Nigeria" from loop-mock.
+// Location chip removed — user region is not yet available from profile API.
 // LiveStrip: real Supabase rooms. Content feed: honest empty state until API ships.
 // LILCKY STUDIO LIMITED
 
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
 import {
-  Search, Bell, MapPin, Mic, MessageCircle,
-  Users, Radio,
+  Search, Bell, MessageCircle, Radio,
 } from "lucide-react";
-import { userRegion } from "@/lib/loop-mock";
 import { listRooms, type Room as ApiRoom } from "@/lib/api/rooms";
 import { LoopMark } from "@/components/loop-logo";
-import { useAuth } from "@/hooks/use-auth";
 import { AppShell } from "@/components/layout/app-shell";
 import { cn } from "@/lib/utils";
 
@@ -36,12 +34,7 @@ function FeedHeader() {
           <div className="h-8 w-8 rounded-xl bg-neon flex items-center justify-center neon-glow">
             <LoopMark className="h-4 w-6 text-neon-foreground" />
           </div>
-          <div>
-            <div className="text-base font-extrabold leading-none">Loop</div>
-            <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
-              <MapPin className="h-2.5 w-2.5" /> {userRegion.city} · {userRegion.country}
-            </div>
-          </div>
+          <div className="text-base font-extrabold leading-none">Loop</div>
         </div>
         <div className="flex items-center gap-1.5">
           <button
@@ -56,7 +49,6 @@ function FeedHeader() {
             aria-label="Notifications"
           >
             <Bell className="h-4 w-4" />
-            <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-neon" />
           </button>
         </div>
       </div>
@@ -66,7 +58,7 @@ function FeedHeader() {
 }
 
 function RegionScroller() {
-  const tabs = ["For you", "Lagos", "Nigeria", "Africa", "Civic", "Music", "Sports", "Campus"];
+  const tabs = ["For you", "Africa", "Civic", "Music", "Sports", "Campus", "Tech", "Business"];
   return (
     <div className="flex gap-1.5 overflow-x-auto scrollbar-none px-4 pb-2.5">
       {tabs.map((t, i) => (
@@ -98,7 +90,7 @@ function LiveStrip() {
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-live animate-pulse" />
-          <span className="text-xs font-bold uppercase tracking-wider">Live near you</span>
+          <span className="text-xs font-bold uppercase tracking-wider">Live now</span>
         </div>
         <Link to="/discover" className="text-xs text-muted-foreground hover:text-foreground transition">
           See all
@@ -152,7 +144,7 @@ function LiveStrip() {
   );
 }
 
-/** Sprint 01 — Honest empty state. No mock content cards. */
+/** Sprint 02 — Honest empty state. No mock content cards. */
 function ContentFeedEmpty() {
   return (
     <div className="rounded-2xl border border-dashed border-border bg-card/30 p-6 text-center space-y-2 mt-2">
@@ -164,9 +156,6 @@ function ContentFeedEmpty() {
       <p className="text-sm font-semibold text-foreground">Discussions coming soon</p>
       <p className="text-xs text-muted-foreground leading-relaxed max-w-xs mx-auto">
         Civic discussions, events, and opportunities from your community will appear here once the feed API ships.
-      </p>
-      <p className="text-[10px] text-muted-foreground/50 pt-1">
-        Sprint 01 · Production data only
       </p>
     </div>
   );

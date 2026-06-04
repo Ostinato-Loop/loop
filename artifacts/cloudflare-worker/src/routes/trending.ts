@@ -11,12 +11,16 @@ const trending = new Hono<{ Bindings: CloudflareEnv; Variables: { user: AuthUser
  * Returns trending topics, rooms, and creators.
  *
  * Business logic phases:
- *  Phase 1 (now)    — static placeholder, unblocks frontend integration
+ *  Phase 1 (now)    — empty arrays. No fake topics, rooms, or creators.
+ *                     Honest response: if there is nothing real, nothing is returned.
  *  Phase 2 (later)  — score from D1 room_participants + reactions counts
  *  Phase 3 (later)  — enrich with civic + sports APIs via service layer
+ *
+ * Trust rule: hardcoded topic labels (e.g. "AfroTech", "Civic Watch") are
+ * fake data. They inflate perceived activity. Phase 1 returns empty arrays.
  */
 trending.get("/", requireAuth(), async (c) => {
-  const cacheKey = "trending:v1";
+  const cacheKey = "trending:v2";
 
   // ── KV cache (5 min TTL) ───────────────────────────────────────────
   const cached = await c.env.CACHE.get(cacheKey, "json") as TrendingResponse | null;
@@ -24,28 +28,22 @@ trending.get("/", requireAuth(), async (c) => {
     return c.json(cached, 200, { "X-Cache": "HIT" });
   }
 
-  // ── TODO Phase 2: query D1 for real scores ─────────────────────────
+  // ── Phase 1: honest empty response ────────────────────────────────
+  // Phase 2 will query D1 for real room scores:
   // const stmt = c.env.DB.prepare(
   //   `SELECT r.id, r.title, r.category, r.audience_count
-  //    FROM rooms r
-  //    WHERE r.is_live = 1
-  //    ORDER BY r.audience_count DESC
-  //    LIMIT 10`
+  //    FROM rooms r WHERE r.is_live = 1
+  //    ORDER BY r.audience_count DESC LIMIT 10`
   // );
   // const rooms = await stmt.all();
 
   const payload: TrendingResponse = {
-    rooms: [],
-    topics: [
-      { label: "AfroTech",     count: 0, category: "tech" },
-      { label: "Civic Watch",  count: 0, category: "civic" },
-      { label: "Beats & Bars", count: 0, category: "music" },
-    ],
-    creators: [],
+    rooms:       [],
+    topics:      [],
+    creators:    [],
     generatedAt: new Date().toISOString(),
   };
 
-  // Cache for 5 minutes
   await c.env.CACHE.put(cacheKey, JSON.stringify(payload), { expirationTtl: 300 });
 
   return c.json(payload, 200, { "X-Cache": "MISS" });
