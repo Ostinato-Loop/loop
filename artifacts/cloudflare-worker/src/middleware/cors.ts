@@ -3,12 +3,43 @@ import type { CloudflareEnv } from "../types/env.js";
 
 /**
  * CORS middleware.
- * In development, allows the Vite dev server origin.
- * In production, restrict to your deployed Loop domain.
+ *
+ * Allowed origins are resolved from the CORS_ORIGIN env var (comma-separated
+ * list) with a hard-coded production allowlist as fallback.  The request
+ * Origin header is reflected when it appears in the allowed list, enabling
+ * credentialed cross-app requests (e.g. sv.rald.cloud, messenger.rald.cloud).
  */
+
+const PRODUCTION_ALLOWLIST = [
+  "https://loop.rald.cloud",
+  "https://messenger.rald.cloud",
+  "https://profiles.rald.cloud",
+  "https://sv.rald.cloud",
+  "https://rald.cloud",
+  "https://business.rald.cloud",
+  "https://control.rald.cloud",
+  "https://rald-control-center.pages.dev",
+  "http://localhost:5173",
+  "http://localhost:3000",
+];
+
+function resolveOrigin(env: CloudflareEnv, requestOrigin: string): string {
+  const configured = env.CORS_ORIGIN;
+  if (configured) {
+    // Support comma-separated list in env var
+    const list = configured.split(",").map((s) => s.trim()).filter(Boolean);
+    if (list.includes(requestOrigin)) return requestOrigin;
+    return list[0] ?? "*";
+  }
+  // Fall back to hard-coded production allowlist
+  if (PRODUCTION_ALLOWLIST.includes(requestOrigin)) return requestOrigin;
+  return PRODUCTION_ALLOWLIST[0];
+}
+
 export const cors = (): MiddlewareHandler<{ Bindings: CloudflareEnv }> =>
   async (c, next) => {
-    const origin = c.env.CORS_ORIGIN ?? "*";
+    const requestOrigin = c.req.header("Origin") ?? "";
+    const origin = resolveOrigin(c.env, requestOrigin);
 
     if (c.req.method === "OPTIONS") {
       return new Response(null, {
@@ -29,6 +60,8 @@ function corsHeaders(origin: string): Record<string, string> {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Credentials": "true",
     "Access-Control-Max-Age": "86400",
+    "Vary": "Origin",
   };
 }

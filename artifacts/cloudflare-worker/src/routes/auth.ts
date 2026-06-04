@@ -274,6 +274,10 @@ auth.post("/verify-otp", async (c) => {
 });
 
 /* ── GET /api/auth/me ────────────────────────────────────────────────── */
+// Accepts both RALD JWTs (SSO — signed with RALD_JWT_SECRET, preferred) and
+// legacy Loop OTP JWTs (signed with LOOP_JWT_SECRET, for backward compat).
+// RALD JWTs carry `id`; legacy OTP JWTs carry `sub`.  Both paths look up the
+// same Supabase profiles row by the resolved user id.
 auth.get("/me", async (c) => {
   const authHeader = c.req.header("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -281,16 +285,26 @@ auth.get("/me", async (c) => {
   }
 
   const token = authHeader.slice(7);
-  const jwtSecret = c.env.LOOP_JWT_SECRET ?? "loop-dev-secret-change-in-prod";
-  const payload = await verifyJwt(token, jwtSecret);
+
+  // Try RALD_JWT_SECRET first — all SSO users (Identity Axiom, Phase H)
+  let payload = await verifyJwt(token, c.env.RALD_JWT_SECRET);
+
+  // Fall back to LOOP_JWT_SECRET for legacy OTP-issued tokens only
+  if (!payload && c.env.LOOP_JWT_SECRET) {
+    payload = await verifyJwt(token, c.env.LOOP_JWT_SECRET);
+  }
 
   if (!payload) return c.json({ error: "Invalid or expired token" }, 401);
+
+  // RALD JWTs use `id`; legacy Loop OTP JWTs use `sub`
+  const userId = (payload.id ?? payload.sub) as string | undefined;
+  if (!userId) return c.json({ error: "Invalid token: missing user id" }, 401);
 
   const supabaseUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
   const serviceKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
 
   const profileRes = await fetch(
-    `${supabaseUrl}/rest/v1/profiles?id=eq.${payload.sub}&select=*`,
+    `${supabaseUrl}/rest/v1/profiles?id=eq.${userId}&select=*`,
     {
       headers: {
         Authorization: `Bearer ${serviceKey}`,
@@ -303,7 +317,7 @@ auth.get("/me", async (c) => {
   const profile = profiles[0] ?? null;
 
   return c.json({
-    user: { id: payload.sub, phone: payload.phone, role: payload.role },
+    user: { id: userId, phone: payload.phone, role: payload.role },
     profile,
   });
 });

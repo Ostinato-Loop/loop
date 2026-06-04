@@ -85,7 +85,7 @@ export default function MeLaunchPage() {
             <span className="text-[10px] font-bold text-neon">profiles.rald.cloud</span>
           </div>
           <div className="space-y-2 text-xs">
-            <IdRow k="RALD ID"     v="rald_8f2c…a91" copy />
+            <IdRow k="RALD ID"     v={user?.id ? `rald_${user.id.slice(0, 8)}…` : "—"} copy={!!user?.id} />
             <IdRow k="Mail"        v={handle ? `${handle}@rald.me` : "—"} copy={!!handle} />
             <IdRow k="Trust score" v="— / 100" badge />
             <IdRow k="Badge"       v="Verified contributor" />
