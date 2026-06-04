@@ -63,6 +63,16 @@
   --color-sungold-glow: var(--neon-green-glow);
   --color-mint:         var(--neon-green);
   --color-mint-glow:    var(--neon-green-glow);
+
+  /* ── loop-audio-ui-ux ecosystem token aliases ─────────
+     Enables feed.tsx, room-launch.tsx, me-launch.tsx to
+     use text-neon / bg-neon / text-live / text-orange
+     without any code changes.
+  ── */
+  --color-neon:             var(--neon);
+  --color-neon-foreground:  var(--neon-foreground);
+  --color-orange:           var(--orange);
+  --color-live:             var(--live);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -99,6 +109,12 @@
   /* ── Accent: commerce pulse orange ───────────────────── */
   --accent:             #FF7A00;
   --accent-foreground:  #041A0D;
+
+  /* ── loop-audio-ui-ux ecosystem tokens ─────────────── */
+  --neon:             #00FF88;
+  --neon-foreground:  #041A0D;
+  --orange:           #FF7A00;
+  --live:             #FF2E2E;
 
   /* ── Terracotta → commerce signal ─────────────────────── */
   --savanna:     #00FF88;
@@ -247,4 +263,12 @@
   .hide-scrollbar::-webkit-scrollbar { display: none; }
   .hide-scrollbar { scrollbar-width: none; }
   .safe-pb { padding-bottom: max(env(safe-area-inset-bottom), 0.5rem); }
+
+  /* ── loop-audio-ui-ux utility classes ───────────────── */
+  .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+
+  .neon-glow {
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.4), 0 0 40px rgba(0, 255, 136, 0.15);
+  }
 }
