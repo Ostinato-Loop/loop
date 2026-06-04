@@ -3,8 +3,7 @@
 // Persisted to localStorage for seamless session continuity.
 // LILCKY STUDIO LIMITED
 
-import { createContext, useCallback, useContext, useEffect, useReducer } from "react";
-import React from "react";
+import React, { createContext, useCallback, useContext, useEffect, useReducer } from "react";
 
 export type NotifLevel = "all" | "rooms" | "posts" | "off";
 
