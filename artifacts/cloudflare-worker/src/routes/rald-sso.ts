@@ -1,18 +1,27 @@
 /**
- * Loop × RALD SSO Bridge
+ * Loop × RALD SSO Bridge — Phase H (Identity Axiom)
  *
- * POST /api/auth/rald-sso  { rald_token }
- *   1. Verifies RALD JWT locally using RALD_JWT_SECRET (no HTTP call — avoids CF 522)
- *   2. Upserts Supabase auth user (by email) + loop profile row
- *   3. Issues Loop JWT  → { access_token, user }
+ * RALD owns identity. Loop does NOT issue its own JWTs.
+ * The RALD JWT IS the session token for all Loop API calls.
+ *
+ * POST /api/auth/rald-sso   { rald_token }
+ *   Validates the RALD JWT locally → provisions Supabase user if needed →
+ *   returns the SAME rald_token for use as Bearer on all /api/* calls.
+ *   No LOOP_JWT_SECRET. No loop-specific token. One token. One identity.
+ *
+ * GET  /api/auth/silent
+ *   Reads the rald_session HttpOnly cookie (set by auth.rald.cloud at login).
+ *   Called on app mount — returns the user without any redirect.
+ *   Enables the silent SSO step-3 cascade (cookie → no login screen).
  */
 
 import { Hono } from "hono";
 import type { CloudflareEnv } from "../types/env.js";
+import { parseSessionCookie } from "../lib/cookie.js";
 
 export const raldSso = new Hono<{ Bindings: CloudflareEnv }>();
 
-/* ── Local JWT helpers ────────────────────────────────────────────────── */
+/* ── JWT verification ────────────────────────────────────────────────── */
 
 interface RaldPayload {
   id: string;
@@ -35,11 +44,10 @@ async function verifyRaldJwt(token: string, secret: string): Promise<RaldPayload
     const key = await crypto.subtle.importKey(
       "raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
     );
-    const sigInput = `${parts[0]}.${parts[1]}`;
     const sig = Uint8Array.from(
       atob(parts[2].replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0),
     );
-    if (!(await crypto.subtle.verify("HMAC", key, sig, enc.encode(sigInput)))) return null;
+    if (!(await crypto.subtle.verify("HMAC", key, sig, enc.encode(`${parts[0]}.${parts[1]}`)))) return null;
     const payload = JSON.parse(
       atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")),
     ) as RaldPayload;
@@ -48,131 +56,77 @@ async function verifyRaldJwt(token: string, secret: string): Promise<RaldPayload
   } catch { return null; }
 }
 
-async function signLoopJwt(payload: Record<string, unknown>, secret: string): Promise<string> {
-  const enc = new TextEncoder();
-  const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" })).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/,"");
-  const body   = btoa(JSON.stringify(payload)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/,"");
-  const key    = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig    = await crypto.subtle.sign("HMAC", key, enc.encode(`${header}.${body}`));
-  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/,"");
-  return `${header}.${body}.${sigB64}`;
-}
+/* ── Supabase helpers ────────────────────────────────────────────────── */
 
-/* ── Supabase admin helpers ───────────────────────────────────────────── */
-
-async function sbAdmin(supabaseUrl: string, serviceKey: string, method: string, path: string, body?: unknown) {
-  return fetch(`${supabaseUrl}${path}`, {
+async function sbAdmin(url: string, key: string, method: string, path: string, body?: unknown) {
+  return fetch(`${url}${path}`, {
     method,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${serviceKey}`,
-      apikey: serviceKey,
-    },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, apikey: key },
     body: body ? JSON.stringify(body) : undefined,
   });
 }
 
-/* ── POST /api/auth/rald-sso ──────────────────────────────────────────── */
+async function provisionUser(sbUrl: string, sbKey: string, rald: RaldPayload): Promise<string | null> {
+  const email = rald.email ?? null;
+  if (email) {
+    const r = await sbAdmin(sbUrl, sbKey, "GET", `/auth/v1/admin/users?email=${encodeURIComponent(email)}&per_page=1`);
+    if (r.ok) {
+      const d = await r.json() as { users?: { id: string }[] };
+      if (d.users?.length) return d.users[0].id;
+    }
+    const cr = await sbAdmin(sbUrl, sbKey, "POST", "/auth/v1/admin/users", {
+      email, email_confirm: true, user_metadata: { rald_id: rald.id, source: "rald-sso" },
+    });
+    if (cr.ok) return ((await cr.json()) as { id: string }).id;
+  }
+  return null;
+}
+
+/* ── POST /api/auth/rald-sso ─────────────────────────────────────────── */
 raldSso.post("/", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { rald_token?: string };
   if (!body.rald_token) return c.json({ error: "rald_token is required" }, 400);
 
-  // 1. Verify RALD JWT locally (no HTTP call → no CF 522)
   const rald = await verifyRaldJwt(body.rald_token, c.env.RALD_JWT_SECRET);
   if (!rald) return c.json({ error: "Invalid or expired RALD token" }, 401);
 
-  const sbUrl    = c.env.SUPABASE_URL.replace(/\/$/, "");
-  const sbKey    = c.env.SUPABASE_SERVICE_ROLE_KEY;
-  const email    = rald.email ?? null;
+  const sbUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  let supabaseUserId: string;
-  let phone: string | null = null;
-
-  // 2. Find or create Supabase auth user (match by email if available)
-  if (email) {
-    const searchRes = await sbAdmin(sbUrl, sbKey, "GET",
-      `/auth/v1/admin/users?email=${encodeURIComponent(email)}&per_page=1`);
-    if (searchRes.ok) {
-      const data = await searchRes.json() as { users?: { id: string; phone?: string }[] };
-      if (data.users && data.users.length > 0) {
-        supabaseUserId = data.users[0].id;
-        phone = data.users[0].phone ?? null;
-      } else {
-        // Create new Supabase auth user
-        const createRes = await sbAdmin(sbUrl, sbKey, "POST", "/auth/v1/admin/users", {
-          email,
-          email_confirm: true,
-          user_metadata: { rald_id: rald.id, source: "rald-sso" },
-        });
-        if (!createRes.ok) {
-          const err = await createRes.text();
-          console.error("[rald-sso] create auth user:", err);
-          return c.json({ error: "Failed to provision user" }, 500);
-        }
-        const created = await createRes.json() as { id: string };
-        supabaseUserId = created.id;
-      }
-    } else {
-      // Search failed — create as fallback
-      const createRes = await sbAdmin(sbUrl, sbKey, "POST", "/auth/v1/admin/users", {
-        email,
-        email_confirm: true,
-        user_metadata: { rald_id: rald.id, source: "rald-sso" },
-      });
-      if (!createRes.ok) {
-        const err = await createRes.text();
-        console.error("[rald-sso] create auth user (fallback):", err);
-        return c.json({ error: "Failed to provision user" }, 500);
-      }
-      const created = await createRes.json() as { id: string };
-      supabaseUserId = created.id;
-    }
-  } else {
-    // No email — create a placeholder Supabase user keyed by RALD id
-    // Check if user with this RALD id already exists via user_metadata
-    const createRes = await sbAdmin(sbUrl, sbKey, "POST", "/auth/v1/admin/users", {
-      user_metadata: { rald_id: rald.id, source: "rald-sso" },
-      email_confirm: true,
-    });
-    if (!createRes.ok) {
-      const errBody = await createRes.json() as { msg?: string; message?: string };
-      // If "already exists" error, try to look up by metadata (not possible via API)
-      // Fall through — return an error
-      console.error("[rald-sso] create anon auth user:", errBody);
-      return c.json({ error: "Failed to provision user" }, 500);
-    }
-    const created = await createRes.json() as { id: string };
-    supabaseUserId = created.id;
+  // Provision Supabase user if needed (profile bridge — non-blocking on failure)
+  const supabaseId = await provisionUser(sbUrl, sbKey, rald).catch(() => null);
+  if (supabaseId) {
+    sbAdmin(sbUrl, sbKey, "POST", "/rest/v1/profiles",
+      { id: supabaseId, ...(rald.name ? { display_name: rald.name } : {}) }
+    ).catch(() => null);
   }
 
-  // 3. Upsert profile row (id = supabaseUserId)
-  await sbAdmin(sbUrl, sbKey, "POST", "/rest/v1/profiles", {
-    id: supabaseUserId,
-    ...(rald.name ? { display_name: rald.name } : {}),
-  }).then((r) => {
-    if (!r.ok && r.status !== 409) {
-      r.text().then((t) => console.warn("[rald-sso] profile upsert:", r.status, t));
-    }
-  });
-
-  // 4. Issue Loop JWT (30 days)
-  const now = Math.floor(Date.now() / 1000);
-  const accessToken = await signLoopJwt({
-    sub:   supabaseUserId,
-    phone: phone ?? email ?? rald.email ?? "",
-    role:  "authenticated",
-    iss:   "loop.rald.cloud",
-    iat:   now,
-    exp:   now + 60 * 60 * 24 * 30,
-  }, c.env.LOOP_JWT_SECRET);
-
+  // The RALD JWT is the session. No separate Loop token.
   return c.json({
-    access_token: accessToken,
+    access_token: body.rald_token,
     user: {
-      id:    supabaseUserId,
-      phone: phone ?? null,
-      email: email,
+      id:    rald.id,
+      email: rald.email ?? null,
+      phone: rald.phone ?? null,
       role:  rald.role ?? "user",
     },
+  });
+});
+
+/* ── GET /api/auth/silent — cookie-based silent session check ────────── */
+raldSso.get("/silent", async (c) => {
+  const cookieHeader = c.req.header("Cookie");
+  const token = parseSessionCookie(cookieHeader);
+  if (!token) {
+    return c.json({ valid: false, reason: "no_session_cookie" }, 401);
+  }
+  const rald = await verifyRaldJwt(token, c.env.RALD_JWT_SECRET);
+  if (!rald) {
+    return c.json({ valid: false, reason: "invalid_or_expired_token" }, 401);
+  }
+  return c.json({
+    valid: true,
+    user: { id: rald.id, email: rald.email ?? null, role: rald.role ?? "user" },
+    access_token: token,
   });
 });
