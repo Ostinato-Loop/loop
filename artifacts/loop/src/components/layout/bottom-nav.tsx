@@ -1,75 +1,72 @@
-import { NavLink, useLocation } from "react-router-dom";
+// Loop — Bottom Navigation (Launch UI)
+// Adopted from loop-audio-ui-ux reference design.
+// LILCKY STUDIO LIMITED
+
+import { Link, useLocation } from "react-router-dom";
 import { Home, Compass, Plus, MessageCircle, User as UserIcon } from "lucide-react";
+import { useState } from "react";
+import { CreateSheet } from "@/components/create-sheet";
 import { cn } from "@/lib/utils";
 
-type Tab = { to: string; label: string; icon: typeof Home; exact?: boolean; center?: boolean };
-
-const tabs: Tab[] = [
-  { to: "/",        label: "Feed",    icon: Home,          exact: true },
-  { to: "/live",    label: "Discover",icon: Compass },
-  { to: "/create",  label: "Create",  icon: Plus,          center: true },
-  { to: "/messages",label: "Chat",    icon: MessageCircle },
-  { to: "/me",      label: "You",     icon: UserIcon },
-];
+const navItems = [
+  { to: "/",         label: "Feed",    icon: Home,          exact: true },
+  { to: "/discover", label: "Discover", icon: Compass,      exact: false },
+  { to: "/messages", label: "Chat",    icon: MessageCircle, exact: false },
+  { to: "/me",       label: "You",     icon: UserIcon,      exact: false },
+] as const;
 
 export function BottomNav() {
-  const loc = useLocation();
+  const { pathname } = useLocation();
+  const [createOpen, setCreateOpen] = useState(false);
+
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-40 border-t border-border bg-background/85 backdrop-blur-xl safe-pb">
-      <ul className="mx-auto flex max-w-md items-center h-16 px-2">
-        {tabs.slice(0, 2).map((t) => {
-          const Icon = t.icon;
-          const active = t.exact ? loc.pathname === t.to : loc.pathname.startsWith(t.to);
-          return (
-            <li key={t.to} className="flex-1">
-              <NavLink
-                to={t.to}
-                className="flex flex-col items-center justify-center gap-0.5"
-              >
+    <>
+      <nav className="sticky bottom-0 left-0 right-0 z-40 bg-background/85 backdrop-blur-xl border-t border-border">
+        <div className="relative grid grid-cols-5 h-16 items-center px-2 pb-[env(safe-area-inset-bottom)]">
+          {navItems.slice(0, 2).map((item) => {
+            const active = item.exact ? pathname === item.to : pathname.startsWith(item.to);
+            const Icon = item.icon;
+            return (
+              <Link key={item.to} to={item.to} className="flex flex-col items-center justify-center gap-0.5">
                 <Icon
-                  className={cn("h-[22px] w-[22px]", active ? "text-primary" : "text-muted-foreground")}
+                  className={cn("h-[22px] w-[22px]", active ? "text-neon" : "text-muted-foreground")}
                   strokeWidth={active ? 2.4 : 2}
                 />
                 <span className={cn("text-[10px]", active ? "text-foreground font-semibold" : "text-muted-foreground")}>
-                  {t.label}
+                  {item.label}
                 </span>
-              </NavLink>
-            </li>
-          );
-        })}
+              </Link>
+            );
+          })}
 
-        {/* Center create button */}
-        <li className="flex-1 flex items-center justify-center">
-          <NavLink
-            to="/create"
-            aria-label="Create"
-            className="-mt-7 h-14 w-14 rounded-full bg-gradient-mint text-primary-foreground flex items-center justify-center shadow-mint active:scale-95 transition border-4 border-background"
-          >
-            <Plus className="h-7 w-7" strokeWidth={3} />
-          </NavLink>
-        </li>
+          <div className="flex items-center justify-center">
+            <button
+              onClick={() => setCreateOpen(true)}
+              aria-label="Create"
+              className="-mt-7 h-14 w-14 rounded-full bg-neon text-neon-foreground flex items-center justify-center neon-glow active:scale-95 transition border-4 border-background"
+            >
+              <Plus className="h-7 w-7" strokeWidth={3} />
+            </button>
+          </div>
 
-        {tabs.slice(3).map((t) => {
-          const Icon = t.icon;
-          const active = t.exact ? loc.pathname === t.to : loc.pathname.startsWith(t.to);
-          return (
-            <li key={t.to} className="flex-1">
-              <NavLink
-                to={t.to}
-                className="flex flex-col items-center justify-center gap-0.5"
-              >
+          {navItems.slice(2).map((item) => {
+            const active = item.exact ? pathname === item.to : pathname.startsWith(item.to);
+            const Icon = item.icon;
+            return (
+              <Link key={item.to} to={item.to} className="flex flex-col items-center justify-center gap-0.5">
                 <Icon
-                  className={cn("h-[22px] w-[22px]", active ? "text-primary" : "text-muted-foreground")}
+                  className={cn("h-[22px] w-[22px]", active ? "text-neon" : "text-muted-foreground")}
                   strokeWidth={active ? 2.4 : 2}
                 />
                 <span className={cn("text-[10px]", active ? "text-foreground font-semibold" : "text-muted-foreground")}>
-                  {t.label}
+                  {item.label}
                 </span>
-              </NavLink>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
+      <CreateSheet open={createOpen} onClose={() => setCreateOpen(false)} />
+    </>
   );
 }
