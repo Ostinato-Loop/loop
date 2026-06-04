@@ -57,6 +57,20 @@ async function handleQueue(
 }
 
 export default {
-  fetch: app.fetch,
+  async fetch(req: Request, env: CloudflareEnv, ctx: ExecutionContext): Promise<Response> {
+    // ── FAIL FAST — exit with 503 if critical secrets are absent ─────────
+    const missing: string[] = [];
+    if (!env.RALD_JWT_SECRET)           missing.push('RALD_JWT_SECRET');
+    if (!env.LOOP_JWT_SECRET)           missing.push('LOOP_JWT_SECRET');
+    if (!env.SUPABASE_URL)              missing.push('SUPABASE_URL');
+    if (!env.SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+    if (missing.length) {
+      console.error(`[FATAL] loop-api: missing required secrets: ${missing.join(', ')}`);
+      return new Response(JSON.stringify({ error: 'Service misconfigured', missing, service: 'loop-api' }), {
+        status: 503, headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return app.fetch(req, env, ctx);
+  },
   queue: handleQueue,
 };
