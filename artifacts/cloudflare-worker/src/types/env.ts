@@ -18,7 +18,8 @@ export interface CloudflareEnv {
   SUPABASE_SERVICE_ROLE_KEY: string;
   TERMII_API_KEY: string;
   TERMII_SENDER_ID: string;
-  LOOP_JWT_SECRET: string;
+  /** @deprecated Phase H — RALD JWT replaces Loop JWT. Remove after migration complete. */
+  LOOP_JWT_SECRET?: string;
   OPENROUTER_API_KEY: string;
 
   // RALD SSO — shared secret for local JWT verification (mirrors rald-auth-core)
