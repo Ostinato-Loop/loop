@@ -229,10 +229,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    // Phase 1 — Identity Completion: logout propagation
+    // 1. Revoke the Loop API session (clears server-side state, invalidates cookie)
+    const raw = localStorage.getItem(TOKEN_KEY);
+    if (raw) {
+      try {
+        await fetch(`${API_BASE}/api/auth/logout`, {
+          method: "POST",
+          credentials: "include",
+          headers: { Authorization: `Bearer ${raw}` },
+        });
+      } catch { /* non-blocking — clear local state regardless */ }
+    }
+    // 2. Clear all local tokens
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(RALD_TOKEN_KEY);
     setSession(null);
     setProfile(null);
+    // 3. Propagate logout to profiles.rald.cloud (clears the RALD master session)
+    //    profiles handles the cross-app cookie revocation
+    window.location.href = `${RALD_AUTH_UI}/logout?app_id=loop&redirect_to=${encodeURIComponent(window.location.origin + "/")}`;
   }, []);
 
   return (
