@@ -69,6 +69,7 @@ export default function RoomLaunchPage() {
       const t = setTimeout(() => setSpeakState(r.id, "speaker"), 1200);
       return () => clearTimeout(t);
     }
+    return undefined;
   }, [liveQueue, sState, r.id, setQueuePos, setSpeakState]);
 
   const audience = Array.from({ length: 12 }).map((_, i) => ({
