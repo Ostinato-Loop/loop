@@ -1,21 +1,27 @@
 import { useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoomCard } from "@/components/rooms/room-card";
 import { listRooms, type Room, type RoomCategory } from "@/lib/api/rooms";
 import {
+  searchRelatedPeople, getPeopleSuggestions, hasRaldIdentity,
+  type PersonResult, type PersonSuggestion,
+} from "@/lib/api/people";
+import {
   Search, Sparkles, Radio, Globe2, TrendingUp,
   Mic, Calendar, Briefcase, Newspaper, ChevronRight,
+  Users, BadgeCheck, UserPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /* ── feed tab types ─────────────────────────────────────────────────── */
-type FeedTab = "all" | "live" | "near" | "trending" | "events";
+type FeedTab = "all" | "live" | "near" | "trending" | "events" | "people";
 
 const FEED_TABS: { key: FeedTab; label: string; icon: typeof Radio }[] = [
   { key: "all",      label: "All",      icon: Globe2 },
   { key: "live",     label: "Live now", icon: Radio },
+  { key: "people",   label: "People",   icon: Users },
   { key: "near",     label: "Near me",  icon: Globe2 },
   { key: "trending", label: "Trending", icon: TrendingUp },
   { key: "events",   label: "Events",   icon: Calendar },
@@ -30,6 +36,24 @@ const CATEGORIES: { key: RoomCategory | "all"; label: string; emoji: string }[] 
   { key: "entertainment", label: "Culture", emoji: "🎬" },
   { key: "news",          label: "News",    emoji: "📡" },
 ];
+
+/* ── avatar helpers ─────────────────────────────────────────────────── */
+const AVATAR_COLORS = [
+  "from-emerald-500 to-teal-500",
+  "from-fuchsia-500 to-purple-500",
+  "from-amber-500 to-orange-500",
+  "from-sky-500 to-blue-500",
+  "from-rose-500 to-pink-500",
+  "from-mint to-mint-glow",
+];
+function avatarColor(seed: string) {
+  let n = 0;
+  for (let i = 0; i < seed.length; i++) n += seed.charCodeAt(i);
+  return AVATAR_COLORS[n % AVATAR_COLORS.length];
+}
+function initials(name: string) {
+  return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+}
 
 /* ── Sprint 01: honest empty states — no mock enrichment items ──────── */
 function DiscussionsEmpty() {
@@ -80,6 +104,228 @@ function Skeleton() {
   );
 }
 
+function PeopleSkeleton() {
+  return (
+    <div className="space-y-2">
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="h-16 animate-pulse rounded-2xl bg-surface" />
+      ))}
+    </div>
+  );
+}
+
+/* ── person card ────────────────────────────────────────────────────── */
+type PersonCardProps = {
+  userId: string;
+  username: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  isVerified: boolean;
+  raldId: string;
+  score: number;
+  scoreLabel?: string;
+};
+
+function PersonCard({ userId, username, displayName, avatarUrl, isVerified, raldId, score, scoreLabel }: PersonCardProps) {
+  const label = displayName ?? username ?? raldId;
+  const sub   = username ? `@${username}` : raldId;
+  const color = avatarColor(userId);
+
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface/60 px-4 py-3 active:bg-surface transition-colors">
+      {/* Avatar */}
+      <div className="relative shrink-0">
+        {avatarUrl ? (
+          <img
+            src={avatarUrl}
+            alt={label}
+            className="h-11 w-11 rounded-full object-cover"
+          />
+        ) : (
+          <div className={cn("h-11 w-11 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-sm font-bold", color)}>
+            {initials(label)}
+          </div>
+        )}
+        {isVerified && (
+          <BadgeCheck className="absolute -bottom-0.5 -right-0.5 h-4 w-4 text-primary fill-background" />
+        )}
+      </div>
+
+      {/* Info */}
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold leading-tight">{label}</p>
+        <p className="truncate text-[11px] text-muted-foreground">{sub}</p>
+        {score > 0 && (
+          <p className="text-[10px] text-primary font-medium mt-0.5">
+            {scoreLabel ?? `Score ${score}`}
+          </p>
+        )}
+      </div>
+
+      {/* Action */}
+      <button
+        type="button"
+        className="shrink-0 flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary active:scale-95 transition-transform"
+        aria-label={`Connect with ${label}`}
+      >
+        <UserPlus className="h-3 w-3" />
+        Connect
+      </button>
+    </div>
+  );
+}
+
+/* ── people tab — search + suggestions ─────────────────────────────── */
+function PeopleTab() {
+  const [query, setQuery]             = useState("");
+  const [results, setResults]         = useState<PersonResult[] | null>(null);
+  const [suggestions, setSuggestions] = useState<PersonSuggestion[] | null>(null);
+  const [searching, setSearching]     = useState(false);
+  const [loadingSugg, setLoadingSugg] = useState(true);
+  const [error, setError]             = useState<string | null>(null);
+  const debounceRef                   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasIdentity                   = hasRaldIdentity();
+
+  // Load "People you may know" on mount
+  useEffect(() => {
+    if (!hasIdentity) { setLoadingSugg(false); return; }
+    getPeopleSuggestions(10)
+      .then((s) => { setSuggestions(s); setLoadingSugg(false); })
+      .catch((e: Error) => { setError(e.message); setLoadingSugg(false); });
+  }, [hasIdentity]);
+
+  // Debounced search
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!query.trim()) { setResults(null); return; }
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      setError(null);
+      try {
+        const r = await searchRelatedPeople(query.trim(), 20);
+        setResults(r);
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [query]);
+
+  if (!hasIdentity) {
+    return (
+      <div className="rounded-2xl border border-dashed border-border bg-surface/50 p-8 text-center space-y-2">
+        <Users className="h-8 w-8 text-muted-foreground/40 mx-auto" />
+        <p className="text-sm font-semibold">Connect your RALD identity</p>
+        <p className="text-xs text-muted-foreground">Sign in via profiles.rald.cloud to discover people you know.</p>
+      </div>
+    );
+  }
+
+  const showSearch  = query.trim().length > 0;
+  const showResults = showSearch && !searching;
+
+  return (
+    <div className="space-y-4">
+      {/* Search bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search people by name or @handle…"
+          className="w-full rounded-xl border border-border bg-surface pl-10 pr-4 py-2.5 text-sm outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-colors"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <p className="text-xs text-destructive">{error}</p>
+      )}
+
+      {/* Search results */}
+      {showSearch && (
+        <section>
+          <h2 className="font-display text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
+            {searching ? "Searching…" : `Results for "${query}"`}
+          </h2>
+          {searching ? (
+            <PeopleSkeleton />
+          ) : showResults && results !== null ? (
+            results.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border p-6 text-center">
+                <p className="text-sm font-semibold">No results</p>
+                <p className="text-xs text-muted-foreground mt-1">Try a different name or @handle.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {results.map((p) => (
+                  <PersonCard
+                    key={p.user_id}
+                    userId={p.user_id}
+                    username={p.username}
+                    displayName={p.display_name}
+                    avatarUrl={p.avatar_url}
+                    isVerified={p.is_verified}
+                    raldId={p.rald_id}
+                    score={p.connection_score}
+                    scoreLabel={p.connection_score > 0 ? `Connection score ${p.connection_score}` : undefined}
+                  />
+                ))}
+              </div>
+            )
+          ) : null}
+        </section>
+      )}
+
+      {/* Suggestions — shown when not actively searching */}
+      {!showSearch && (
+        <section>
+          <div className="mb-3 flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            <h2 className="font-display text-xs font-bold uppercase tracking-wider">People you may know</h2>
+          </div>
+          {loadingSugg ? (
+            <PeopleSkeleton />
+          ) : !suggestions || suggestions.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-2">
+              <Users className="h-8 w-8 text-muted-foreground/40 mx-auto" />
+              <p className="text-sm font-semibold">No suggestions yet</p>
+              <p className="text-xs text-muted-foreground">Join rooms and connect with more people to grow your network.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {suggestions.map((p) => (
+                <PersonCard
+                  key={p.user_id}
+                  userId={p.user_id}
+                  username={p.username}
+                  displayName={p.display_name}
+                  avatarUrl={p.avatar_url}
+                  isVerified={p.is_verified}
+                  raldId={p.rald_id}
+                  score={p.mutual_score}
+                  scoreLabel={p.mutual_score > 0 ? `Mutual score ${p.mutual_score}` : undefined}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}
+
 /* ── main page ──────────────────────────────────────────────────────── */
 export default function DiscoverPage() {
   const { user, loading, profile } = useAuth();
@@ -95,12 +341,12 @@ export default function DiscoverPage() {
   }, [loading, user, profile, navigate]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || feedTab === "people") return;
     setRooms(null);
     listRooms({ category: category === "all" ? undefined : category })
       .then(setRooms)
       .catch((e: Error) => setError(e.message));
-  }, [category, user]);
+  }, [category, user, feedTab]);
 
   if (loading || !user) {
     return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
@@ -119,6 +365,7 @@ export default function DiscoverPage() {
             <h1 className="font-display text-2xl font-extrabold text-gradient-mint">Feed</h1>
           </div>
           <button
+            type="button"
             className="grid h-10 w-10 place-items-center rounded-full border border-border bg-surface text-foreground active:scale-95 transition-transform"
             aria-label="Search"
           >
@@ -134,6 +381,7 @@ export default function DiscoverPage() {
             return (
               <button
                 key={t.key}
+                type="button"
                 onClick={() => setFeedTab(t.key)}
                 className={cn(
                   "shrink-0 flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors",
@@ -149,27 +397,33 @@ export default function DiscoverPage() {
           })}
         </div>
 
-        {/* Category chips */}
-        <div className="hide-scrollbar flex gap-1.5 overflow-x-auto px-5 pb-3">
-          {CATEGORIES.map((c) => (
-            <button
-              key={c.key}
-              onClick={() => setCategory(c.key)}
-              className={cn(
-                "shrink-0 rounded-full px-3 py-1 text-[11px] font-medium transition-colors",
-                category === c.key
-                  ? "bg-primary/15 text-primary border border-primary/40"
-                  : "bg-surface text-muted-foreground border border-border",
-              )}
-            >
-              {c.emoji && <span className="mr-1">{c.emoji}</span>}{c.label}
-            </button>
-          ))}
-        </div>
+        {/* Category chips — hidden on People tab */}
+        {feedTab !== "people" && (
+          <div className="hide-scrollbar flex gap-1.5 overflow-x-auto px-5 pb-3">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setCategory(c.key)}
+                className={cn(
+                  "shrink-0 rounded-full px-3 py-1 text-[11px] font-medium transition-colors",
+                  category === c.key
+                    ? "bg-primary/15 text-primary border border-primary/40"
+                    : "bg-surface text-muted-foreground border border-border",
+                )}
+              >
+                {c.emoji && <span className="mr-1">{c.emoji}</span>}{c.label}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       <div className="px-5 py-4 space-y-6 pb-8">
         {error && <p className="text-sm text-destructive">{error}</p>}
+
+        {/* ── People tab ── */}
+        {feedTab === "people" && <PeopleTab />}
 
         {/* ── Live strip ── */}
         {(feedTab === "all" || feedTab === "live") && liveRooms.length > 0 && (
@@ -181,7 +435,7 @@ export default function DiscoverPage() {
                   Live now · {liveRooms.length}
                 </h2>
               </div>
-              <button className="flex items-center gap-1 text-xs text-primary font-semibold">
+              <button type="button" className="flex items-center gap-1 text-xs text-primary font-semibold">
                 See all <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
