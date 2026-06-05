@@ -23,18 +23,13 @@ import { supabase } from "@/integrations/supabase/client";
 
   /** Converts raw Supabase/PostgREST errors into user-safe messages. */
   function sanitiseRoomError(error: { code?: string; message?: string }, context: string): Error {
-    // PGRST205 = relation not found in PostgREST schema cache
     if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
-      console.warn(`[rooms] ${context}: schema cache miss — table may be initialising`);
+      console.warn(`[rooms] ${context}: schema cache miss`);
       return new Error("Rooms are temporarily unavailable. Please try again in a moment.");
     }
-    // 42501 = RLS permission denied
     if (error.code === "42501") return new Error("You don't have permission to perform this action.");
-    // 23503 = FK violation (e.g. host profile missing)
     if (error.code === "23503") return new Error("Your profile isn't set up yet. Please complete onboarding first.");
-    // 23505 = unique violation
     if (error.code === "23505") return new Error("A room with these details already exists.");
-    // Network / unknown
     console.error(`[rooms] ${context} error:`, error.code, error.message);
     return new Error("Something went wrong. Please try again.");
   }
@@ -49,7 +44,6 @@ import { supabase } from "@/integrations/supabase/client";
     if (opts?.category) q = q.eq("category", opts.category);
     const { data, error } = await q;
     if (error) {
-      // PGRST205 during cold start — return empty list silently
       if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
         console.warn("[rooms] listRooms: schema cache miss, returning []");
         return [];
@@ -72,7 +66,7 @@ import { supabase } from "@/integrations/supabase/client";
     return data as Room | null;
   }
 
-  /** createRoom — userId comes from useAuth().user.id (Loop custom JWT) */
+  /** createRoom — creates the room and immediately marks it live. */
   export async function createRoom(
     userId: string,
     input: {
@@ -93,10 +87,13 @@ import { supabase } from "@/integrations/supabase/client";
         visibility: input.visibility,
         tags: input.tags ?? [],
         host_id: userId,
+        is_live: true,       // room is live as soon as created
+        audience_count: 1,   // host counts as first listener
       })
       .select("*")
       .single();
     if (error) throw sanitiseRoomError(error, "createRoom");
+    // Add host as participant
     await supabase.from("room_participants").insert({
       room_id: data.id,
       user_id: userId,
@@ -105,15 +102,34 @@ import { supabase } from "@/integrations/supabase/client";
     return data as Room;
   }
 
+  /** Mark a room live or ended. */
+  export async function setRoomLive(roomId: string, isLive: boolean): Promise<void> {
+    await supabase
+      .from("rooms")
+      .update({ is_live: isLive, ...(isLive ? {} : { ended_at: new Date().toISOString() }) })
+      .eq("id", roomId);
+  }
+
+  /** Increment/decrement audience_count by delta. */
+  export async function adjustAudienceCount(roomId: string, delta: 1 | -1): Promise<void> {
+    const { data } = await supabase.from("rooms").select("audience_count").eq("id", roomId).single();
+    if (data) {
+      const next = Math.max(0, (data.audience_count ?? 0) + delta);
+      await supabase.from("rooms").update({ audience_count: next }).eq("id", roomId);
+    }
+  }
+
   export async function joinRoom(roomId: string, userId: string): Promise<void> {
     const { error } = await supabase
       .from("room_participants")
       .upsert({ room_id: roomId, user_id: userId, role: "listener" }, { onConflict: "room_id,user_id" });
     if (error) throw sanitiseRoomError(error, "joinRoom");
+    await adjustAudienceCount(roomId, 1).catch(() => null); // non-blocking
   }
 
   export async function leaveRoom(roomId: string, userId: string): Promise<void> {
     await supabase.from("room_participants").delete().match({ room_id: roomId, user_id: userId });
+    await adjustAudienceCount(roomId, -1).catch(() => null); // non-blocking
   }
 
   export async function listParticipants(roomId: string) {
