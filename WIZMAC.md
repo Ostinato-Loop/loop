@@ -340,3 +340,47 @@ profiles.rald.cloud          ← Identity Authority (THE truth)
 
 *WIZMAC v1.2 — Updated June 2026 — LILCKY STUDIO LIMITED*
 *This document is the single source of truth for RALD platform operations.*
+
+---
+
+## Sprint: Hardening + Trust & Positioning — 2026-06-05
+
+### CI Fix
+- **Root cause of 5 consecutive CI failures**: `ended_at` column referenced in `artifacts/loop/src/lib/api/rooms.ts:109` (`setRoomLive()` function). Column does not exist — TypeScript's excess property check correctly blocked CI.
+- **Fix applied**: Removed `ended_at` from `.update()` call. Room lifecycle: `is_live=false` + `updated_at` (auto-updated by Supabase).
+- **CI status after fix**: ✅ loop CI + Deploy Loop + Deploy Pages — all green.
+
+### New Endpoint: Public Rooms Listing
+```
+GET /api/rooms
+GET https://loop-api.rald.cloud/api/rooms
+```
+- No authentication required
+- Returns paginated public rooms ordered by: `is_live DESC, audience_count DESC, created_at DESC`
+- Query params: `?category=`, `?limit=`, `?offset=`
+- Joins host profile from `profiles` table
+
+### Dependency Added
+`@supabase/supabase-js ^2.49.8` added to `artifacts/cloudflare-worker/package.json`.
+
+### Loop Marketing Page Created
+New page at `https://rald.cloud/loop` (in `rald-marketing` artifact):
+- Core message: "Real-time voice communities built around relationships."
+- Features: Live Voice Rooms, Relationship-First Design, Verified Identities, Pan-African Context
+- Live Room visualizer (interactive UI mockup with waveform)
+- 3-step "How Loop works" section
+- Identity Axiom explained to consumers
+
+### Key Schema Rules (DO NOT VIOLATE)
+- `rooms.ended_at` — DOES NOT EXIST. Never reference this column.
+- Room end state: `is_live = false`. `updated_at` records when.
+- `loop-api.rald.cloud/api/rooms` — returns `{ rooms: [], count: 0, offset: 0, limit: 20 }` (empty until real rooms created)
+
+### Live Endpoints Post-Sprint
+```
+loop-api.rald.cloud/health        → 200 { service: "loop-api", version: "1.0.0" }
+loop-api.rald.cloud/api/rooms     → 200 { rooms: [], count: 0 }
+loop.rald.cloud                   → 200 (frontend deployed via CI)
+```
+
+*Updated 2026-06-05 — Hardening Sprint*
