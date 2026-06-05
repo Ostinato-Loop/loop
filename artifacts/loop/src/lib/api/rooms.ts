@@ -104,9 +104,10 @@ import { supabase } from "@/integrations/supabase/client";
 
   /** Mark a room live or ended. */
   export async function setRoomLive(roomId: string, isLive: boolean): Promise<void> {
+    // Note: rooms table does not have an ended_at column — track room lifecycle via is_live + updated_at only.
     await supabase
       .from("rooms")
-      .update({ is_live: isLive, ...(isLive ? {} : { ended_at: new Date().toISOString() }) })
+      .update({ is_live: isLive })
       .eq("id", roomId);
   }
 
