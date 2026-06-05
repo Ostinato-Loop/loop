@@ -60,7 +60,9 @@ const RALD_TOKEN_KEY  = "rald_master_token";
 const API_BASE        = import.meta.env.VITE_API_BASE_URL ?? "";
 
 const RALD_AUTH_UI    = (import.meta.env.VITE_RALD_AUTH_URL as string | undefined) ?? "https://profiles.rald.cloud";
-const MESSENGER_URL   = "https://messenger.rald.cloud";
+// chat.rald.cloud is the Messenger frontend SPA (Cloudflare Pages).
+// messenger.rald.cloud is the API worker — do NOT navigate users there directly.
+const MESSENGER_URL   = (import.meta.env.VITE_MESSENGER_URL as string | undefined) ?? "https://chat.rald.cloud";
 const PROFILES_URL    = "https://profiles.rald.cloud";
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
