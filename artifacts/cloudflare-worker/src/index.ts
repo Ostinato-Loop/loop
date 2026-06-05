@@ -26,6 +26,7 @@ const app = new Hono<{ Bindings: CloudflareEnv }>();
 app.use("*", cors());
 
 // ── Routes ────────────────────────────────────────────────────────────
+app.route("/health",             health);
 app.route("/api/health",         health);
 app.route("/api/auth",           auth);
 app.route("/api/auth/rald-sso",  raldSso);
