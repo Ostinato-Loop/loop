@@ -345,7 +345,10 @@ export default function DiscoverPage() {
     setRooms(null);
     listRooms({ category: category === "all" ? undefined : category })
       .then(setRooms)
-      .catch((e: Error) => setError(e.message));
+      .catch((e: Error) => {
+        console.error("[discover] listRooms:", e.message);
+        setError(e.message);
+      });
   }, [category, user, feedTab]);
 
   if (loading || !user) {
@@ -420,7 +423,12 @@ export default function DiscoverPage() {
       </header>
 
       <div className="px-5 py-4 space-y-6 pb-8">
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && (
+            <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 flex items-center gap-2.5">
+              <span className="text-base" aria-hidden>⚠️</span>
+              <p className="text-sm font-medium text-destructive">{error}</p>
+            </div>
+          )}
 
         {/* ── People tab ── */}
         {feedTab === "people" && <PeopleTab />}
