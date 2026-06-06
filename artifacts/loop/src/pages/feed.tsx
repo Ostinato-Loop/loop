@@ -5,12 +5,17 @@
 //   when API returns zero results.
 // P0-006 FIX: Category chips are wired to state. Selecting a category
 //   re-fetches rooms with the category filter applied.
+// AT-LOP-007 FIX: Onboarding interests are now read from profile (server) and
+//   loop-store (local fallback) and used to surface a "Picked for you" section
+//   when the user is on the "For you" tab with no explicit category filter.
 // LILCKY STUDIO LIMITED
 
 import { Link } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import { Search, Bell, Radio } from "lucide-react";
 import { listRooms, type Room as ApiRoom, type RoomCategory } from "@/lib/api/rooms";
+import { useAuth } from "@/hooks/use-auth";
+import { useLoop } from "@/lib/loop-store";
 import { LoopMark } from "@/components/loop-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { cn } from "@/lib/utils";
@@ -26,8 +31,37 @@ const CATEGORIES = [
   { label: "Business",value: "business" },
 ];
 
+// Map interest slugs (from profile/onboarding) → Loop category values
+const INTEREST_TO_CATEGORY: Record<string, string> = {
+  music: "music",    tech: "tech",        civic: "civic",
+  business: "business", sports: "sports", education: "tech",
+  community: "civic", africa: "africa",   campus: "campus",
+  commentary: "civic", news: "civic",     radio: "music",
+  "dj-session": "music", general: "",
+};
+
 export default function FeedPage() {
   const [activeCategory, setActiveCategory] = useState<string>("");
+  const { profile } = useAuth();
+  const { interests: localInterests } = useLoop();
+
+  // AT-LOP-007: derive interest categories from server profile (primary)
+  // or local loop-store (fallback from onboarding step).
+  const interests: string[] = (() => {
+    if (profile?.interests && profile.interests.length > 0) {
+      return [...new Set(
+        profile.interests
+          .map((i) => INTEREST_TO_CATEGORY[i.toLowerCase()] ?? "")
+          .filter(Boolean),
+      )];
+    }
+    return [...new Set(
+      Object.keys(localInterests)
+        .filter((k) => localInterests[k])
+        .map((k) => INTEREST_TO_CATEGORY[k.toLowerCase()] ?? "")
+        .filter(Boolean),
+    )];
+  })();
 
   return (
     <AppShell>
@@ -37,7 +71,7 @@ export default function FeedPage() {
           active={activeCategory}
           onChange={setActiveCategory}
         />
-        <LiveStrip category={activeCategory} />
+        <LiveStrip category={activeCategory} interests={interests} />
       </div>
     </AppShell>
   );
@@ -103,11 +137,13 @@ type FeedState = "loading" | "error" | "empty" | "ready";
 
 interface LiveStripProps {
   category: string;
+  interests: string[];
 }
 
-function LiveStrip({ category }: LiveStripProps) {
+function LiveStrip({ category, interests }: LiveStripProps) {
   const [rooms, setRooms] = useState<ApiRoom[]>([]);
   const [state, setState] = useState<FeedState>("loading");
+  const [interestRooms, setInterestRooms] = useState<ApiRoom[]>([]);
 
   const fetchRooms = useCallback(() => {
     setState("loading");
@@ -118,6 +154,17 @@ function LiveStrip({ category }: LiveStripProps) {
       })
       .catch(() => setState("error"));
   }, [category]);
+
+  // AT-LOP-007: Personalised picks — fetch top-interest rooms on "For you" tab
+  useEffect(() => {
+    if (category === "" && interests.length > 0) {
+      listRooms({ category: interests[0] as RoomCategory, limit: 5 })
+        .then(setInterestRooms)
+        .catch(() => setInterestRooms([]));
+    } else {
+      setInterestRooms([]);
+    }
+  }, [category, interests]);
 
   useEffect(() => {
     fetchRooms();
@@ -167,16 +214,48 @@ function LiveStrip({ category }: LiveStripProps) {
     );
   }
 
+  // Deduplicate: don't show interest rooms again in the main list
+  const interestIds = new Set(interestRooms.map((r) => r.id));
+  const mainRooms = rooms.filter((r) => !interestIds.has(r.id));
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-1.5 mb-2">
-        <span className="h-2 w-2 rounded-full bg-live animate-pulse" />
-        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          {category ? `${category} · Live` : "Live now"}
-        </span>
-        <span className="ml-auto text-xs text-muted-foreground">{rooms.length} rooms</span>
-      </div>
-      {rooms.map((room) => (
+      {/* AT-LOP-007: Personalised section — shown when user has interests and is on For You */}
+      {interestRooms.length > 0 && category === "" && (
+        <>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-bold text-primary">Picked for you</span>
+            <span className="text-[10px] text-muted-foreground capitalize">
+              · {interestRooms[0]?.category}
+            </span>
+          </div>
+          {interestRooms.map((room) => (
+            <RoomCard key={`interest-${room.id}`} room={room} />
+          ))}
+          {mainRooms.length > 0 && (
+            <div className="flex items-center gap-1.5 pt-1">
+              <span className="h-2 w-2 rounded-full bg-live animate-pulse" />
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                All live rooms
+              </span>
+              <span className="ml-auto text-xs text-muted-foreground">{rooms.length} rooms</span>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Standard header when no personalization */}
+      {!(interestRooms.length > 0 && category === "") && (
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="h-2 w-2 rounded-full bg-live animate-pulse" />
+          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            {category ? `${category} · Live` : "Live now"}
+          </span>
+          <span className="ml-auto text-xs text-muted-foreground">{rooms.length} rooms</span>
+        </div>
+      )}
+
+      {mainRooms.map((room) => (
         <RoomCard key={room.id} room={room} />
       ))}
     </div>
