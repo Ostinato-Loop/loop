@@ -10,7 +10,7 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import { Search, Bell, Radio } from "lucide-react";
-import { listRooms, type Room as ApiRoom } from "@/lib/api/rooms";
+import { listRooms, type Room as ApiRoom, type RoomCategory } from "@/lib/api/rooms";
 import { LoopMark } from "@/components/loop-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { cn } from "@/lib/utils";
@@ -111,7 +111,7 @@ function LiveStrip({ category }: LiveStripProps) {
 
   const fetchRooms = useCallback(() => {
     setState("loading");
-    listRooms({ limit: 20, category: category || undefined })
+    listRooms({ limit: 20, category: (category as RoomCategory) || undefined })
       .then((data) => {
         setRooms(data);
         setState(data.length === 0 ? "empty" : "ready");
@@ -201,12 +201,12 @@ function RoomCard({ room }: { room: ApiRoom }) {
             )}
           </div>
           <h3 className="font-semibold text-sm leading-tight truncate">{room.title}</h3>
-          {room.topic && (
-            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{room.topic}</p>
+          {room.description && (
+            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{room.description}</p>
           )}
         </div>
         <div className="text-right shrink-0">
-          <p className="text-xs text-muted-foreground">{room.participant_count ?? 0} listening</p>
+          <p className="text-xs text-muted-foreground">{room.audience_count} listening</p>
         </div>
       </div>
     </Link>
