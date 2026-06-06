@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, BadgeCheck, Hand, Mic, MicOff,
-  Send, Sparkles, Users, X, Shield, Star,
+  Send, Sparkles, Users, X, Star,
   PhoneOff, Crown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
