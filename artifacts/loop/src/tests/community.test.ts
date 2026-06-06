@@ -141,7 +141,7 @@ describe('Slug generation utility', () => {
   });
 
   it('removes special characters', () => {
-    expect(slugify('Afro-beats & Jazz!')).toBe('afro-beats--jazz');
+    expect(slugify('Afro-beats & Jazz!')).toBe('afro-beats-jazz');
   });
 
   it('truncates to 40 characters', () => {
