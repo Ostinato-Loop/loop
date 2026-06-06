@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, authedSupabase } from "@/integrations/supabase/client";
 
 // Phase H: Room types expanded to include all 7 Loop Room categories
 // Community, News, Commentary, Radio, DJ Session, Education, Business
@@ -47,6 +47,8 @@ function sanitiseRoomError(error: { code?: string; message?: string }, context: 
   return new Error("Something went wrong. Please try again.");
 }
 
+// ── Public reads — anon client, no auth token required ──────────────────────
+
 export async function listRooms(opts?: { category?: RoomCategory; limit?: number }): Promise<Room[]> {
   let q = supabase
     .from("rooms")
@@ -79,72 +81,6 @@ export async function getRoom(id: string): Promise<Room | null> {
   return data as Room | null;
 }
 
-/** createRoom — creates the room and immediately marks it live. */
-export async function createRoom(
-  userId: string,
-  input: {
-    title: string;
-    description?: string;
-    category: RoomCategory;
-    visibility: RoomVisibility;
-    tags?: string[];
-  },
-): Promise<Room> {
-  if (!userId) throw new Error("Not signed in");
-  const { data, error } = await supabase
-    .from("rooms")
-    .insert({
-      title: input.title,
-      description: input.description ?? null,
-      category: input.category,
-      visibility: input.visibility,
-      tags: input.tags ?? [],
-      host_id: userId,
-      is_live: true,       // room is live as soon as created
-      audience_count: 1,   // host counts as first listener
-    })
-    .select("*")
-    .single();
-  if (error) throw sanitiseRoomError(error, "createRoom");
-  // Add host as participant
-  await supabase.from("room_participants").insert({
-    room_id: data.id,
-    user_id: userId,
-    role: "host",
-  });
-  return data as Room;
-}
-
-/** Mark a room live or ended. */
-export async function setRoomLive(roomId: string, isLive: boolean): Promise<void> {
-  await supabase
-    .from("rooms")
-    .update({ is_live: isLive })
-    .eq("id", roomId);
-}
-
-/** Increment/decrement audience_count by delta. */
-export async function adjustAudienceCount(roomId: string, delta: 1 | -1): Promise<void> {
-  const { data } = await supabase.from("rooms").select("audience_count").eq("id", roomId).single();
-  if (data) {
-    const next = Math.max(0, (data.audience_count ?? 0) + delta);
-    await supabase.from("rooms").update({ audience_count: next }).eq("id", roomId);
-  }
-}
-
-export async function joinRoom(roomId: string, userId: string): Promise<void> {
-  const { error } = await supabase
-    .from("room_participants")
-    .upsert({ room_id: roomId, user_id: userId, role: "listener" }, { onConflict: "room_id,user_id" });
-  if (error) throw sanitiseRoomError(error, "joinRoom");
-  await adjustAudienceCount(roomId, 1).catch(() => null); // non-blocking
-}
-
-export async function leaveRoom(roomId: string, userId: string): Promise<void> {
-  await supabase.from("room_participants").delete().match({ room_id: roomId, user_id: userId });
-  await adjustAudienceCount(roomId, -1).catch(() => null); // non-blocking
-}
-
 export async function listParticipants(roomId: string) {
   const { data, error } = await supabase
     .from("room_participants")
@@ -166,12 +102,86 @@ export async function listMessages(roomId: string, limit = 50) {
   return data ?? [];
 }
 
+// ── Authenticated writes — authed client, loop_token in Authorization header ─
+
+/** createRoom — creates the room row and immediately marks it live. */
+export async function createRoom(
+  userId: string,
+  input: {
+    title: string;
+    description?: string;
+    category: RoomCategory;
+    visibility: RoomVisibility;
+    tags?: string[];
+  },
+): Promise<Room> {
+  if (!userId) throw new Error("Not signed in");
+  const db = authedSupabase();
+  const { data, error } = await db
+    .from("rooms")
+    .insert({
+      title: input.title,
+      description: input.description ?? null,
+      category: input.category,
+      visibility: input.visibility,
+      tags: input.tags ?? [],
+      host_id: userId,
+      is_live: true,
+      audience_count: 1,
+    })
+    .select("*")
+    .single();
+  if (error) throw sanitiseRoomError(error, "createRoom");
+  await db.from("room_participants").insert({
+    room_id: data.id,
+    user_id: userId,
+    role: "host",
+  });
+  return data as Room;
+}
+
+/** Mark a room live or ended. */
+export async function setRoomLive(roomId: string, isLive: boolean): Promise<void> {
+  await authedSupabase()
+    .from("rooms")
+    .update({ is_live: isLive })
+    .eq("id", roomId);
+}
+
+/** Increment/decrement audience_count by delta. */
+export async function adjustAudienceCount(roomId: string, delta: 1 | -1): Promise<void> {
+  const db = authedSupabase();
+  const { data } = await db.from("rooms").select("audience_count").eq("id", roomId).single();
+  if (data) {
+    const next = Math.max(0, (data.audience_count ?? 0) + delta);
+    await db.from("rooms").update({ audience_count: next }).eq("id", roomId);
+  }
+}
+
+export async function joinRoom(roomId: string, userId: string): Promise<void> {
+  const db = authedSupabase();
+  const { error } = await db
+    .from("room_participants")
+    .upsert({ room_id: roomId, user_id: userId, role: "listener" }, { onConflict: "room_id,user_id" });
+  if (error) throw sanitiseRoomError(error, "joinRoom");
+  await adjustAudienceCount(roomId, 1).catch(() => null);
+}
+
+export async function leaveRoom(roomId: string, userId: string): Promise<void> {
+  await authedSupabase().from("room_participants").delete().match({ room_id: roomId, user_id: userId });
+  await adjustAudienceCount(roomId, -1).catch(() => null);
+}
+
 export async function sendMessage(roomId: string, userId: string, content: string): Promise<void> {
-  const { error } = await supabase.from("room_messages").insert({ room_id: roomId, user_id: userId, content });
+  const { error } = await authedSupabase()
+    .from("room_messages")
+    .insert({ room_id: roomId, user_id: userId, content });
   if (error) throw sanitiseRoomError(error, "sendMessage");
 }
 
 export async function sendReaction(roomId: string, userId: string, emoji: string): Promise<void> {
-  const { error } = await supabase.from("room_reactions").insert({ room_id: roomId, user_id: userId, emoji });
+  const { error } = await authedSupabase()
+    .from("room_reactions")
+    .insert({ room_id: roomId, user_id: userId, emoji });
   if (error) throw sanitiseRoomError(error, "sendReaction");
 }
