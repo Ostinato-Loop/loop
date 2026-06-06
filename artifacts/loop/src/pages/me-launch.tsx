@@ -4,7 +4,7 @@
 // the relationship graph API is wired (Sprint 02).
 // LILCKY STUDIO LIMITED
 
-import { Link } from "react-router-dom";
+
 import {
   Settings, BadgeCheck, MapPin, Mic, MessageCircle,
   Heart, Users, Shield, Sun, Moon, Monitor, Copy, ChevronRight, Sparkles,
@@ -19,7 +19,7 @@ import { AppShell } from "@/components/layout/app-shell";
 type Tab = "activity" | "followers" | "following" | "saved";
 
 export default function MeLaunchPage() {
-  const { follows, toggleFollow, notifPrefs, setNotifPref } = useLoop();
+  const { follows: _follows, toggleFollow: _toggleFollow, notifPrefs: _notifPrefs, setNotifPref: _setNotifPref } = useLoop();
   const { user, profile, signOut } = useAuth();
   const [tab, setTab] = useState<Tab>("activity");
   const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");
@@ -205,7 +205,7 @@ function EmptyTab({ icon: Icon, title, body }: { icon: typeof Mic; title: string
   );
 }
 
-function PersonRow({ p, following, onToggle, notifLevel, onNotif, showNotif }: {
+function _PersonRow({ p, following, onToggle, notifLevel, onNotif, showNotif }: {
   p: Person;
   following: boolean;
   onToggle: () => void;
@@ -276,7 +276,7 @@ function IdRow({ k, v, copy, badge }: { k: string; v: string; copy?: boolean; ba
   );
 }
 
-function Activity({ icon: Icon, text, meta }: { icon: typeof Mic; text: string; meta: string }) {
+function _Activity({ icon: Icon, text, meta }: { icon: typeof Mic; text: string; meta: string }) {
   return (
     <div className="flex items-center gap-3 p-3 rounded-2xl bg-card border border-border">
       <div className="h-9 w-9 rounded-xl bg-accent flex items-center justify-center">
@@ -290,4 +290,4 @@ function Activity({ icon: Icon, text, meta }: { icon: typeof Mic; text: string; 
   );
 }
 
-function fmt(n: number) { return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n); }
+function _fmt(n: number) { return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n); }
