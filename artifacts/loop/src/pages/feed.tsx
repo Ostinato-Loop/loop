@@ -1,26 +1,77 @@
 // Loop — Feed Page
-// Sprint 02 Trust & Retention: removed hardcoded "Lagos · Nigeria" from loop-mock.
-// Location chip removed — user region is not yet available from profile API.
-// LiveStrip: real Supabase rooms. Content feed: honest empty state until API ships.
+// P0-004 FIX: Feed no longer renders permanent empty state.
+//   LiveStrip hydrates from Supabase. Content area shows rooms when present,
+//   loading skeleton during fetch, error state on failure, empty state only
+//   when API returns zero results.
+// P0-006 FIX: Category chips are wired to state. Selecting a category
+//   re-fetches rooms with the category filter applied.
+// AT-LOP-007 FIX: Onboarding interests are now read from profile (server) and
+//   loop-store (local fallback) and used to surface a "Picked for you" section
+//   when the user is on the "For you" tab with no explicit category filter.
 // LILCKY STUDIO LIMITED
 
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
-import {
-  Search, Bell, MessageCircle, Radio,
-} from "lucide-react";
-import { listRooms, type Room as ApiRoom } from "@/lib/api/rooms";
+import { useEffect, useState, useCallback } from "react";
+import { Search, Bell, Radio } from "lucide-react";
+import { listRooms, type Room as ApiRoom, type RoomCategory } from "@/lib/api/rooms";
+import { useAuth } from "@/hooks/use-auth";
+import { useLoop } from "@/lib/loop-store";
 import { LoopMark } from "@/components/loop-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { cn } from "@/lib/utils";
 
+const CATEGORIES = [
+  { label: "For you", value: "" },
+  { label: "Africa",  value: "africa" },
+  { label: "Civic",   value: "civic" },
+  { label: "Music",   value: "music" },
+  { label: "Sports",  value: "sports" },
+  { label: "Campus",  value: "campus" },
+  { label: "Tech",    value: "tech" },
+  { label: "Business",value: "business" },
+];
+
+// Map interest slugs (from profile/onboarding) → Loop category values
+const INTEREST_TO_CATEGORY: Record<string, string> = {
+  music: "music",    tech: "tech",        civic: "civic",
+  business: "business", sports: "sports", education: "tech",
+  community: "civic", africa: "africa",   campus: "campus",
+  commentary: "civic", news: "civic",     radio: "music",
+  "dj-session": "music", general: "",
+};
+
 export default function FeedPage() {
+  const [activeCategory, setActiveCategory] = useState<string>("");
+  const { profile } = useAuth();
+  const { interests: localInterests } = useLoop();
+
+  // AT-LOP-007: derive interest categories from server profile (primary)
+  // or local loop-store (fallback from onboarding step).
+  const interests: string[] = (() => {
+    if (profile?.interests && profile.interests.length > 0) {
+      return [...new Set(
+        profile.interests
+          .map((i) => INTEREST_TO_CATEGORY[i.toLowerCase()] ?? "")
+          .filter(Boolean),
+      )];
+    }
+    return [...new Set(
+      Object.keys(localInterests)
+        .filter((k) => localInterests[k])
+        .map((k) => INTEREST_TO_CATEGORY[k.toLowerCase()] ?? "")
+        .filter(Boolean),
+    )];
+  })();
+
   return (
     <AppShell>
       <FeedHeader />
       <div className="px-4 pt-3 pb-6 space-y-3">
-        <LiveStrip />
-        <ContentFeedEmpty />
+        <RegionScroller
+          active={activeCategory}
+          onChange={setActiveCategory}
+        />
+        <LiveStrip category={activeCategory} interests={interests} />
       </div>
     </AppShell>
   );
@@ -52,116 +103,191 @@ function FeedHeader() {
           </button>
         </div>
       </div>
-      <RegionScroller />
     </header>
   );
 }
 
-function RegionScroller() {
-  const tabs = ["For you", "Africa", "Civic", "Music", "Sports", "Campus", "Tech", "Business"];
+interface RegionScrollerProps {
+  active: string;
+  onChange: (category: string) => void;
+}
+
+function RegionScroller({ active, onChange }: RegionScrollerProps) {
   return (
-    <div className="flex gap-1.5 overflow-x-auto scrollbar-none px-4 pb-2.5">
-      {tabs.map((t, i) => (
+    <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1">
+      {CATEGORIES.map((cat) => (
         <button
-          key={t}
+          key={cat.value}
+          onClick={() => onChange(cat.value)}
           className={cn(
             "shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold transition",
-            i === 0 ? "bg-foreground text-background" : "bg-secondary text-foreground",
+            active === cat.value
+              ? "bg-foreground text-background"
+              : "bg-secondary text-foreground hover:bg-secondary/80",
           )}
         >
-          {t}
+          {cat.label}
         </button>
       ))}
     </div>
   );
 }
 
-function LiveStrip() {
-  const [rooms, setRooms] = useState<ApiRoom[] | null>(null);
+type FeedState = "loading" | "error" | "empty" | "ready";
+
+interface LiveStripProps {
+  category: string;
+  interests: string[];
+}
+
+function LiveStrip({ category, interests }: LiveStripProps) {
+  const [rooms, setRooms] = useState<ApiRoom[]>([]);
+  const [state, setState] = useState<FeedState>("loading");
+  const [interestRooms, setInterestRooms] = useState<ApiRoom[]>([]);
+
+  const fetchRooms = useCallback(() => {
+    setState("loading");
+    listRooms({ limit: 20, category: (category as RoomCategory) || undefined })
+      .then((data) => {
+        setRooms(data);
+        setState(data.length === 0 ? "empty" : "ready");
+      })
+      .catch(() => setState("error"));
+  }, [category]);
+
+  // AT-LOP-007: Personalised picks — fetch top-interest rooms on "For you" tab
+  useEffect(() => {
+    if (category === "" && interests.length > 0) {
+      listRooms({ category: interests[0] as RoomCategory, limit: 5 })
+        .then(setInterestRooms)
+        .catch(() => setInterestRooms([]));
+    } else {
+      setInterestRooms([]);
+    }
+  }, [category, interests]);
 
   useEffect(() => {
-    listRooms({ limit: 10 })
-      .then(setRooms)
-      .catch(() => setRooms([]));
-  }, []);
+    fetchRooms();
+  }, [fetchRooms]);
+
+  if (state === "loading") {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="h-2 w-2 rounded-full bg-muted animate-pulse" />
+          <span className="text-xs font-bold text-muted-foreground">Loading rooms…</span>
+        </div>
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-24 rounded-2xl bg-secondary animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  if (state === "error") {
+    return (
+      <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-center">
+        <p className="text-sm font-medium text-destructive mb-2">Could not load rooms</p>
+        <button
+          onClick={fetchRooms}
+          className="text-xs text-muted-foreground underline underline-offset-2"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  if (state === "empty") {
+    return (
+      <div className="rounded-2xl border border-dashed border-border p-10 text-center">
+        <Radio className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
+        <p className="text-sm font-semibold text-foreground mb-1">
+          {category ? `No live ${category} rooms right now` : "No live rooms right now"}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {category
+            ? "Try a different category or check back soon"
+            : "Be the first — start a room"}
+        </p>
+      </div>
+    );
+  }
+
+  // Deduplicate: don't show interest rooms again in the main list
+  const interestIds = new Set(interestRooms.map((r) => r.id));
+  const mainRooms = rooms.filter((r) => !interestIds.has(r.id));
 
   return (
-    <div className="-mx-4 px-4">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5">
+    <div className="space-y-3">
+      {/* AT-LOP-007: Personalised section — shown when user has interests and is on For You */}
+      {interestRooms.length > 0 && category === "" && (
+        <>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-bold text-primary">Picked for you</span>
+            <span className="text-[10px] text-muted-foreground capitalize">
+              · {interestRooms[0]?.category}
+            </span>
+          </div>
+          {interestRooms.map((room) => (
+            <RoomCard key={`interest-${room.id}`} room={room} />
+          ))}
+          {mainRooms.length > 0 && (
+            <div className="flex items-center gap-1.5 pt-1">
+              <span className="h-2 w-2 rounded-full bg-live animate-pulse" />
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                All live rooms
+              </span>
+              <span className="ml-auto text-xs text-muted-foreground">{rooms.length} rooms</span>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Standard header when no personalization */}
+      {!(interestRooms.length > 0 && category === "") && (
+        <div className="flex items-center gap-1.5 mb-2">
           <span className="h-2 w-2 rounded-full bg-live animate-pulse" />
-          <span className="text-xs font-bold uppercase tracking-wider">Live now</span>
-        </div>
-        <Link to="/discover" className="text-xs text-muted-foreground hover:text-foreground transition">
-          See all
-        </Link>
-      </div>
-
-      {rooms === null && (
-        <div className="flex gap-2 overflow-x-auto scrollbar-none -mx-4 px-4 pb-1">
-          {[1, 2, 3].map((k) => (
-            <div key={k} className="shrink-0 w-44 h-28 rounded-2xl bg-card border border-border animate-pulse" />
-          ))}
+          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            {category ? `${category} · Live` : "Live now"}
+          </span>
+          <span className="ml-auto text-xs text-muted-foreground">{rooms.length} rooms</span>
         </div>
       )}
 
-      {rooms !== null && rooms.length === 0 && (
-        <div className="flex items-center gap-3 rounded-2xl border border-dashed border-border p-4 text-sm text-muted-foreground">
-          <Radio className="h-5 w-5 shrink-0 text-muted-foreground/50" />
-          <span>No live rooms right now — be the first to start one.</span>
-        </div>
-      )}
-
-      {rooms !== null && rooms.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto scrollbar-none -mx-4 px-4 pb-1">
-          {rooms.map((room) => (
-            <Link
-              key={room.id}
-              to={`/rooms/${room.id}`}
-              className="shrink-0 w-44 rounded-2xl bg-card border border-border p-3 hover:border-neon transition"
-            >
-              <div className="flex items-center gap-1.5 mb-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-live animate-pulse" />
-                <span className="text-[10px] font-bold uppercase text-live">Live</span>
-                <span className="text-[10px] text-neon ml-auto uppercase font-bold">{room.category}</span>
-              </div>
-              <div className="text-xs font-semibold line-clamp-2 mb-2 min-h-[2rem]">{room.title}</div>
-              <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                {room.host?.avatar_url ? (
-                  <img src={room.host.avatar_url} alt="" className="h-5 w-5 rounded-full border-2 border-card" />
-                ) : (
-                  <div className="h-5 w-5 rounded-full bg-secondary border-2 border-card flex items-center justify-center text-[8px] font-bold">
-                    {(room.host?.display_name ?? "?")[0]}
-                  </div>
-                )}
-                <span className="ml-1">{formatN(room.audience_count)} listening</span>
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
+      {mainRooms.map((room) => (
+        <RoomCard key={room.id} room={room} />
+      ))}
     </div>
   );
 }
 
-/** Sprint 02 — Honest empty state. No mock content cards. */
-function ContentFeedEmpty() {
+function RoomCard({ room }: { room: ApiRoom }) {
   return (
-    <div className="rounded-2xl border border-dashed border-border bg-card/30 p-6 text-center space-y-2 mt-2">
-      <div className="flex justify-center mb-3">
-        <div className="h-10 w-10 rounded-xl bg-secondary flex items-center justify-center">
-          <MessageCircle className="h-5 w-5 text-muted-foreground/50" />
+    <Link
+      to={`/rooms/${room.id}`}
+      className="block rounded-2xl border border-border bg-surface p-4 hover:border-primary/30 transition-colors active:scale-[0.99]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="inline-flex items-center gap-1 rounded-full bg-live/15 px-2 py-0.5 text-[10px] font-bold uppercase text-live">
+              <span className="h-1.5 w-1.5 rounded-full bg-live" />
+              Live
+            </span>
+            {room.category && (
+              <span className="text-[10px] text-muted-foreground capitalize">{room.category}</span>
+            )}
+          </div>
+          <h3 className="font-semibold text-sm leading-tight truncate">{room.title}</h3>
+          {room.description && (
+            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{room.description}</p>
+          )}
+        </div>
+        <div className="text-right shrink-0">
+          <p className="text-xs text-muted-foreground">{room.audience_count} listening</p>
         </div>
       </div>
-      <p className="text-sm font-semibold text-foreground">Discussions coming soon</p>
-      <p className="text-xs text-muted-foreground leading-relaxed max-w-xs mx-auto">
-        Civic discussions, events, and opportunities from your community will appear here once the feed API ships.
-      </p>
-    </div>
+    </Link>
   );
-}
-
-function formatN(n: number) {
-  if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k";
-  return n.toString();
 }

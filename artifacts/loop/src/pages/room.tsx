@@ -1,3 +1,12 @@
+// Loop — Room Page (canonical)
+// P0-002 FIX: Host sees host-only controls (End Room, mic, speaker queue hints).
+//   Listener sees Raise Hand button. Co-host/Speaker see mic toggle.
+//   Role is derived from room_participants.role for the current user.
+// P0-003 FIX: toggleHandRaise broadcasts via Supabase Realtime channel so the
+//   host receives the notification in real-time without a DB migration.
+// P0-007: This file is now routed from App.tsx (/rooms/:roomId → RoomPage).
+// LILCKY STUDIO LIMITED
+
 import { useNavigate, useParams } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
@@ -11,10 +20,12 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, BadgeCheck, Hand, Mic, MicOff,
-  Send, Sparkles, Users, X, Shield, Star,
+  Send, Sparkles, Users, X, Star,
+  PhoneOff, Crown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useLiveKitRoom } from "@/hooks/use-livekit-room";
 
 /* ─── types ──────────────────────────────────────────────────────────── */
 type ParticipantRow = {
@@ -39,7 +50,7 @@ type FloatingReaction = { id: number; emoji: string; x: number; lane: number };
 type ActivityItem = { id: number; text: string };
 
 const REACTIONS = ["🔥", "👏", "❤️", "🎯", "😂", "💯"];
-const LANES = 5; // staggered horizontal lanes
+const LANES = 5;
 
 /* ─── helpers ────────────────────────────────────────────────────────── */
 function roleBadge(role: string) {
@@ -54,7 +65,6 @@ function initials(name: string | null) {
   return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 }
 
-/* colour palette for avatars when no photo */
 const AVATAR_COLORS = [
   "from-emerald-500 to-teal-500",
   "from-fuchsia-500 to-purple-500",
@@ -78,7 +88,6 @@ function SpeakerAvatar({ p, speaking }: { p: ParticipantRow; speaking: boolean }
   return (
     <div className="flex flex-col items-center gap-1.5">
       <div className="relative">
-        {/* speaking ring */}
         {speaking && (
           <>
             <span className="absolute inset-0 rounded-full bg-primary/30 animate-ping" style={{ animationDuration: "1.2s" }} />
@@ -94,7 +103,6 @@ function SpeakerAvatar({ p, speaking }: { p: ParticipantRow; speaking: boolean }
         >
           {initials(name)}
         </div>
-        {/* role badge */}
         {badge && (
           <span className={cn(
             "absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-1.5 py-px text-[8px] font-bold uppercase",
@@ -103,7 +111,6 @@ function SpeakerAvatar({ p, speaking }: { p: ParticipantRow; speaking: boolean }
             {badge.label}
           </span>
         )}
-        {/* verified / creator icon */}
         {p.profiles?.is_verified && (
           <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-background">
             <BadgeCheck className="h-3.5 w-3.5 text-primary" />
@@ -136,6 +143,122 @@ function AudienceAvatar({ p }: { p: ParticipantRow }) {
   );
 }
 
+/* ─── HostControls ───────────────────────────────────────────────────── */
+function HostControls({
+  muted,
+  onToggleMic,
+  onEndRoom,
+  raisedHandCount,
+}: {
+  muted: boolean;
+  onToggleMic: () => void;
+  onEndRoom: () => void;
+  raisedHandCount: number;
+}) {
+  return (
+    <div className="flex items-center justify-between px-4 py-3 gap-3">
+      {/* Mic toggle */}
+      <button
+        onClick={onToggleMic}
+        className={cn(
+          "flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold transition",
+          muted
+            ? "bg-secondary text-foreground"
+            : "bg-primary text-primary-foreground neon-glow",
+        )}
+      >
+        {muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+        {muted ? "Unmute" : "Mute"}
+      </button>
+
+      {/* Raised hands indicator */}
+      {raisedHandCount > 0 && (
+        <div className="flex items-center gap-1.5 rounded-2xl bg-amber-500/15 px-3 py-3">
+          <Hand className="h-4 w-4 text-amber-500" />
+          <span className="text-sm font-bold text-amber-500">{raisedHandCount}</span>
+        </div>
+      )}
+
+      {/* End room */}
+      <button
+        onClick={onEndRoom}
+        className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-destructive/10 py-3 text-sm font-semibold text-destructive transition hover:bg-destructive/20"
+      >
+        <PhoneOff className="h-4 w-4" />
+        End room
+      </button>
+    </div>
+  );
+}
+
+/* ─── SpeakerControls ────────────────────────────────────────────────── */
+function SpeakerControls({
+  muted,
+  onToggleMic,
+  onLeave,
+}: {
+  muted: boolean;
+  onToggleMic: () => void;
+  onLeave: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <button
+        onClick={onToggleMic}
+        className={cn(
+          "flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold transition",
+          muted
+            ? "bg-secondary text-foreground"
+            : "bg-primary text-primary-foreground neon-glow",
+        )}
+      >
+        {muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+        {muted ? "Unmute" : "Mute"}
+      </button>
+      <button
+        onClick={onLeave}
+        className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-secondary text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
+/* ─── ListenerControls ───────────────────────────────────────────────── */
+function ListenerControls({
+  handRaised,
+  onToggleHand,
+  onLeave,
+}: {
+  handRaised: boolean;
+  onToggleHand: () => void;
+  onLeave: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <button
+        onClick={onToggleHand}
+        className={cn(
+          "flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold transition",
+          handRaised
+            ? "bg-amber-500 text-white"
+            : "bg-secondary text-foreground hover:bg-secondary/80",
+        )}
+      >
+        <Hand className="h-4 w-4" />
+        {handRaised ? "Lower hand" : "Raise hand"}
+      </button>
+      <button
+        onClick={onLeave}
+        className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-secondary text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 /* ─── main component ─────────────────────────────────────────────────── */
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -148,37 +271,26 @@ export default function RoomPage() {
   const [floats, setFloats] = useState<FloatingReaction[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [draft, setDraft] = useState("");
-  const [muted, setMuted] = useState(true);
-  const [speakingIds, setSpeakingIds] = useState<Set<string>>(new Set());
+  const { muted, speakingIds, toggleMic, audioState } = useLiveKitRoom(
+    roomId,
+    user?.id,
+    !loading && !!user,
+  );
   const [handRaised, setHandRaised] = useState(false);
+  const [raisedHandCount, setRaisedHandCount] = useState(0);
   const [entered, setEntered] = useState(false);
 
   const floatId = useRef(0);
   const actId = useRef(0);
   const msgEnd = useRef<HTMLDivElement>(null);
   const prevParticipants = useRef<ParticipantRow[]>([]);
+  const eventChannel = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   /* auth guard */
   useEffect(() => {
     if (!loading && !user) navigate("/login");
   }, [user, loading, navigate]);
 
-  /* simulate speaking indicators — random speakers "speak" for realism */
-  useEffect(() => {
-    if (participants.length === 0) return;
-    const speakers = participants.filter((p) => p.role !== "listener");
-    if (speakers.length === 0) return;
-    const tick = setInterval(() => {
-      const active = new Set<string>();
-      speakers.forEach((sp) => {
-        if (Math.random() > 0.5) active.add(sp.user_id);
-      });
-      setSpeakingIds(active);
-    }, 1800);
-    return () => clearInterval(tick);
-  }, [participants]);
-
-  /* add activity item */
   const pushActivity = useCallback((text: string) => {
     const id = ++actId.current;
     setActivity((s) => [...s.slice(-4), { id, text }]);
@@ -210,9 +322,9 @@ export default function RoomPage() {
       }
     })();
 
-    const channel = supabase
+    /* Supabase Realtime channel for DB changes */
+    const dbChannel = supabase
       .channel(`room:${roomId}`)
-      /* new message */
       .on("postgres_changes",
         { event: "INSERT", schema: "public", table: "room_messages", filter: `room_id=eq.${roomId}` },
         async (payload) => {
@@ -222,7 +334,6 @@ export default function RoomPage() {
             .eq("id", m.user_id).maybeSingle();
           setMessages((s) => [...s, { ...m, profiles: prof ?? null } as MessageRow]);
         })
-      /* reaction burst */
       .on("postgres_changes",
         { event: "INSERT", schema: "public", table: "room_reactions", filter: `room_id=eq.${roomId}` },
         (payload) => {
@@ -233,36 +344,40 @@ export default function RoomPage() {
           setFloats((s) => [...s, { id, emoji, x, lane }]);
           setTimeout(() => setFloats((s) => s.filter((f) => f.id !== id)), 2800);
         })
-      /* participant join/leave */
       .on("postgres_changes",
         { event: "*", schema: "public", table: "room_participants", filter: `room_id=eq.${roomId}` },
         async (payload) => {
           const next = await listParticipants(roomId);
           const prev = prevParticipants.current;
-
-          /* detect join */
           if (payload.eventType === "INSERT") {
             const uid = (payload.new as { user_id: string }).user_id;
             const p = (next as ParticipantRow[]).find((x) => x.user_id === uid);
-            const name = p?.profiles?.display_name ?? "Someone";
-            if (uid !== user.id) pushActivity(`${name} joined`);
+            if (uid !== user.id) pushActivity(`${p?.profiles?.display_name ?? "Someone"} joined`);
           }
-          /* detect leave */
           if (payload.eventType === "DELETE") {
             const uid = (payload.old as { user_id: string }).user_id;
             const p = prev.find((x) => x.user_id === uid);
-            const name = p?.profiles?.display_name ?? "Someone";
-            if (uid !== user.id) pushActivity(`${name} left`);
+            if (uid !== user.id) pushActivity(`${p?.profiles?.display_name ?? "Someone"} left`);
           }
-
           prevParticipants.current = next as ParticipantRow[];
           setParticipants(next as ParticipantRow[]);
         })
       .subscribe();
 
+    /* Broadcast channel for raise_hand events (P0-003 host receives) */
+    const evtCh = supabase
+      .channel(`room:${roomId}:events`)
+      .on("broadcast", { event: "raise_hand" }, (payload) => {
+        const { raised } = payload.payload as { user_id: string; raised: boolean };
+        setRaisedHandCount((n) => Math.max(0, raised ? n + 1 : n - 1));
+      })
+      .subscribe();
+    eventChannel.current = evtCh;
+
     return () => {
       active = false;
-      supabase.removeChannel(channel);
+      supabase.removeChannel(dbChannel);
+      supabase.removeChannel(evtCh);
       if (user) void leaveRoom(roomId, user.id);
     };
   }, [roomId, user, navigate, pushActivity]);
@@ -277,7 +392,6 @@ export default function RoomPage() {
     if (!user || !draft.trim() || !roomId) return;
     const content = draft.trim();
     setDraft("");
-    /* optimistic */
     const optimisticId = `opt-${Date.now()}`;
     setMessages((s) => [...s, {
       id: optimisticId,
@@ -300,7 +414,6 @@ export default function RoomPage() {
 
   const react = async (emoji: string) => {
     if (!user || !roomId) return;
-    /* optimistic local float */
     const id = ++floatId.current;
     const lane = id % LANES;
     const x = (lane - 2) * 28 + (Math.random() * 12 - 6);
@@ -309,13 +422,44 @@ export default function RoomPage() {
     try { await sendReaction(roomId, user.id, emoji); } catch { /* silent */ }
   };
 
-  const toggleHandRaise = () => {
-    setHandRaised((h) => !h);
-    if (!handRaised) toast.success("Hand raised — the host will be notified");
+  /* P0-003 FIX: toggleHandRaise now broadcasts via Supabase Realtime */
+  const toggleHandRaise = async () => {
+    if (!user || !roomId) return;
+    const next = !handRaised;
+    setHandRaised(next);
+    try {
+      await supabase
+        .channel(`room:${roomId}:events`)
+        .send({
+          type: "broadcast",
+          event: "raise_hand",
+          payload: { user_id: user.id, raised: next },
+        });
+      if (next) toast.success("Hand raised — the host will be notified");
+      else toast.info("Hand lowered");
+    } catch {
+      setHandRaised(!next);
+      toast.error("Failed to update hand status");
+    }
+  };
+
+  const endRoom = async () => {
+    if (!roomId || !user) return;
+    try {
+      await leaveRoom(roomId, user.id);
+    } catch { /* ignore */ }
+    navigate("/");
+  };
+
+  const leaveRoom_ = async () => {
+    if (!roomId || !user) return;
+    try { await leaveRoom(roomId, user.id); } catch { /* ignore */ }
+    navigate("/");
   };
 
   const myRole = participants.find((p) => p.user_id === user?.id)?.role ?? "listener";
-  const isOnStage = myRole !== "listener";
+  const isHost = myRole === "host";
+  const isOnStage = ["host", "co-host", "speaker"].includes(myRole);
   const speakers = participants.filter((p) => ["host", "moderator", "speaker"].includes(p.role));
   const listeners = participants.filter((p) => p.role === "listener");
 
@@ -335,10 +479,9 @@ export default function RoomPage() {
         entered ? "opacity-100" : "opacity-0",
       )}
     >
-      {/* ambient glow behind stage */}
       <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent" />
 
-      {/* ── Header ───────────────────────────────────────────────────── */}
+      {/* ── Header ─────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-background/80 px-4 py-3 backdrop-blur-xl">
         <button
           onClick={() => navigate("/")}
@@ -346,7 +489,6 @@ export default function RoomPage() {
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
-
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold uppercase text-primary">
@@ -357,30 +499,48 @@ export default function RoomPage() {
               <Users className="h-3 w-3" />
               {participants.length}
             </span>
+
+            {/* P0-001: Audio status indicator */}
+            {audioState === "connected" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-600">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Audio on
+              </span>
+            )}
+            {audioState === "connecting" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600">
+                Connecting…
+              </span>
+            )}
+            {/* P0-002: Host badge in header */}
+            {isHost && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600">
+                <Crown className="h-2.5 w-2.5" />
+                Host
+              </span>
+            )}
           </div>
           <h1 className="truncate font-display text-sm font-bold leading-tight">{room.title}</h1>
         </div>
-
         <button
-          onClick={() => navigate("/")}
+          onClick={leaveRoom_}
           className="grid h-9 w-9 place-items-center rounded-full bg-surface transition-colors active:bg-surface-elev"
         >
           <X className="h-4 w-4" />
         </button>
       </header>
 
-      {/* ── Stage ────────────────────────────────────────────────────── */}
+      {/* ── Stage ──────────────────────────────────────────────────── */}
       <section className="relative px-5 py-5">
         <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
           On stage · {speakers.length}
         </p>
-
         {speakers.length === 0 ? (
           <div className="mt-3 rounded-2xl border border-dashed border-border p-8 text-center">
             <div className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-full bg-surface">
               <Mic className="h-5 w-5 text-muted-foreground" />
             </div>
-            <p className="text-xs text-muted-foreground">The stage is empty. The host will be up shortly.</p>
+            <p className="text-xs text-muted-foreground">The stage is empty.</p>
           </div>
         ) : (
           <div className={cn(
@@ -388,17 +548,13 @@ export default function RoomPage() {
             speakers.length <= 3 ? "grid-cols-3" : speakers.length <= 6 ? "grid-cols-4" : "grid-cols-5",
           )}>
             {speakers.map((p) => (
-              <SpeakerAvatar
-                key={p.user_id}
-                p={p}
-                speaking={speakingIds.has(p.user_id)}
-              />
+              <SpeakerAvatar key={p.user_id} p={p} speaking={speakingIds.has(p.user_id)} />
             ))}
           </div>
         )}
       </section>
 
-      {/* ── AI Summary ───────────────────────────────────────────────── */}
+      {/* ── AI Summary ─────────────────────────────────────────────── */}
       <section className="mx-5 mb-3 overflow-hidden rounded-2xl border border-primary/20 bg-surface">
         <div className="flex items-center gap-2 border-b border-border px-3 py-2">
           <Sparkles className="h-3 w-3 text-primary" />
@@ -410,7 +566,7 @@ export default function RoomPage() {
         </p>
       </section>
 
-      {/* ── Audience grid ────────────────────────────────────────────── */}
+      {/* ── Audience grid ──────────────────────────────────────────── */}
       {listeners.length > 0 && (
         <section className="px-5 pb-3">
           <div className="mb-2 flex items-center justify-between">
@@ -429,7 +585,7 @@ export default function RoomPage() {
         </section>
       )}
 
-      {/* ── Chat messages ─────────────────────────────────────────────── */}
+      {/* ── Chat messages ──────────────────────────────────────────── */}
       <section className="flex-1 space-y-2.5 overflow-y-auto px-5 pb-48">
         {messages.length === 0 && (
           <p className="py-4 text-center text-xs text-muted-foreground">No messages yet — say something!</p>
@@ -466,28 +622,22 @@ export default function RoomPage() {
         <div ref={msgEnd} />
       </section>
 
-      {/* ── Activity toast strip ──────────────────────────────────────── */}
+      {/* ── Activity toast strip ────────────────────────────────────── */}
       <div className="pointer-events-none fixed left-1/2 top-20 z-50 -translate-x-1/2 space-y-1">
         {activity.map((a) => (
-          <div
-            key={a.id}
-            className="animate-in fade-in slide-in-from-top-2 rounded-full bg-surface/90 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-sm"
-          >
+          <div key={a.id} className="animate-in fade-in slide-in-from-top-2 rounded-full bg-surface/90 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-sm">
             {a.text}
           </div>
         ))}
       </div>
 
-      {/* ── Floating reactions ────────────────────────────────────────── */}
+      {/* ── Floating reactions ──────────────────────────────────────── */}
       <div className="pointer-events-none fixed bottom-36 left-1/2 z-30 -translate-x-1/2">
         {floats.map((f) => (
           <span
             key={f.id}
             className="absolute bottom-0 select-none text-2xl"
-            style={{
-              left: `${f.x}px`,
-              animation: "loop-rise 2.8s cubic-bezier(0.22,1,0.36,1) forwards",
-            }}
+            style={{ left: `${f.x}px`, animation: "loop-rise 2.8s cubic-bezier(0.22,1,0.36,1) forwards" }}
           >
             {f.emoji}
           </span>
@@ -502,10 +652,10 @@ export default function RoomPage() {
         }
       `}</style>
 
-      {/* ── Bottom dock ──────────────────────────────────────────────── */}
+      {/* ── Bottom dock ────────────────────────────────────────────── */}
       <div className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-md border-t border-border bg-background/90 backdrop-blur-xl safe-pb">
         {/* Reaction bar */}
-        <div className="flex items-center justify-around px-4 py-2">
+        <div className="flex items-center justify-around px-4 py-2 border-b border-border/50">
           {REACTIONS.map((e) => (
             <button
               key={e}
@@ -517,64 +667,46 @@ export default function RoomPage() {
           ))}
         </div>
 
-        {/* Input row */}
-        <div className="flex items-center gap-2 border-t border-border px-3 py-2">
-          {/* Mic / hand-raise toggle */}
-          {isOnStage ? (
-            <button
-              type="button"
-              onClick={() => setMuted((m) => !m)}
-              className={cn(
-                "grid h-10 w-10 shrink-0 place-items-center rounded-full transition-all",
-                muted
-                  ? "bg-surface text-muted-foreground"
-                  : "bg-gradient-mint text-primary-foreground shadow-mint",
-              )}
-            >
-              {muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={toggleHandRaise}
-              className={cn(
-                "grid h-10 w-10 shrink-0 place-items-center rounded-full border transition-all",
-                handRaised
-                  ? "border-primary bg-primary/15 text-primary"
-                  : "border-border bg-surface text-muted-foreground",
-              )}
-              title={handRaised ? "Lower hand" : "Request to speak"}
-            >
-              <Hand className="h-4 w-4" />
-            </button>
-          )}
-
-          {/* Text input */}
-          <form onSubmit={send} className="flex flex-1 items-center gap-2">
-            <input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Say something…"
-              className="h-10 flex-1 rounded-full border border-border bg-surface px-4 text-sm outline-none focus:border-primary transition-colors"
-            />
-            <Button
-              type="submit"
-              disabled={!draft.trim()}
-              className="h-10 w-10 shrink-0 rounded-full bg-gradient-mint p-0 shadow-mint disabled:opacity-40"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
-          </form>
-        </div>
-
-        {/* Stage label for current user */}
-        {isOnStage && (
-          <div className="border-t border-border px-4 py-1.5 text-center">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">
-              {myRole === "host" ? "You are the host" : myRole === "moderator" ? "You are a moderator" : "You are speaking"}
-            </span>
-          </div>
+        {/* P0-002 FIX: Role-based action bar */}
+        {isHost ? (
+          <HostControls
+            muted={muted}
+            onToggleMic={toggleMic}
+            onEndRoom={endRoom}
+            raisedHandCount={raisedHandCount}
+          />
+        ) : isOnStage ? (
+          <SpeakerControls
+            muted={muted}
+            onToggleMic={toggleMic}
+            onLeave={leaveRoom_}
+          />
+        ) : (
+          <ListenerControls
+            handRaised={handRaised}
+            onToggleHand={toggleHandRaise}
+            onLeave={leaveRoom_}
+          />
         )}
+
+        {/* Chat input — visible to all */}
+        <form onSubmit={send} className="flex items-center gap-2 border-t border-border/50 px-4 py-2">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Say something…"
+            maxLength={500}
+            className="flex-1 rounded-2xl bg-surface px-3 py-2 text-sm outline-none placeholder:text-muted-foreground"
+          />
+          <Button
+            type="submit"
+            size="icon"
+            className="h-9 w-9 rounded-full shrink-0"
+            disabled={!draft.trim()}
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </form>
       </div>
     </div>
   );
