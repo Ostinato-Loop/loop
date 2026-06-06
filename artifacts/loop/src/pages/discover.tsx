@@ -29,12 +29,14 @@ const FEED_TABS: { key: FeedTab; label: string; icon: typeof Radio }[] = [
 
 /* ── category filter ────────────────────────────────────────────────── */
 const CATEGORIES: { key: RoomCategory | "all"; label: string; emoji: string }[] = [
-  { key: "all",           label: "All",     emoji: "" },
-  { key: "sports",        label: "Sports",  emoji: "⚽" },
-  { key: "civic",         label: "Civic",   emoji: "🏛️" },
-  { key: "music",         label: "Music",   emoji: "🎧" },
-  { key: "entertainment", label: "Culture", emoji: "🎬" },
-  { key: "news",          label: "News",    emoji: "📡" },
+  { key: "all",         label: "All",         emoji: ""   },
+  { key: "community",   label: "Community",   emoji: "🏘️" },
+  { key: "news",        label: "News",        emoji: "📡" },
+  { key: "commentary",  label: "Commentary",  emoji: "🎙️" },
+  { key: "radio",       label: "Radio",       emoji: "📻" },
+  { key: "dj-session",  label: "DJ Session",  emoji: "🎧" },
+  { key: "education",   label: "Education",   emoji: "📚" },
+  { key: "business",    label: "Business",    emoji: "💼" },
 ];
 
 /* ── avatar helpers ─────────────────────────────────────────────────── */
