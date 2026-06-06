@@ -2,7 +2,7 @@
 // Phase 3: Governance — Testing Foundation
 // LILCKY STUDIO LIMITED
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 // ── Utility: JWT parsing ───────────────────────────────────────────
 function parseJwtPayload(token: string): Record<string, unknown> | null {
