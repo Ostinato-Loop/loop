@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Users, Radio, BadgeCheck, Lock, Mic } from "lucide-react";
+import { Users, BadgeCheck, Lock, Mic } from "lucide-react";
 import type { Room } from "@/lib/api/rooms";
 import { cn } from "@/lib/utils";
 
