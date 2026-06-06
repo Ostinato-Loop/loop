@@ -205,64 +205,6 @@ function EmptyTab({ icon: Icon, title, body }: { icon: typeof Mic; title: string
   );
 }
 
-function _PersonRow({ p, following, onToggle, notifLevel, onNotif, showNotif }: {
-  p: Person;
-  following: boolean;
-  onToggle: () => void;
-  notifLevel: NotifLevel;
-  onNotif: (l: NotifLevel) => void;
-  showNotif?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const NIcon = notifLevel === "off" ? BellOff : notifLevel === "all" ? BellRing : Bell;
-  return (
-    <div className="rounded-2xl bg-card border border-border">
-      <div className="flex items-center gap-3 p-3">
-        <img src={p.avatar} alt="" className="h-11 w-11 rounded-full" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1">
-            <span className="text-sm font-bold truncate">{p.name}</span>
-            {p.verified && <BadgeCheck className="h-3.5 w-3.5 text-neon shrink-0" />}
-          </div>
-          <div className="text-[11px] text-muted-foreground truncate">{p.region}</div>
-          {p.metVia && <div className="text-[10px] text-neon font-semibold mt-0.5">↺ {p.metVia}</div>}
-        </div>
-        {showNotif && following && (
-          <button onClick={() => setOpen((v) => !v)} className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${notifLevel === "off" ? "bg-secondary text-muted-foreground" : "bg-neon/15 text-neon"}`} aria-label="Notifications">
-            <NIcon className="h-4 w-4" />
-          </button>
-        )}
-        <button onClick={onToggle} className={`px-3 py-1.5 rounded-full text-[11px] font-bold shrink-0 ${following ? "bg-secondary text-foreground" : "bg-neon text-neon-foreground"}`}>
-          {following ? "Following" : "Follow"}
-        </button>
-      </div>
-      {showNotif && following && open && (
-        <div className="px-3 pb-3 border-t border-border pt-3">
-          <div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-2">
-            Notify me about {p.name.split(" ")[0]}
-          </div>
-          <div className="grid grid-cols-4 gap-1.5">
-            {([
-              { id: "all" as NotifLevel,   label: "Everything", I: BellRing },
-              { id: "rooms" as NotifLevel, label: "Rooms only", I: Mic },
-              { id: "posts" as NotifLevel, label: "Posts",      I: MessageCircle },
-              { id: "off" as NotifLevel,   label: "Muted",      I: BellOff },
-            ]).map(({ id, label, I }) => {
-              const active = notifLevel === id;
-              return (
-                <button key={id} onClick={() => onNotif(id)} className={`flex flex-col items-center gap-1 p-2 rounded-xl border text-[10px] font-semibold ${active ? "border-neon bg-neon/10 text-foreground" : "border-border bg-secondary text-muted-foreground"}`}>
-                  <I className={`h-3.5 w-3.5 ${active ? "text-neon" : ""}`} />
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function IdRow({ k, v, copy, badge }: { k: string; v: string; copy?: boolean; badge?: boolean }) {
   return (
     <div className="flex items-center justify-between">
@@ -276,18 +218,4 @@ function IdRow({ k, v, copy, badge }: { k: string; v: string; copy?: boolean; ba
   );
 }
 
-function _Activity({ icon: Icon, text, meta }: { icon: typeof Mic; text: string; meta: string }) {
-  return (
-    <div className="flex items-center gap-3 p-3 rounded-2xl bg-card border border-border">
-      <div className="h-9 w-9 rounded-xl bg-accent flex items-center justify-center">
-        <Icon className="h-4 w-4 text-neon" />
-      </div>
-      <div className="flex-1">
-        <div className="text-xs font-semibold">{text}</div>
-        <div className="text-[10px] text-muted-foreground">{meta}</div>
-      </div>
-    </div>
-  );
-}
 
-function _fmt(n: number) { return n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n); }
