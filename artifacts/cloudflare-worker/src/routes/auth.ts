@@ -5,6 +5,10 @@
  * POST /api/auth/verify-otp  { phone, token }     → verify + return JWT
  * POST /api/auth/signout     {}                   → (stateless, client clears token)
  * GET  /api/auth/me          (Bearer JWT)         → returns user + profile
+ *
+ * SEC-003 FIX (2026-06-06): Removed hardcoded JWT fallback secret.
+ * LOOP_JWT_SECRET must be set in Cloudflare Worker secrets — service will
+ * refuse token issuance with a 500 if the env var is absent.
  */
 
 import { Hono } from "hono";
@@ -248,8 +252,14 @@ auth.post("/verify-otp", async (c) => {
       }),
     });
 
-    // Sign our Loop JWT
-    const jwtSecret = c.env.LOOP_JWT_SECRET ?? "loop-dev-secret-change-in-prod";
+    // SEC-003: LOOP_JWT_SECRET must be set — no hardcoded fallback.
+    // If absent, refuse token issuance rather than sign with a known-public secret.
+    const jwtSecret = c.env.LOOP_JWT_SECRET;
+    if (!jwtSecret) {
+      console.error("[auth/verify-otp] LOOP_JWT_SECRET is not configured — refusing to issue tokens");
+      return c.json({ error: "Service configuration error. Please try again later." }, 500);
+    }
+
     const accessToken = await signJwt(
       {
         sub: userId,
