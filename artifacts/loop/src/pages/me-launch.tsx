@@ -6,13 +6,13 @@
 
 
 import {
-  Settings, BadgeCheck, MapPin, Mic, MessageCircle,
+  Settings, BadgeCheck, MapPin, Mic,
   Heart, Users, Shield, Sun, Moon, Monitor, Copy, ChevronRight, Sparkles,
-  Bell, BellOff, BellRing, LogOut,
+  LogOut,
 } from "lucide-react";
 import { useState } from "react";
 import { userRegion } from "@/lib/loop-mock";
-import { useLoop, type NotifLevel } from "@/lib/loop-store";
+import { useLoop } from "@/lib/loop-store";
 import { useAuth } from "@/hooks/use-auth";
 import { AppShell } from "@/components/layout/app-shell";
 
@@ -186,10 +186,6 @@ export default function MeLaunchPage() {
   );
 }
 
-type Person = {
-  handle: string; name: string; avatar: string;
-  region: string; verified?: boolean; metVia?: string;
-};
 
 function EmptyTab({ icon: Icon, title, body }: { icon: typeof Mic; title: string; body: string }) {
   return (
