@@ -36,6 +36,9 @@ minimumReleaseAgeExclude:
   - vitest
   - '@vitest/coverage-v8'
   - happy-dom
+  # LiveKit Cloud audio SDK — trusted open-source (livekit.io), established release cadence
+  - livekit-client
+  - livekit-server-sdk
 
 packages:
   - artifacts/*
