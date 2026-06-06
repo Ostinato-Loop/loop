@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { supabase } from "@/integrations/supabase/client";
+import { authedSupabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -78,7 +78,7 @@ export default function OnboardingPage() {
 
   const persist = async (patch: Partial<{ username: string; display_name: string; language: string; interests: string[]; onboarded: boolean }>) => {
     if (!user) return;
-    const { error } = await supabase.from("profiles").update(patch).eq("id", user.id);
+    const { error } = await authedSupabase().from("profiles").update(patch).eq("id", user.id);
     if (error) throw error;
   };
 
