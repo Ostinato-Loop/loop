@@ -11,14 +11,18 @@
 
 // ── Room ──────────────────────────────────────────────────────────────
 
+// Phase H: Room types expanded to include all 7 Loop Room categories
+// Community, News, Commentary, Radio, DJ Session, Education, Business
+// LILCKY STUDIO LIMITED
 export type RoomCategory =
-  | "sports"
-  | "civic"
-  | "music"
-  | "entertainment"
-  | "tech"
-  | "general"
-  | "news";
+  | "community"
+  | "news"
+  | "commentary"
+  | "radio"
+  | "dj-session"
+  | "education"
+  | "business"
+  | "general";
 
 export type RoomVisibility = "public" | "private" | "livestream";
 

@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { CloudflareEnv } from "../types/env.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { requireAuth } from "../middleware/auth.js";
-import type { RoomRecommendationsResponse } from "@workspace/loop-shared-types";
+import type { RoomCategory, RoomRecommendationsResponse } from "@workspace/loop-shared-types";
 import { getRecommendations } from "../services/recommendations.js";
 
 const rooms = new Hono<{ Bindings: CloudflareEnv; Variables: { user: AuthUser } }>();
@@ -35,7 +35,7 @@ rooms.get("/", async (c) => {
     .order("created_at",     { ascending: false })
     .range(offset, offset + limit - 1);
 
-  if (category) q = q.eq("category", category as "sports" | "civic" | "music" | "entertainment" | "general" | "news");
+  if (category) q = q.eq("category", category as RoomCategory);
 
   const { data, error } = await q;
   if (error) {

@@ -245,12 +245,14 @@ export type Database = {
     Enums: {
       participant_role: "host" | "moderator" | "speaker" | "listener"
       room_category:
-        | "sports"
-        | "civic"
-        | "music"
-        | "entertainment"
-        | "general"
+        | "community"
         | "news"
+        | "commentary"
+        | "radio"
+        | "dj-session"
+        | "education"
+        | "business"
+        | "general"
       room_visibility: "public" | "private" | "livestream"
     }
     CompositeTypes: {
@@ -381,12 +383,14 @@ export const Constants = {
     Enums: {
       participant_role: ["host", "moderator", "speaker", "listener"],
       room_category: [
-        "sports",
-        "civic",
-        "music",
-        "entertainment",
-        "general",
+        "community",
         "news",
+        "commentary",
+        "radio",
+        "dj-session",
+        "education",
+        "business",
+        "general",
       ],
       room_visibility: ["public", "private", "livestream"],
     },
