@@ -3,7 +3,7 @@
   // LILCKY STUDIO LIMITED
 
   import { Link, useParams, useNavigate } from "react-router-dom";
-  import { ChevronLeft, Mic, MicOff, Heart, Hand, Share2, MessageCircle, MoreHorizontal, Users, Loader2 } from "lucide-react";
+  import { ChevronLeft, Mic, MicOff, Heart, Hand, MessageCircle, MoreHorizontal, Users, Loader2 } from "lucide-react";
   import { useEffect, useRef, useState, useCallback } from "react";
   import { useAuth } from "@/hooks/use-auth";
   import { getRoom, joinRoom, leaveRoom, setRoomLive, listMessages, sendMessage, type Room } from "@/lib/api/rooms";
