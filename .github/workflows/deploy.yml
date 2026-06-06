@@ -145,12 +145,17 @@ jobs:
         working-directory: artifacts/loop
         run: pnpm run build
         env:
+          # PORT and BASE_PATH are required by vite.config.ts at config-load time.
+          # For a static Pages build PORT is unused at runtime; we supply 3000 to satisfy the guard.
+          PORT: "3000"
+          BASE_PATH: "/"
+          NODE_ENV: production
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Deploy to Cloudflare Pages
         working-directory: artifacts/loop
-        run: pnpm exec wrangler pages deploy dist --project-name=loop --branch=main
+        run: pnpm exec wrangler pages deploy dist/public --project-name=loop --branch=main
 
       - name: Record deployment audit
         if: always()
