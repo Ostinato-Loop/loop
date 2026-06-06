@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useLiveKitRoom } from "@/hooks/use-livekit-room";
 
 /* ─── types ──────────────────────────────────────────────────────────── */
 type ParticipantRow = {
@@ -270,8 +271,11 @@ export default function RoomPage() {
   const [floats, setFloats] = useState<FloatingReaction[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [draft, setDraft] = useState("");
-  const [muted, setMuted] = useState(true);
-  const [speakingIds, setSpeakingIds] = useState<Set<string>>(new Set());
+  const { muted, speakingIds, toggleMic, audioState } = useLiveKitRoom(
+    roomId,
+    user?.id,
+    !loading && !!user,
+  );
   const [handRaised, setHandRaised] = useState(false);
   const [raisedHandCount, setRaisedHandCount] = useState(0);
   const [entered, setEntered] = useState(false);
@@ -286,19 +290,6 @@ export default function RoomPage() {
   useEffect(() => {
     if (!loading && !user) navigate("/login");
   }, [user, loading, navigate]);
-
-  /* simulate speaking indicators */
-  useEffect(() => {
-    if (participants.length === 0) return;
-    const speakers = participants.filter((p) => p.role !== "listener");
-    if (speakers.length === 0) return;
-    const tick = setInterval(() => {
-      const active = new Set<string>();
-      speakers.forEach((sp) => { if (Math.random() > 0.5) active.add(sp.user_id); });
-      setSpeakingIds(active);
-    }, 1800);
-    return () => clearInterval(tick);
-  }, [participants]);
 
   const pushActivity = useCallback((text: string) => {
     const id = ++actId.current;
@@ -508,6 +499,19 @@ export default function RoomPage() {
               <Users className="h-3 w-3" />
               {participants.length}
             </span>
+
+            {/* P0-001: Audio status indicator */}
+            {audioState === "connected" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-600">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                Audio on
+              </span>
+            )}
+            {audioState === "connecting" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600">
+                Connecting…
+              </span>
+            )}
             {/* P0-002: Host badge in header */}
             {isHost && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600">
@@ -667,14 +671,14 @@ export default function RoomPage() {
         {isHost ? (
           <HostControls
             muted={muted}
-            onToggleMic={() => setMuted((m) => !m)}
+            onToggleMic={toggleMic}
             onEndRoom={endRoom}
             raisedHandCount={raisedHandCount}
           />
         ) : isOnStage ? (
           <SpeakerControls
             muted={muted}
-            onToggleMic={() => setMuted((m) => !m)}
+            onToggleMic={toggleMic}
             onLeave={leaveRoom_}
           />
         ) : (
