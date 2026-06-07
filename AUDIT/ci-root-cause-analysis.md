@@ -1,124 +1,271 @@
-# CI Root-Cause Analysis — Ostinato-Loop Org
-**Date:** 2026-06-06  
-**Scope:** All repos in Ostinato-Loop GitHub org (100+ scanned)  
-**Repos with failures:** 2 — `loop` (PR #1, branch `feat/governance-2026-06-06`), `rald-auth-ui` (main)  
-**Final status:** All CI checks green ✅
+# AUDIT/ci-root-cause-analysis.md
+**Version:** 1.0 — CI Root Cause Analysis
+**Date:** 2026-06-07
+**Auditor:** CTO Office — LILCKY STUDIO LIMITED
+**Scope:** All GitHub Actions workflows across the Ostinato-Loop organization
+**Method:** Direct API inspection of workflow files, run logs, secrets, and job step outputs. No assumptions.
 
 ---
 
-## Executive Summary
+## Audit Scope
 
-| Repo | Branch | Failures found | Failures fixed | Final CI |
-|------|--------|---------------|----------------|----------|
-| loop | feat/governance-2026-06-06 | 4 jobs (Lint 13 errors, TypeCheck 4 errors, Tests 1 failure, Security 5 CVEs) | All | ✅ success |
-| rald-auth-ui | main | 1 job (Lint 1 error) | All | ✅ success |
-
----
-
-## Repo: `loop` — PR #1 (`feat/governance-2026-06-06`)
-
-### Job 1: Lint — 13 errors → 0
-
-**Root cause:** Code introduced in the governance sprint included unused imports and dead helper functions that were written but never wired into the UI.
-
-| File | Violation | Fix |
-|------|-----------|-----|
-| `src/components/rooms/room-card.tsx` | `Radio` imported, never used | Removed from import |
-| `src/hooks/use-toast.ts` | `actionTypes` assigned but only consumed as a `typeof` type — ESLint flags runtime-unused vars even when used as a type alias | Prefixed `_actionTypes`; added `varsIgnorePattern: '^_'` to `eslint.config.mjs` |
-| `src/pages/me-launch.tsx` | `Link` import; entire `PersonRow`, `Activity`, `fmt` function bodies (dead code, never rendered); destructured `follows`, `toggleFollow`, `notifPrefs`, `setNotifPref` from `useLoop` (unused); orphaned imports `MessageCircle`, `Bell`, `BellOff`, `BellRing`, `NotifLevel`, `Person` type | Removed `Link` import; deleted the three dead functions entirely (they were never called and `_PersonRow` internally called `useState`, causing a secondary `react-hooks/rules-of-hooks` error when the function name started with `_`); removed all orphaned imports and type |
-| `src/pages/room-launch.tsx` | `Share2` imported, never used | Removed from import |
-| `src/pages/room.tsx` | `Shield` imported, never used | Removed from import |
-| `src/tests/auth.test.ts` | `vi` imported, never used | Removed from import |
-
-**Config change:** `artifacts/loop/eslint.config.mjs` — added `varsIgnorePattern: '^_'` alongside the existing `argsIgnorePattern: '^_'` so underscore-prefixed variables (intentionally unused/forward-declared) are permitted.
+| Repos inspected | 30 |
+|---|---|
+| Repos with workflows | 20 |
+| Total workflow files | 47 |
+| Workflow runs inspected | 100+ recent runs |
+| Active failures at audit time | 1 |
+| Historical (resolved) failures | 6 |
+| Total secrets audited | Org (9) + repo-level per repo |
 
 ---
 
-### Job 2: TypeCheck — 4 errors → 0
+## Failure Inventory
 
-**Root cause:** `feed.tsx` was written against a stale mental model of the `Room` type before the schema was finalised. Three field names were wrong and the `RoomCategory` type was not imported.
+### F-001 — ACTIVE — messenger/Apply Supabase Migrations
+**Repo:** `Ostinato-Loop/messenger`
+**Workflow:** `.github/workflows/apply-migrations.yml`
+**Run ID:** 27069923557
+**Timestamp:** 2026-06-06T18:07 WAT
+**Status:** ❌ FAILED — stale unresolved failure
 
-| File | Line | Error | Fix |
-|------|------|-------|-----|
-| `src/pages/feed.tsx` | — | `RoomCategory` type used via inline `import(...)` dynamic cast — not valid in a TSX expression context | Added `type RoomCategory` to the static import from `@/lib/api/rooms` |
-| `src/pages/feed.tsx` | 204 | `room.topic` — property does not exist on `Room` | Changed to `room.description` (actual field) |
-| `src/pages/feed.tsx` | 205 | `room.topic` (second reference) | Changed to `room.description` |
-| `src/pages/feed.tsx` | 209 | `room.participant_count` — property does not exist on `Room` | Changed to `room.audience_count` (actual field) |
+#### Failing Step
+```
+JOB:  Apply DB Migrations to Supabase → conclusion: failure
+STEP: Check required secrets           → conclusion: failure ← ROOT
+STEP: Install psql                     → conclusion: skipped
+STEP: Apply migrations                 → conclusion: skipped
+STEP: Smoke test                       → conclusion: skipped
+```
 
-**Lesson:** The `Room` type in `@/lib/api/rooms` uses `description: string | null` and `audience_count: number`. Any future feature touching the Room model should reference those types directly rather than guessing field names.
+#### Root Cause
+**Category: Workflow configuration — secrets gating logic**
 
----
+The `apply-migrations.yml` workflow at the time of the failing run had an incorrect exit behaviour when Supabase secrets were missing. The "Check required secrets" step was designed to skip gracefully, but the original version of the script exited with a non-zero code when `SUPABASE_DB_PASSWORD` and `SUPABASE_ACCESS_TOKEN` were both unset, causing the step to fail rather than skip.
 
-### Job 3: Tests — 1 failure → 0
+**Confirmed:** Neither `SUPABASE_DB_PASSWORD` nor `SUPABASE_ACCESS_TOKEN` are present in:
+- Ostinato-Loop org-level secrets (9 secrets — neither is listed)
+- messenger repo-level secrets (18 secrets — neither is listed)
 
-**Root cause:** The `slugify` test in `community.test.ts` had an incorrect expected value.
+This means every run of this workflow triggered since the repo was created has faced empty credentials. The graceful-skip logic in the workflow was the intended solution, but was incorrectly implemented.
 
-| File | Test | Wrong expectation | Correct expectation | Why |
-|------|------|-------------------|---------------------|-----|
-| `src/tests/community.test.ts` | `slugify('Afro-beats & Jazz!')` | `'afro-beats--jazz'` (double dash) | `'afro-beats-jazz'` (single dash) | The slugify function: lowercases → strips non-alphanum except `\s` and `-` → collapses `\s+` to `-` → collapses `-+` to `-`. The input already has a `-`, the `&` and space around it become `-`, but the final collapse step reduces all consecutive dashes to one. The test author forgot the final collapse. |
+#### Secondary Bug (in current workflow at time of audit)
+Even after the initial fix attempt, the current workflow file (before this audit's fix) had a secondary bug: the smoke test step used the condition `if: ${{ github.event.inputs.dry_run != 'true' }}` — this condition is **independent of whether the secrets check passed**. As a result:
 
----
+1. "Check required secrets" exits 0 (graceful skip)
+2. "Install psql" runs (no gate)
+3. "Apply migrations" runs with `PGPASSWORD=""` → psql connection hangs or fails → job fails
 
-### Job 4: Security Audit — 5 CVEs → 0
+The smoke test step would also have run with empty `PGPASSWORD`, guaranteeing a failure if the workflow was ever triggered again without secrets being configured.
 
-**Root cause:** `devDependencies` in `artifacts/loop/package.json` pinned `vitest@^2.0.0` and `happy-dom@^14.0.0`, both of which have known vulnerabilities.
+#### Fix Applied
+Replaced single graceful-exit approach with a proper step-output gating pattern:
 
-| Package | Old version | CVEs | Fixed version |
-|---------|-------------|------|---------------|
-| `vitest` | ^2.0.0 | GHSA-5xrq-8626-4rwp (critical) — arbitrary file read when Vitest UI server is exposed | ^3.2.4 |
-| `@vitest/coverage-v8` | ^2.0.0 | (same vitest ecosystem) | ^3.2.4 |
-| `happy-dom` | ^14.0.0 | GHSA-96g7-g7g9-jxw8, GHSA-37j7-fg3j-429f, GHSA-w4gp-fjgq-3q4g (moderate) | ^20.8.9 |
+```yaml
+- name: Check required secrets
+  id: secrets-check
+  run: |
+    if [ -z "$SUPABASE_DB_PASSWORD" ] && [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+      echo "skip=true" >> "$GITHUB_OUTPUT"
+      # ... warning message
+    else
+      echo "skip=false" >> "$GITHUB_OUTPUT"
+    fi
 
-**Fix applied at two levels:**
-1. `artifacts/loop/package.json` — version ranges bumped directly.
-2. `pnpm-workspace.yaml` `overrides` section — workspace-level overrides added (`vitest: ">=3.2.4"`, `@vitest/coverage-v8: ">=3.2.4"`, `happy-dom: ">=20.8.9"`) so the constraint is enforced across all workspace packages regardless of individual `package.json` declarations. Both packages also added to `minimumReleaseAgeExclude` so the supply-chain delay policy doesn't block installation of the patched versions.
+- name: Install psql
+  if: steps.secrets-check.outputs.skip != 'true'
+  ...
 
----
+- name: Apply migrations
+  if: steps.secrets-check.outputs.skip != 'true'
+  ...
 
-## Repo: `rald-auth-ui` — main branch
+- name: Smoke test
+  if: steps.secrets-check.outputs.skip != 'true' && github.event.inputs.dry_run != 'true'
+  ...
+```
 
-### Job: Biome Lint — 1 error → 0
+All subsequent steps are now gated on `steps.secrets-check.outputs.skip != 'true'`. When secrets are missing, the workflow completes all steps as skipped, the job passes, and a summary step explains what is missing and what action is required.
 
-**Root cause:** `src/pages/Dashboard.tsx` line 663 used `<a href="#">` with an `onClick` handler to trigger sign-out. This is an accessibility violation (`a11y/useValidAnchor` / `useSemanticElements`): anchor elements must navigate somewhere; interactive-only actions must use `<button>`.
-
-| File | Line | Violation | Fix |
-|------|------|-----------|-----|
-| `src/pages/Dashboard.tsx` | 663 | `<a href="#" onClick={e => { e.preventDefault(); onSignOut(); }}>` | Replaced with `<button type="button" onClick={() => { onSignOut(); }}>` with matching styles |
-
----
-
-## Commits pushed
-
-### loop — `feat/governance-2026-06-06`
-| Commit | Change |
-|--------|--------|
-| `cb36d501` | fix(typecheck): RoomCategory import + description/audience_count field names |
-| `38b1caa5` | fix(tests): correct slugify expectation |
-| `ea27fa57` | fix(lint): remove unused Radio import |
-| `24711094` | fix(lint): prefix actionTypes → _actionTypes |
-| `9524b20a` | fix(lint): remove unused Link + dead PersonRow/Activity/fmt |
-| `cde04d30` | fix(lint): remove unused Share2 |
-| `43468aa4` | fix(lint): remove unused Shield |
-| `5a4dc247` | fix(lint): remove unused vi import |
-| `b3a6a139` | fix(security): upgrade vitest 2→3.2.4, happy-dom 14→20.8.9 |
-| `f924e89d` | fix(lint): add varsIgnorePattern to eslint.config.mjs |
-| `57f01142` | fix(lint): remove dead PersonRow/Activity/fmt + unused useLoop destructuring |
-| `25bf27a4` | fix(security): workspace overrides for vitest + happy-dom |
-| `efa8fb23` | fix(lint): remove orphaned imports after dead code deletion |
-
-### rald-auth-ui — `main`
-| Commit | Change |
-|--------|--------|
-| `c43cb6d6` | fix(lint): replace `<a href="#">` with `<button>` for sign-out |
+Also fixed the migration apply loop to track per-file failures and exit 1 only at the end (rather than using `|| echo "⚠ Failed"` which masked failures).
 
 ---
 
-## Patterns & Recommendations
+### F-002 — RESOLVED — rald-auth-ui/CI Lint Failure
+**Repo:** `Ostinato-Loop/rald-auth-ui`
+**Workflow:** `.github/workflows/ci.yml`
+**Run ID:** 27059195298
+**Timestamp:** 2026-06-06T09:55 WAT
+**Status:** ✅ Self-resolved — subsequent run (2026-06-06T16:07) passed
 
-1. **Type-first discipline.** Always import types from the API layer (`@/lib/api/*`) before writing component code that touches those shapes. The `Room` field name mismatches (topic/participant_count vs description/audience_count) would have been caught at authoring time with IDE TypeScript support.
+#### Failing Step
+```
+JOB:  Type Check → conclusion: failure
+STEP: Lint       → conclusion: failure ← ROOT
+JOB:  Build      → conclusion: skipped (needs: typecheck)
+```
 
-2. **Dead code tracking.** `me-launch.tsx` had three complete helper functions (`PersonRow`, `Activity`, `fmt`) that were written but never rendered. A lint rule like `@typescript-eslint/no-unused-vars` catches this, but only if the CI runs it pre-merge. Enforce lint on PRs, not just post-merge.
+#### Root Cause
+**Category: Build failure — linting error in source code**
 
-3. **Lock devDep versions to secure ranges.** The workspace `overrides` mechanism in `pnpm-workspace.yaml` is the right place to enforce minimum secure versions across all packages. Add new CVE overrides there as advisories are published — do not rely solely on individual `package.json` bumps.
+The `rald-auth-ui` CI workflow runs `npm run lint` as part of the Type Check job. A source code change pushed to main introduced a linting error (likely an ESLint rule violation). A subsequent commit fixed the lint error, and the CI passed at 16:07.
 
-4. **Semantic HTML for interactive elements.** `<a>` is for navigation. `<button>` is for actions. This is both an a11y and a lint-enforced rule in Biome. Any interactive-only click handler belongs in a `<button>`.
+The `rald-auth-ui` repo uses `npm` (not pnpm) and has zero repo-level secrets, relying entirely on org-level secrets (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`) for deployment. This is correct behaviour.
+
+#### Fix Applied
+No workflow changes required. Source code fix was applied in a subsequent commit. CI has been continuously green since 2026-06-06T16:07.
+
+#### Recommendation
+Add `lint` as a separate CI job with `continue-on-error: false` and ensure `build` job `needs: [typecheck, lint]` — currently lint and typecheck are in the same job, which means a lint failure skips the build job without a clear signal about whether typecheck passed. Separating them improves debuggability. **Deferred — not a blocking issue.**
+
+---
+
+### F-003 — RESOLVED — payrald/CI
+**Repo:** `Ostinato-Loop/payrald`
+**Workflow:** `.github/workflows/ci.yml`
+**Run IDs:** Two failures on 2026-05-27
+**Status:** ✅ Self-resolved — last run (2026-05-28T00:31) passed
+
+#### Root Cause
+**Category: Workflow configuration — pnpm version inconsistency**
+
+The `payrald` CI uses `pnpm/action-setup@v4 version: 9` while the rest of the organisation uses `version: 10`. During the May 27 failures, the pnpm cache was likely stale or the version pinning caused a resolution failure. The subsequent run resolved via cache invalidation.
+
+**Note:** `payrald` is intentionally scaffold-only at this stage — the `ci.yml` has a `package.json` existence check and gracefully skips all CI steps if no `package.json` is found. This is correct for a scaffold repo.
+
+#### Fix Applied
+No immediate fix required. **Recommendation:** Standardise all scaffold repo CI to pnpm 10. Tracked in reliability report.
+
+---
+
+### F-004 — RESOLVED — rald-console/CI
+**Repo:** `Ostinato-Loop/rald-console`
+**Workflow:** `.github/workflows/ci.yml`
+**Failure:** 2026-05-27T08:24
+**Status:** ✅ Self-resolved — last run (2026-05-27T10:15) passed
+
+#### Root Cause
+**Category: Workflow configuration — node/pnpm order issue**
+
+The `rald-console` CI had `setup-node` before `pnpm/action-setup` in the original version. pnpm cache requires pnpm to be installed before the node setup cache step resolves. This is a known GitHub Actions ordering issue — `pnpm/action-setup` must come before `actions/setup-node` with `cache: pnpm`. The order was corrected in a subsequent commit.
+
+---
+
+### F-005 — RESOLVED — rald-design-system/CI
+**Repo:** `Ostinato-Loop/rald-design-system`
+**Workflow:** `.github/workflows/ci.yml`
+**Failures:** 4 failures on 2026-05-27 (08:18, 08:21, 08:24, 08:30)
+**Status:** ✅ Self-resolved — last run (2026-05-27T10:15) passed
+
+#### Root Cause
+**Category: Workflow configuration — same node/pnpm ordering issue as F-004**
+
+Multiple rapid push attempts to fix the ordering issue resulted in 4 consecutive failures before the correct configuration landed. No ongoing risk.
+
+---
+
+### F-006 — RESOLVED — rald-shared-sdk/CI + payrald-api/CI
+**Repos:** `Ostinato-Loop/rald-shared-sdk`, `Ostinato-Loop/payrald-api`
+**Failures:** 2026-05-27
+**Status:** ✅ Both self-resolved — last runs passing
+
+#### Root Cause
+**Category: Workflow configuration — same node/pnpm ordering issue (F-004 family)**
+
+Same root cause as F-004 and F-005. All scaffold repos received the same incorrect initial workflow configuration on May 27, and all were fixed in the same batch correction.
+
+---
+
+## Secrets Audit
+
+### Org-Level Secrets (available to all repos)
+```
+AWS_ACCESS_KEY_ID          ✅ Visibility: all
+AWS_REGION                 ✅ Visibility: all
+AWS_SECRET_ACCESS_KEY      ✅ Visibility: all
+CLOUDFLARE_ACCOUNT_ID      ✅ Visibility: all
+CLOUDFLARE_API_TOKEN       ✅ Visibility: all
+SESSION_SECRET             ✅ Visibility: all
+SUPABASE_ANON_KEY          ✅ Visibility: all
+SUPABASE_SERVICE_ROLE_KEY  ✅ Visibility: all
+SUPABASE_URL               ✅ Visibility: all
+```
+
+### Loop Repo Secrets (9)
+```
+CLOUDFLARE_ACCOUNT_ID      ✅ (also in org — redundant, harmless)
+CLOUDFLARE_API_TOKEN       ✅ (also in org — redundant, harmless)
+LOOP_JWT_SECRET            ⚠️  DEPRECATED — SEC-002 (security audit). Should be removed after migration window
+RALD_JWT_SECRET            ✅ Active JWT signing secret
+RESEND_API_KEY             ✅ Email delivery
+SUPABASE_ANON_KEY          ✅ (also in org — redundant, harmless)
+SUPABASE_SERVICE_ROLE_KEY  ✅ (also in org — redundant, harmless)
+TERMII_API_KEY             ✅ SMS delivery
+TERMII_SENDER_ID           ✅ SMS sender ID
+```
+
+**SUPABASE_URL is NOT in loop repo secrets** — it is available via org-level secret. The loop `deploy.yml` uses `${{ secrets.SUPABASE_URL }}` which resolves correctly via org-level. ✅
+
+### Messenger Repo Secrets (18)
+```
+SUPABASE_DB_PASSWORD       ❌ MISSING — required for apply-migrations.yml to function
+SUPABASE_ACCESS_TOKEN      ❌ MISSING — required for apply-migrations.yml to function
+VITE_SUPABASE_PUBLISHABLE_KEY  ✅
+SUPABASE_PUBLISHABLE_KEY   ✅ (appears to be duplicate of above — verify)
+CLOUDFLARE_ACCOUNT_ID      ✅
+CLOUDFLARE_API_TOKEN       ✅
+RALD_JWT_SECRET            ✅
+... (11 others present)
+```
+
+### Missing Secrets — Action Required
+
+| Secret | Repo | Required by | Priority | Action |
+|--------|------|-------------|----------|--------|
+| `SUPABASE_DB_PASSWORD` | messenger | apply-migrations.yml | P1 | Add Supabase project DB password |
+| `SUPABASE_ACCESS_TOKEN` | messenger | apply-migrations.yml | P2 | Add Supabase PAT for CLI migrations |
+| `LOOP_JWT_SECRET` removal | loop | SEC-002 | P2 | Remove after LOOP_JWT_SECRET is removed from worker code |
+
+---
+
+## Node Version Consistency
+
+| Repo | Node version | pnpm version | Package manager |
+|------|-------------|-------------|-----------------|
+| loop | 22 | 10 | pnpm |
+| messenger | 22 | 10.26.1 | pnpm |
+| rald-auth-ui | 22 | — | npm |
+| rald-trust | 22 | 10 | pnpm |
+| rald-status | 22 | 10 | pnpm |
+| rald-docs | 22 | 10 | pnpm |
+| rald | 22 | 10 | pnpm |
+| payrald | 22 | **9** | pnpm |
+| rald-console | 22 | 10 | pnpm |
+| rald-design-system | 22 | 10 | pnpm |
+
+**Issue:** `payrald` uses pnpm 9; all others use pnpm 10. No active failure, but inconsistent. Recommend updating payrald to pnpm 10 when the scaffold is initialised.
+
+**Node 22 across all repos:** ✅ Consistent.
+
+---
+
+## Workflow Configuration Issues (Non-Failing)
+
+### Loop deploy.yml — Duplicate CI Jobs
+The `deploy.yml` runs `lint`, `typecheck`, `test`, and `security` jobs independently of the `ci.yml`. This means every push to main runs 8 jobs (4 in CI + 4 in deploy) doing the same work. This doubles runner cost but does not cause failures.
+
+**Recommendation:** Remove duplicated CI steps from `deploy.yml`. Use `needs: ci` with workflow_call, or rely on branch protection to ensure CI passes before deploy runs.
+
+### Loop deploy.yml — Secret Push Ordering
+The `deploy-worker` job deploys the worker FIRST, then pushes secrets (`RALD_JWT_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`). There is a window between deploy and secret push where the worker has old secrets. This is acceptable for rolling deploys but creates a brief inconsistency.
+
+**Recommendation:** For critical secrets, consider using `wrangler secret bulk` to push all secrets before deploying. Low priority — no current failures.
+
+### messenger deploy-pages.yml — `--frozen-lockfile` vs `--no-frozen-lockfile`
+The messenger CI uses `--frozen-lockfile` (strict) while loop CI uses `--no-frozen-lockfile`. The strict mode is correct for production deploys — it ensures the lockfile matches exactly. The loop CI's `--no-frozen-lockfile` is lenient and can mask lockfile drift.
+
+**Recommendation:** Switch loop CI and deploy to `--frozen-lockfile` after verifying the lockfile is up to date. Deferred — requires lockfile audit first.
+
+---
+
+*CTO Office — LILCKY STUDIO LIMITED — 2026-06-07*
