@@ -1,10 +1,14 @@
 import { Hono } from "hono";
-import { createClient } from "@supabase/supabase-js";
 import type { CloudflareEnv } from "../types/env.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { requireAuth } from "../middleware/auth.js";
 import type { RoomCategory } from "@workspace/loop-shared-types";
 import { getRecommendations } from "../services/recommendations.js";
+
+// NOTE: @supabase/supabase-js createClient is intentionally NOT used here.
+// In Cloudflare Workers (nodejs_compat), the JS client accesses private
+// properties that changed in v2.49.8 and attempts browser APIs at init time.
+// All DB access uses direct REST fetch with explicit headers.
 
 const rooms = new Hono<{ Bindings: CloudflareEnv; Variables: { user: AuthUser } }>();
 
@@ -17,41 +21,60 @@ const rooms = new Hono<{ Bindings: CloudflareEnv; Variables: { user: AuthUser } 
  *   community_id — filter to a specific community (V2)
  *   limit        — max rooms to return (default: 20, max: 100)
  *   offset       — pagination offset (default: 0)
+ *
+ * FIX (2026-06-07): Replaced Supabase JS client with direct REST fetch.
+ * The JS client's private property access (.supabaseUrl, .supabaseKey) broke
+ * in v2.49.8, causing all queries to fail silently with "Failed to fetch rooms".
+ * Direct fetch with explicit apikey/Authorization headers resolves this.
  */
 rooms.get("/", async (c) => {
-  const supabase    = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
-  const limit       = Math.min(Number(c.req.query("limit")  ?? 20), 100);
-  const offset      = Math.max(Number(c.req.query("offset") ?? 0),  0);
+  const sbUrl   = c.env.SUPABASE_URL;
+  const sbKey   = c.env.SUPABASE_SERVICE_ROLE_KEY;
+  const limit   = Math.min(Number(c.req.query("limit")  ?? 20), 100);
+  const offset  = Math.max(Number(c.req.query("offset") ?? 0),  0);
   const category    = c.req.query("category");
   const communityId = c.req.query("community_id");
 
-  let q = supabase
-    .from("rooms")
-    .select(
-      "id, title, description, category, community_id, is_live, audience_count, cover_url, visibility, language, created_at, updated_at, " +
-      "host:profiles!rooms_host_id_fkey(id, username, display_name, avatar_url, is_verified)"
-    )
-    .eq("visibility", "public")
-    .order("is_live",        { ascending: false })
-    .order("audience_count", { ascending: false })
-    .order("created_at",     { ascending: false })
-    .range(offset, offset + limit - 1);
+  const select = [
+    "id,title,description,category,community_id,is_live",
+    "audience_count,cover_url,visibility,language,created_at,updated_at",
+    "host:profiles!rooms_host_id_fkey(id,username,display_name,avatar_url,is_verified)",
+  ].join(",");
 
-  if (category)    q = q.eq("category",     category    as RoomCategory);
-  if (communityId) q = q.eq("community_id", communityId);
+  const qs = new URLSearchParams({
+    select,
+    visibility: "eq.public",
+    order:      "is_live.desc,audience_count.desc,created_at.desc",
+    limit:      String(limit),
+    offset:     String(offset),
+  });
+  if (category)    qs.set("category",     `eq.${category}`);
+  if (communityId) qs.set("community_id", `eq.${communityId}`);
 
-  const { data, error } = await q;
-  if (error) {
-    console.error("[rooms] list error:", error.code, error.message);
+  let resp: Response;
+  try {
+    resp = await fetch(`${sbUrl}/rest/v1/rooms?${qs.toString()}`, {
+      method: "GET",
+      headers: {
+        apikey:         sbKey,
+        Authorization:  `Bearer ${sbKey}`,
+        "Content-Type": "application/json",
+        Accept:         "application/json",
+      },
+    });
+  } catch (err) {
+    console.error("[rooms] fetch error:", err);
     return c.json({ error: "Failed to fetch rooms" }, 500);
   }
 
-  return c.json({
-    rooms:  data ?? [],
-    count:  (data ?? []).length,
-    offset,
-    limit,
-  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    console.error("[rooms] list error:", resp.status, body.slice(0, 200));
+    return c.json({ error: "Failed to fetch rooms" }, 500);
+  }
+
+  const data = await resp.json() as unknown[];
+  return c.json({ rooms: data ?? [], count: (data ?? []).length, offset, limit });
 });
 
 /**

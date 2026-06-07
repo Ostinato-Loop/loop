@@ -44,7 +44,11 @@
  */
 
 import { Hono } from "hono";
-import { createClient } from "@supabase/supabase-js";
+// NOTE: @supabase/supabase-js createClient is intentionally NOT used here.
+// In Cloudflare Workers (nodejs_compat), the JS client accesses private
+// properties (.supabaseUrl, .supabaseKey) that changed in v2.49.8, and
+// also attempts browser APIs (localStorage, window.location) at init time.
+// All database access uses direct REST fetch with explicit headers instead.
 import type { CloudflareEnv } from "../types/env.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -116,21 +120,22 @@ function traceId(c: { req: { header(name: string): string | undefined } }): stri
 }
 
 // ── Supabase REST helpers ──────────────────────────────────────────────────────
+// All helpers accept an explicit { url, key } connection object so there is no
+// dependency on the Supabase JS client or its internal private properties.
 
-function sbClient(url: string, key: string) {
-  return createClient(url, key, { auth: { persistSession: false } });
+type SbConn = { url: string; key: string };
+
+/** Build a connection object from Cloudflare env vars. */
+function sbConn(url: string, key: string): SbConn {
+  return { url, key };
 }
 
-function sbGet(
-  sb: ReturnType<typeof sbClient>,
-  path: string,
-): Promise<Response> {
-  const base = (sb as unknown as { supabaseUrl: string }).supabaseUrl;
-  return fetch(`${base}${path}`, {
+function sbGet(sb: SbConn, path: string): Promise<Response> {
+  return fetch(`${sb.url}${path}`, {
     method: "GET",
     headers: {
-      apikey:          (sb as unknown as { supabaseKey: string }).supabaseKey,
-      Authorization:   `Bearer ${(sb as unknown as { supabaseKey: string }).supabaseKey}`,
+      apikey:          sb.key,
+      Authorization:   `Bearer ${sb.key}`,
       "Content-Type":  "application/json",
       Accept:          "application/json",
       Prefer:          "return=representation",
@@ -139,17 +144,16 @@ function sbGet(
 }
 
 function sbPost(
-  sb: ReturnType<typeof sbClient>,
+  sb: SbConn,
   path: string,
   body: unknown,
   prefer = "return=representation",
 ): Promise<Response> {
-  const base = (sb as unknown as { supabaseUrl: string }).supabaseUrl;
-  return fetch(`${base}${path}`, {
+  return fetch(`${sb.url}${path}`, {
     method: "POST",
     headers: {
-      apikey:          (sb as unknown as { supabaseKey: string }).supabaseKey,
-      Authorization:   `Bearer ${(sb as unknown as { supabaseKey: string }).supabaseKey}`,
+      apikey:          sb.key,
+      Authorization:   `Bearer ${sb.key}`,
       "Content-Type":  "application/json",
       Accept:          "application/json",
       Prefer:          prefer,
@@ -158,17 +162,12 @@ function sbPost(
   });
 }
 
-function sbPatch(
-  sb: ReturnType<typeof sbClient>,
-  path: string,
-  body: unknown,
-): Promise<Response> {
-  const base = (sb as unknown as { supabaseUrl: string }).supabaseUrl;
-  return fetch(`${base}${path}`, {
+function sbPatch(sb: SbConn, path: string, body: unknown): Promise<Response> {
+  return fetch(`${sb.url}${path}`, {
     method: "PATCH",
     headers: {
-      apikey:          (sb as unknown as { supabaseKey: string }).supabaseKey,
-      Authorization:   `Bearer ${(sb as unknown as { supabaseKey: string }).supabaseKey}`,
+      apikey:          sb.key,
+      Authorization:   `Bearer ${sb.key}`,
       "Content-Type":  "application/json",
       Accept:          "application/json",
       Prefer:          "return=representation",
@@ -177,16 +176,12 @@ function sbPatch(
   });
 }
 
-function sbDelete(
-  sb: ReturnType<typeof sbClient>,
-  path: string,
-): Promise<Response> {
-  const base = (sb as unknown as { supabaseUrl: string }).supabaseUrl;
-  return fetch(`${base}${path}`, {
+function sbDelete(sb: SbConn, path: string): Promise<Response> {
+  return fetch(`${sb.url}${path}`, {
     method: "DELETE",
     headers: {
-      apikey:          (sb as unknown as { supabaseKey: string }).supabaseKey,
-      Authorization:   `Bearer ${(sb as unknown as { supabaseKey: string }).supabaseKey}`,
+      apikey:          sb.key,
+      Authorization:   `Bearer ${sb.key}`,
       "Content-Type":  "application/json",
       Accept:          "application/json",
       Prefer:          "return=minimal",
@@ -215,7 +210,7 @@ communities.get("/nearby", async (c) => {
   const limit   = Math.min(Number(c.req.query("limit") ?? 20), 50);
   const civicOnly = c.req.query("civic") === "true";
   const tid     = traceId(c);
-  const sb      = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb      = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
 
   // CF geo detection
   const cfCountry  = c.req.header("CF-IPCountry")  ?? "NG";
@@ -307,7 +302,7 @@ communities.get("/interests", async (c) => {
   const tagsParam = c.req.query("tags") ?? "";
   const limit     = Math.min(Number(c.req.query("limit") ?? 20), 50);
   const tid       = traceId(c);
-  const sb        = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb        = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
 
   const tags = tagsParam
     .split(",")
@@ -351,7 +346,7 @@ communities.get("/state/:stateId", async (c) => {
   const limit       = Math.min(Number(c.req.query("limit") ?? 20), 50);
   const civicOnly   = c.req.query("civic") === "true";
   const tid         = traceId(c);
-  const sb          = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb          = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
 
   // Validate stateId format: e.g. "NG-LA", "NG-AB"
   if (!/^[A-Z]{2}-[A-Z]{2,4}$/.test(stateId.toUpperCase())) {
@@ -402,7 +397,7 @@ type CreateCommunityBody = {
 
 communities.post("/", requireAuth(), async (c) => {
   const user = c.get("user");
-  const sb   = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb   = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
   const tid  = traceId(c);
 
   const body: CreateCommunityBody = await c.req
@@ -508,7 +503,7 @@ communities.post("/", requireAuth(), async (c) => {
 /* ── GET /api/communities ────────────────────────────────────────────── */
 
 communities.get("/", async (c) => {
-  const sb       = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb       = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
   const limit    = Math.min(Number(c.req.query("limit")  ?? 20), 100);
   const offset   = Math.max(Number(c.req.query("offset") ?? 0),  0);
   const category = c.req.query("category");
@@ -557,7 +552,7 @@ communities.get("/", async (c) => {
 
 communities.get("/:slug", async (c) => {
   const { slug } = c.req.param();
-  const sb = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
 
   const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
   const filter = isUUID ? `id=eq.${slug}` : `slug=eq.${encodeURIComponent(slug)}`;
@@ -620,7 +615,7 @@ type UpdateCommunityBody = {
 communities.patch("/:id", requireAuth(), async (c) => {
   const { id } = c.req.param();
   const user = c.get("user");
-  const sb   = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb   = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
   const tid  = traceId(c);
 
   // Auth: must be owner or admin
@@ -688,7 +683,7 @@ communities.patch("/:id", requireAuth(), async (c) => {
 communities.delete("/:id", requireAuth(), async (c) => {
   const { id } = c.req.param();
   const user = c.get("user");
-  const sb   = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb   = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
   const tid  = traceId(c);
 
   const commCheck = await sbGet(sb,
@@ -726,7 +721,7 @@ communities.get("/:id/members", async (c) => {
   const limit   = Math.min(Number(c.req.query("limit")  ?? 50), 200);
   const offset  = Math.max(Number(c.req.query("offset") ?? 0),  0);
   const role    = c.req.query("role");
-  const sb      = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb      = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
 
   let path =
     `/rest/v1/community_members?community_id=eq.${id}` +
@@ -752,7 +747,7 @@ communities.get("/:id/members", async (c) => {
 communities.delete("/:id/members/:userId", requireAuth(), async (c) => {
   const { id, userId } = c.req.param();
   const actor = c.get("user");
-  const sb    = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb    = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
   const tid   = traceId(c);
 
   if (actor.id === userId) {
@@ -821,7 +816,7 @@ communities.delete("/:id/members/:userId", requireAuth(), async (c) => {
 communities.post("/:id/join", requireAuth(), async (c) => {
   const { id } = c.req.param();
   const user   = c.get("user");
-  const sb     = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb     = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
   const tid    = traceId(c);
 
   const commResp = await sbGet(sb,
@@ -920,7 +915,7 @@ communities.delete("/:id/leave", requireAuth(), async (c) => {
   const { id } = c.req.param();
   const result = await leaveCommunity(
     id, c.get("user"),
-    sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY),
+    sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY),
     traceId(c),
   );
   return c.json(result.body, result.status as 200 | 403 | 404 | 500);
@@ -932,7 +927,7 @@ communities.post("/:id/leave", requireAuth(), async (c) => {
   const { id } = c.req.param();
   const result = await leaveCommunity(
     id, c.get("user"),
-    sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY),
+    sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY),
     traceId(c),
   );
   return c.json(result.body, result.status as 200 | 403 | 404 | 500);
@@ -960,7 +955,7 @@ const DEFAULT_MODERATOR_PERMISSIONS: CommunityModeratorPermissions = {
 communities.post("/:id/moderators", requireAuth(), async (c) => {
   const { id } = c.req.param();
   const actor  = c.get("user");
-  const sb     = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb     = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
   const tid    = traceId(c);
 
   // Only owners can appoint moderators
@@ -1024,7 +1019,7 @@ communities.post("/:id/moderators", requireAuth(), async (c) => {
 communities.delete("/:id/moderators/:userId", requireAuth(), async (c) => {
   const { id, userId } = c.req.param();
   const actor = c.get("user");
-  const sb    = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb    = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
   const tid   = traceId(c);
 
   const actorMem = await sbGet(sb,
@@ -1067,7 +1062,7 @@ communities.delete("/:id/moderators/:userId", requireAuth(), async (c) => {
 
 communities.get("/:id/rules", async (c) => {
   const { id } = c.req.param();
-  const sb     = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb     = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
 
   const resp = await sbGet(sb,
     `/rest/v1/community_rules?community_id=eq.${id}` +
@@ -1086,7 +1081,7 @@ communities.get("/:id/rules", async (c) => {
 communities.post("/:id/rules", requireAuth(), async (c) => {
   const { id }  = c.req.param();
   const actor   = c.get("user");
-  const sb      = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb      = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
   const tid     = traceId(c);
 
   // Auth check: owner or moderator with can_edit_rules
@@ -1163,7 +1158,7 @@ communities.get("/:id/rooms", async (c) => {
   const limit    = Math.min(Number(c.req.query("limit")  ?? 20), 100);
   const offset   = Math.max(Number(c.req.query("offset") ?? 0),  0);
   const liveOnly = c.req.query("live") === "true";
-  const sb       = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb       = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
 
   let path =
     `/rest/v1/rooms?community_id=eq.${id}&visibility=eq.public` +
@@ -1198,7 +1193,7 @@ type CreateRoomBody = {
 communities.post("/:id/rooms", requireAuth(), async (c) => {
   const { id } = c.req.param();
   const user   = c.get("user");
-  const sb     = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sb     = sbConn(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
   const tid    = traceId(c);
 
   const memCheck = await sbGet(sb,
