@@ -19,6 +19,8 @@ import { useLoop } from "@/lib/loop-store";
 import { LoopMark } from "@/components/loop-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
 
 const CATEGORIES = [
   { label: "For you", value: "" },
@@ -91,13 +93,14 @@ function FeedHeader() {
           <button
             className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center"
             aria-label="Search"
-            onClick={() => {}}
+            onClick={() => toast.info("Search is coming soon")}
           >
             <Search className="h-4 w-4" />
           </button>
           <button
             className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center relative"
             aria-label="Notifications"
+            onClick={() => toast.info("Notifications coming soon")}
           >
             <Bell className="h-4 w-4" />
           </button>
@@ -209,6 +212,12 @@ function LiveStrip({ category, interests }: LiveStripProps) {
           {category
             ? "Try a different category or check back soon"
             : "Be the first — start a room"}
+        <button
+          onClick={() => navigate("/create/room")}
+          className="mt-3 text-xs font-semibold text-primary underline underline-offset-2"
+        >
+          Start a room →
+        </button>
         </p>
       </div>
     );
