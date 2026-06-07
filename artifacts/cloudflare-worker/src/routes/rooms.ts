@@ -35,10 +35,13 @@ rooms.get("/", async (c) => {
   const category    = c.req.query("category");
   const communityId = c.req.query("community_id");
 
+  // FIX: removed FK join (host:profiles!rooms_host_id_fkey) — if that FK
+  // constraint doesn't exist in the DB, Supabase REST returns an error.
+  // host_id is included directly; callers can fetch profiles separately.
+  // The join can be re-added once migrations have been verified in prod.
   const select = [
-    "id,title,description,category,community_id,is_live",
+    "id,title,description,category,community_id,host_id,is_live",
     "audience_count,cover_url,visibility,language,created_at,updated_at",
-    "host:profiles!rooms_host_id_fkey(id,username,display_name,avatar_url,is_verified)",
   ].join(",");
 
   const qs = new URLSearchParams({
@@ -64,13 +67,14 @@ rooms.get("/", async (c) => {
     });
   } catch (err) {
     console.error("[rooms] fetch error:", err);
-    return c.json({ error: "Failed to fetch rooms" }, 500);
+    return c.json({ error: "Failed to fetch rooms", _debug: String(err) }, 500);
   }
 
   if (!resp.ok) {
     const body = await resp.text().catch(() => "");
-    console.error("[rooms] list error:", resp.status, body.slice(0, 200));
-    return c.json({ error: "Failed to fetch rooms" }, 500);
+    console.error("[rooms] list error:", resp.status, body.slice(0, 300));
+    // Include _debug so operator can diagnose table/FK issues without CF logs
+    return c.json({ error: "Failed to fetch rooms", _debug: body.slice(0, 300) }, 500);
   }
 
   const data = await resp.json() as unknown[];
