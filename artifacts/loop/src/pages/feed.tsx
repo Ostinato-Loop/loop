@@ -10,7 +10,6 @@
 //   when the user is on the "For you" tab with no explicit category filter.
 // LILCKY STUDIO LIMITED
 
-import { Link } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import { Search, Bell, Radio } from "lucide-react";
 import { listRooms, type Room as ApiRoom, type RoomCategory } from "@/lib/api/rooms";
@@ -20,7 +19,7 @@ import { LoopMark } from "@/components/loop-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 const CATEGORIES = [
   { label: "For you", value: "" },
