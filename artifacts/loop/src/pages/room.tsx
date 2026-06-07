@@ -154,21 +154,26 @@ function HostControls({
   onToggleMic: () => void;
   onEndRoom: () => void;
   raisedHandCount: number;
+  audioError?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between px-4 py-3 gap-3">
       {/* Mic toggle */}
       <button
         onClick={onToggleMic}
+        disabled={audioError}
+        title={audioError ? "Audio unavailable" : undefined}
         className={cn(
           "flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold transition",
-          muted
+          audioError
+            ? "bg-destructive/10 text-destructive cursor-not-allowed opacity-60"
+            : muted
             ? "bg-secondary text-foreground"
             : "bg-primary text-primary-foreground neon-glow",
         )}
       >
-        {muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-        {muted ? "Unmute" : "Mute"}
+        {audioError ? <MicOff className="h-4 w-4" /> : muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+        {audioError ? "No audio" : muted ? "Unmute" : "Mute"}
       </button>
 
       {/* Raised hands indicator */}
@@ -200,20 +205,25 @@ function SpeakerControls({
   muted: boolean;
   onToggleMic: () => void;
   onLeave: () => void;
+  audioError?: boolean;
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-3">
       <button
         onClick={onToggleMic}
+        disabled={audioError}
+        title={audioError ? "Audio unavailable" : undefined}
         className={cn(
           "flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold transition",
-          muted
+          audioError
+            ? "bg-destructive/10 text-destructive cursor-not-allowed opacity-60"
+            : muted
             ? "bg-secondary text-foreground"
             : "bg-primary text-primary-foreground neon-glow",
         )}
       >
-        {muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-        {muted ? "Unmute" : "Mute"}
+        {audioError ? <MicOff className="h-4 w-4" /> : muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+        {audioError ? "No audio" : muted ? "Unmute" : "Mute"}
       </button>
       <button
         onClick={onLeave}
@@ -271,7 +281,7 @@ export default function RoomPage() {
   const [floats, setFloats] = useState<FloatingReaction[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [draft, setDraft] = useState("");
-  const { muted, speakingIds, toggleMic, audioState } = useLiveKitRoom(
+  const { muted, speakingIds, toggleMic, audioState, audioError } = useLiveKitRoom(
     roomId,
     user?.id,
     !loading && !!user,
@@ -507,6 +517,12 @@ export default function RoomPage() {
                 Audio on
               </span>
             )}
+            {audioState === "error" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-bold text-destructive">
+                <MicOff className="h-2.5 w-2.5" />
+                Audio unavailable
+              </span>
+            )}
             {audioState === "connecting" && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-600">
                 Connecting…
@@ -674,12 +690,14 @@ export default function RoomPage() {
             onToggleMic={toggleMic}
             onEndRoom={endRoom}
             raisedHandCount={raisedHandCount}
+            audioError={audioState === "error"}
           />
         ) : isOnStage ? (
           <SpeakerControls
             muted={muted}
             onToggleMic={toggleMic}
             onLeave={leaveRoom_}
+            audioError={audioState === "error"}
           />
         ) : (
           <ListenerControls
