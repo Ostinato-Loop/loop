@@ -874,7 +874,7 @@ communities.post("/:id/join", requireAuth(), async (c) => {
 async function leaveCommunity(
   id: string,
   user: AuthUser,
-  sb: ReturnType<typeof sbClient>,
+  sb: SbConn,
   tid: string,
 ) {
   const memCheck = await sbGet(sb,
