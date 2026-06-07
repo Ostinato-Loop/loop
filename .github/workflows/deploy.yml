@@ -14,7 +14,7 @@ env:
   CLOUDFLARE_API_TOKEN:   ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
 jobs:
-  # ── 1. Lint ────────────────────────────────────────────────────────
+  # ── 1. Lint ──────────────────────────────────────────────────
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -29,7 +29,7 @@ jobs:
         working-directory: artifacts/loop
         run: pnpm run lint
 
-  # ── 2. Type-check ──────────────────────────────────────────────────
+  # ── 2. Type-check ────────────────────────────────────────────
   typecheck:
     name: Typecheck
     runs-on: ubuntu-latest
@@ -47,7 +47,7 @@ jobs:
         working-directory: artifacts/loop
         run: pnpm exec tsc --noEmit
 
-  # ── 3. Tests ───────────────────────────────────────────────────────
+  # ── 3. Tests ─────────────────────────────────────────────────────
   test:
     name: Tests
     runs-on: ubuntu-latest
@@ -65,7 +65,7 @@ jobs:
         working-directory: artifacts/loop
         run: pnpm run test
 
-  # ── 4. Security ────────────────────────────────────────────────────
+  # ── 4. Security ────────────────────────────────────────────────
   security:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -130,7 +130,7 @@ jobs:
         run: |
           echo "AUDIT LOG: service=loop-worker commit=${{ github.sha }} author=${{ github.actor }} timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ) status=${{ job.status }} run_id=${{ github.run_id }} branch=${{ github.ref_name }}"
 
-  # ── 6. Deploy Cloudflare Pages ─────────────────────────────────────
+  # ── 6. Deploy Cloudflare Pages ─────────────────────────────────
   deploy-pages:
     name: Deploy Pages
     runs-on: ubuntu-latest
@@ -150,8 +150,15 @@ jobs:
           PORT: "3000"
           BASE_PATH: "/"
           NODE_ENV: production
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          # B0 FIX 2026-06-07: correct env var names so client.ts receives the anon key
+          # client.ts reads VITE_SUPABASE_PUBLISHABLE_KEY (not VITE_SUPABASE_ANON_KEY)
+          # Org secret is SUPABASE_ANON_KEY (not prefixed with VITE_)
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # Supabase project URL — org secret SUPABASE_URL
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # Loop API base URL — hardcoded public endpoint (no secret required)
+          # Required so AuthProvider sends requests to loop-api.rald.cloud, not the SPA router
+          VITE_API_BASE_URL: https://loop-api.rald.cloud
 
       - name: Ensure Cloudflare Pages project exists (idempotent)
         env:
