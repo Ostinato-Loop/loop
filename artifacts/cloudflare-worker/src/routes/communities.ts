@@ -1,9 +1,6 @@
 /**
  * Loop V2 — Communities Routes
  *
- * Communities are the PRIMARY entity. Rooms, discovery, and membership
- * all revolve around communities.
- *
  * POST   /api/communities                  create community (requireAuth)
  * GET    /api/communities                  list communities (public)
  * GET    /api/communities/:slug            get community by slug
@@ -47,14 +44,19 @@ export function isValidSlug(slug: string): boolean {
   return SLUG_RE.test(slug) && !slug.includes("--");
 }
 
+/**
+ * Convert a display name to a URL slug.
+ * Strategy: replace whitespace/underscores with hyphens FIRST, then strip
+ * any remaining non-alphanumeric characters. This means special chars that
+ * sit adjacent to spaces produce double hyphens — the caller must validate
+ * the result with isValidSlug() before persisting.
+ */
 export function slugify(name: string): string {
   return name
     .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/[\s_]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
+    .replace(/[\s_]+/g, "-")       // whitespace & underscores → hyphen
+    .replace(/[^a-z0-9-]/g, "")   // strip all other non-alphanumeric chars
+    .replace(/^-+|-+$/g, "")      // strip leading/trailing hyphens
     .slice(0, 48);
 }
 
@@ -124,16 +126,20 @@ async function sbDelete(client: SbClient, path: string): Promise<Response> {
 
 /* ── POST /api/communities ───────────────────────────────────────────── */
 
+type CreateCommunityBody = {
+  name?:        string;
+  slug?:        string;
+  description?: string;
+  cover_url?:   string;
+  category?:    string;
+  visibility?:  string;
+};
+
 communities.post("/", requireAuth(), async (c) => {
   const user = c.get("user");
-  const body = await c.req.json<{
-    name?:        string;
-    slug?:        string;
-    description?: string;
-    cover_url?:   string;
-    category?:    string;
-    visibility?:  string;
-  }>().catch(() => ({}));
+  const body: CreateCommunityBody = await c.req
+    .json<CreateCommunityBody>()
+    .catch((): CreateCommunityBody => ({}));
 
   const name = body.name?.trim();
   if (!name || name.length < 2 || name.length > 100) {
@@ -163,7 +169,6 @@ communities.post("/", requireAuth(), async (c) => {
 
   const sb = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
 
-  // Check slug uniqueness
   const slugCheck = await sbGet(sb,
     `/rest/v1/communities?slug=eq.${encodeURIComponent(slug)}&select=id&limit=1`);
   if (slugCheck.ok) {
@@ -195,7 +200,6 @@ communities.post("/", requireAuth(), async (c) => {
   const community = rows[0];
   if (!community) return c.json({ error: "Failed to create community" }, 500);
 
-  // Add owner as first member
   await sbPost(sb, "/rest/v1/community_members", {
     community_id: community.id,
     user_id:      user.id,
@@ -245,7 +249,6 @@ communities.get("/", async (c) => {
   }
 
   const data = await resp.json() as unknown[];
-
   return c.json({ communities: data, count: data.length, offset, limit });
 });
 
@@ -266,7 +269,6 @@ communities.get("/:slug", async (c) => {
   const community = rows[0];
   if (!community) return c.json({ error: "Community not found" }, 404);
 
-  // Resolve membership from optional auth header
   let isMember   = false;
   let memberRole: CommunityRole | null = null;
 
@@ -299,6 +301,14 @@ communities.get("/:slug", async (c) => {
 
 /* ── PATCH /api/communities/:id ──────────────────────────────────────── */
 
+type PatchCommunityBody = {
+  name?:        string;
+  description?: string;
+  cover_url?:   string;
+  category?:    string;
+  visibility?:  string;
+};
+
 communities.patch("/:id", requireAuth(), async (c) => {
   const { id } = c.req.param();
   const user = c.get("user");
@@ -314,13 +324,9 @@ communities.patch("/:id", requireAuth(), async (c) => {
     return c.json({ error: "Forbidden — owner or admin required" }, 403);
   }
 
-  const body = await c.req.json<{
-    name?:        string;
-    description?: string;
-    cover_url?:   string;
-    category?:    string;
-    visibility?:  string;
-  }>().catch(() => ({}));
+  const body: PatchCommunityBody = await c.req
+    .json<PatchCommunityBody>()
+    .catch((): PatchCommunityBody => ({}));
 
   const patch: Record<string, unknown> = {};
 
@@ -404,7 +410,6 @@ communities.get("/:id/members", async (c) => {
   const role   = c.req.query("role");
   const sb     = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
 
-  // Verify community exists
   const commResp = await sbGet(sb,
     `/rest/v1/communities?id=eq.${id}&select=id,visibility&limit=1`);
   if (!commResp.ok) return c.json({ error: "Failed to fetch community" }, 500);
@@ -445,7 +450,6 @@ communities.post("/:id/join", requireAuth(), async (c) => {
     return c.json({ error: "This community is invite-only" }, 403);
   }
 
-  // Check not already a member
   const memCheck = await sbGet(sb,
     `/rest/v1/community_members?community_id=eq.${id}&user_id=eq.${user.id}&select=role&limit=1`);
   if (memCheck.ok) {
@@ -467,7 +471,6 @@ communities.post("/:id/join", requireAuth(), async (c) => {
     return c.json({ error: "Failed to join community" }, 500);
   }
 
-  // Non-fatal counter increment via RPC
   await sbPost(sb, "/rest/v1/rpc/increment_community_member_count", {
     p_community_id: id,
   }).catch((e: unknown) => {
@@ -512,7 +515,6 @@ communities.delete("/:id/leave", requireAuth(), async (c) => {
     return c.json({ error: "Failed to leave community" }, 500);
   }
 
-  // Non-fatal counter decrement
   await sbPost(sb, "/rest/v1/rpc/decrement_community_member_count", {
     p_community_id: id,
   }).catch((e: unknown) => {
@@ -551,12 +553,20 @@ communities.get("/:id/rooms", async (c) => {
 
 /* ── POST /api/communities/:id/rooms ─────────────────────────────────── */
 
+type CreateRoomBody = {
+  title?:       string;
+  description?: string;
+  category?:    string;
+  visibility?:  string;
+  language?:    string;
+  cover_url?:   string;
+};
+
 communities.post("/:id/rooms", requireAuth(), async (c) => {
   const { id } = c.req.param();
   const user = c.get("user");
   const sb = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
 
-  // Must be a member (any role) to create a room in this community
   const memCheck = await sbGet(sb,
     `/rest/v1/community_members?community_id=eq.${id}&user_id=eq.${user.id}&select=role&limit=1`);
   if (!memCheck.ok) return c.json({ error: "Failed to verify membership" }, 500);
@@ -567,14 +577,9 @@ communities.post("/:id/rooms", requireAuth(), async (c) => {
     }, 403);
   }
 
-  const body = await c.req.json<{
-    title?:       string;
-    description?: string;
-    category?:    string;
-    visibility?:  string;
-    language?:    string;
-    cover_url?:   string;
-  }>().catch(() => ({}));
+  const body: CreateRoomBody = await c.req
+    .json<CreateRoomBody>()
+    .catch((): CreateRoomBody => ({}));
 
   const title = body.title?.trim();
   if (!title || title.length < 2 || title.length > 120) {
@@ -583,14 +588,14 @@ communities.post("/:id/rooms", requireAuth(), async (c) => {
 
   const createResp = await sbPost(sb, "/rest/v1/rooms", {
     title,
-    description:   body.description ?? null,
-    host_id:       user.id,
-    community_id:  id,
-    category:      body.category   ?? "general",
-    visibility:    body.visibility ?? "public",
-    language:      body.language   ?? "en",
-    cover_url:     body.cover_url  ?? null,
-    is_live:       false,
+    description:    body.description ?? null,
+    host_id:        user.id,
+    community_id:   id,
+    category:       body.category    ?? "general",
+    visibility:     body.visibility  ?? "public",
+    language:       body.language    ?? "en",
+    cover_url:      body.cover_url   ?? null,
+    is_live:        false,
     audience_count: 0,
   }, "return=representation");
 
@@ -603,7 +608,6 @@ communities.post("/:id/rooms", requireAuth(), async (c) => {
   const rows = await createResp.json() as unknown[];
   const room  = rows[0];
 
-  // Non-fatal room counter increment
   await sbPost(sb, "/rest/v1/rpc/increment_community_room_count", {
     p_community_id: id,
   }).catch((e: unknown) => {
