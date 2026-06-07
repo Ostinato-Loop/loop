@@ -2,6 +2,11 @@
  * Loop — Notifications Page
  * Real data: new followers from /api/follows/me/followers
  * Trust nudges + profile completion prompts from local state.
+ *
+ * Bug fix (2026-06-07): follower shape from /api/follows/me/followers uses
+ *   { follower_id, created_at, profiles: { display_name, username, avatar_url } }
+ * not flat fields. Updated fetchFollowerNotifs to use nested shape.
+ *
  * LILCKY STUDIO LIMITED
  */
 
@@ -21,23 +26,23 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? ""
 type NotifKind = "follow" | "trust" | "profile" | "room_invite" | "system";
 
 type Notif = {
-  id:        string;
-  kind:      NotifKind;
-  title:     string;
-  body:      string;
-  ts:        number;
-  read:      boolean;
-  action?:   string;
+  id:           string;
+  kind:         NotifKind;
+  title:        string;
+  body:         string;
+  ts:           number;
+  read:         boolean;
+  action?:      string;
   actionLabel?: string;
-  avatar?:   string | null;
-  initials?: string;
+  avatar?:      string | null;
+  initials?:    string;
 };
 
 /* ── helpers ── */
 function timeAgo(ts: number): string {
   const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60)  return "just now";
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 60)    return "just now";
+  if (s < 3600)  return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 }
@@ -66,6 +71,19 @@ function initials(name: string) {
   return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 }
 
+/* ── Follower API response shape (from /api/follows/me/followers) ── */
+type FollowerRow = {
+  follower_id: string;
+  created_at:  string;
+  profiles: {
+    id:           string;
+    username:     string | null;
+    display_name: string | null;
+    avatar_url:   string | null;
+    is_verified:  boolean;
+  } | null;
+};
+
 /* ── fetch followers as notifications ── */
 async function fetchFollowerNotifs(token: string | null): Promise<Notif[]> {
   if (!token) return [];
@@ -74,20 +92,21 @@ async function fetchFollowerNotifs(token: string | null): Promise<Notif[]> {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!r.ok) return [];
-    const j = await r.json() as { followers?: Array<{ user_id: string; display_name: string | null; username: string | null; avatar_url: string | null; followed_at: string }> };
+    const j = await r.json() as { followers?: FollowerRow[] };
     return (j.followers ?? []).map((f) => {
-      const label = f.display_name ?? f.username ?? f.user_id.slice(0, 8);
+      const profile = f.profiles;
+      const label   = profile?.display_name ?? profile?.username ?? f.follower_id.slice(0, 8);
       return {
-        id:          `follow-${f.user_id}`,
+        id:          `follow-${f.follower_id}`,
         kind:        "follow" as const,
         title:       `${label} started following you`,
-        body:        f.username ? `@${f.username}` : "Loop member",
-        ts:          new Date(f.followed_at).getTime(),
+        body:        profile?.username ? `@${profile.username}` : "Loop member",
+        ts:          new Date(f.created_at).getTime(),
         read:        false,
         action:      `/discover`,
         actionLabel: "View people",
         initials:    initials(label),
-        avatar:      f.avatar_url,
+        avatar:      profile?.avatar_url ?? null,
       };
     });
   } catch {
@@ -106,7 +125,7 @@ function buildNudges(profile: ReturnType<typeof useAuth>["profile"], score: numb
     nudges.push({
       id: "nudge-avatar", kind: "profile",
       title: "Add a profile photo",
-      body: "Members with a photo get 3× more connects.",
+      body:  "Members with a photo get 3× more connects.",
       ts: now - 3600_000, read: true,
       action: "https://profiles.rald.cloud", actionLabel: "Add photo",
     });
@@ -115,7 +134,7 @@ function buildNudges(profile: ReturnType<typeof useAuth>["profile"], score: numb
     nudges.push({
       id: "nudge-bio", kind: "profile",
       title: "Write a bio",
-      body: "Tell your community who you are.",
+      body:  "Tell your community who you are.",
       ts: now - 7200_000, read: true,
       action: "/settings", actionLabel: "Add bio",
     });
@@ -124,7 +143,7 @@ function buildNudges(profile: ReturnType<typeof useAuth>["profile"], score: numb
     nudges.push({
       id: "nudge-region", kind: "profile",
       title: "Set your region",
-      body: "See rooms and people from your area.",
+      body:  "See rooms and people from your area.",
       ts: now - 10800_000, read: true,
       action: "/settings", actionLabel: "Set region",
     });
@@ -145,8 +164,8 @@ function buildNudges(profile: ReturnType<typeof useAuth>["profile"], score: numb
 
 /* ── notification row ── */
 function NotifRow({ n, onRead }: { n: Notif; onRead: (id: string) => void }) {
-  const Icon = kindIcon(n.kind);
-  const color = kindColor(n.kind);
+  const Icon    = kindIcon(n.kind);
+  const color   = kindColor(n.kind);
   const isExternal = n.action?.startsWith("http");
 
   const inner = (
@@ -157,7 +176,6 @@ function NotifRow({ n, onRead }: { n: Notif; onRead: (id: string) => void }) {
       )}
       onClick={() => onRead(n.id)}
     >
-      {/* Icon / Avatar */}
       <div className={cn("h-10 w-10 rounded-full flex items-center justify-center shrink-0 text-sm font-bold", color)}>
         {n.avatar ? (
           <img src={n.avatar} alt={n.title} className="h-10 w-10 rounded-full object-cover" />
@@ -167,7 +185,6 @@ function NotifRow({ n, onRead }: { n: Notif; onRead: (id: string) => void }) {
           <Icon className="h-4.5 w-4.5" />
         )}
       </div>
-      {/* Text */}
       <div className="min-w-0 flex-1">
         <p className={cn("text-sm font-semibold leading-snug", !n.read && "text-primary")}>{n.title}</p>
         <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{n.body}</p>
@@ -177,7 +194,6 @@ function NotifRow({ n, onRead }: { n: Notif; onRead: (id: string) => void }) {
           </span>
         )}
       </div>
-      {/* Time + unread dot */}
       <div className="shrink-0 flex flex-col items-end gap-1.5 pt-0.5">
         <span className="text-[10px] text-muted-foreground whitespace-nowrap">{timeAgo(n.ts)}</span>
         {!n.read && <span className="h-2 w-2 rounded-full bg-primary" />}
@@ -198,7 +214,7 @@ function NotifRow({ n, onRead }: { n: Notif; onRead: (id: string) => void }) {
 export default function NotificationsPage() {
   const { user, loading, profile } = useAuth();
   const navigate = useNavigate();
-  const [notifs, setNotifs] = useState<Notif[]>([]);
+  const [notifs, setNotifs]   = useState<Notif[]>([]);
   const [fetching, setFetching] = useState(true);
   const [readSet, setReadSet] = useState<Set<string>>(new Set());
 
@@ -225,11 +241,11 @@ export default function NotificationsPage() {
     if (user) void load();
   }, [user, load]);
 
-  const markRead = (id: string) => setReadSet((s) => new Set([...s, id]));
+  const markRead    = (id: string) => setReadSet((s) => new Set([...s, id]));
   const markAllRead = () => setReadSet(new Set(notifs.map((n) => n.id)));
 
   const displayed = notifs.map((n) => ({ ...n, read: n.read || readSet.has(n.id) }));
-  const unread = displayed.filter((n) => !n.read).length;
+  const unread    = displayed.filter((n) => !n.read).length;
 
   if (loading || !user) {
     return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
@@ -237,7 +253,6 @@ export default function NotificationsPage() {
 
   return (
     <AppShell>
-      {/* Header */}
       <header className="sticky top-0 z-30 bg-background/85 backdrop-blur-xl border-b border-border">
         <div className="flex items-center gap-3 px-5 py-4">
           <button
@@ -258,10 +273,7 @@ export default function NotificationsPage() {
             </h1>
           </div>
           {unread > 0 && (
-            <button
-              onClick={markAllRead}
-              className="text-xs font-semibold text-primary shrink-0"
-            >
+            <button onClick={markAllRead} className="text-xs font-semibold text-primary shrink-0">
               Mark all read
             </button>
           )}
@@ -269,16 +281,12 @@ export default function NotificationsPage() {
       </header>
 
       <div className="px-5 py-4 space-y-2.5 pb-8">
-        {/* Loading */}
         {fetching && (
           <div className="space-y-2.5">
-            {[0, 1, 2].map((i) => (
-              <div key={i} className="h-16 animate-pulse rounded-2xl bg-surface" />
-            ))}
+            {[0, 1, 2].map((i) => <div key={i} className="h-16 animate-pulse rounded-2xl bg-surface" />)}
           </div>
         )}
 
-        {/* Empty */}
         {!fetching && displayed.length === 0 && (
           <div className="flex flex-col items-center gap-4 py-16 text-center">
             <div className="h-16 w-16 rounded-2xl bg-secondary flex items-center justify-center">
@@ -291,47 +299,34 @@ export default function NotificationsPage() {
               </p>
             </div>
             <div className="flex flex-col gap-2 w-full max-w-xs">
-              <Link
-                to="/discover"
-                className="flex items-center justify-center gap-2 h-11 rounded-xl bg-primary text-primary-foreground text-sm font-semibold"
-              >
+              <Link to="/discover" className="flex items-center justify-center gap-2 h-11 rounded-xl bg-primary text-primary-foreground text-sm font-semibold">
                 <Mic className="h-4 w-4" /> Discover rooms
               </Link>
-              <Link
-                to="/settings"
-                className="flex items-center justify-center gap-2 h-11 rounded-xl bg-secondary text-sm font-semibold"
-              >
+              <Link to="/settings" className="flex items-center justify-center gap-2 h-11 rounded-xl bg-secondary text-sm font-semibold">
                 <Sparkles className="h-4 w-4" /> Complete profile
               </Link>
             </div>
           </div>
         )}
 
-        {/* New */}
         {!fetching && unread > 0 && (
           <section>
             <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2">New</p>
             <div className="space-y-2">
-              {displayed.filter((n) => !n.read).map((n) => (
-                <NotifRow key={n.id} n={n} onRead={markRead} />
-              ))}
+              {displayed.filter((n) => !n.read).map((n) => <NotifRow key={n.id} n={n} onRead={markRead} />)}
             </div>
           </section>
         )}
 
-        {/* Earlier */}
         {!fetching && displayed.filter((n) => n.read).length > 0 && (
           <section>
             <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-2 mt-4">Earlier</p>
             <div className="space-y-2">
-              {displayed.filter((n) => n.read).map((n) => (
-                <NotifRow key={n.id} n={n} onRead={markRead} />
-              ))}
+              {displayed.filter((n) => n.read).map((n) => <NotifRow key={n.id} n={n} onRead={markRead} />)}
             </div>
           </section>
         )}
 
-        {/* Trust nudge banner */}
         {!fetching && profile && trustScore < 40 && (
           <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4 flex items-start gap-3">
             <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
@@ -341,13 +336,10 @@ export default function NotificationsPage() {
               <p className="text-sm font-semibold">Build your trust score</p>
               <p className="text-xs text-muted-foreground mt-0.5">Complete your profile and join rooms to earn trust points and unlock more features.</p>
             </div>
-            <Link to="/trust-center" className="shrink-0 text-xs text-primary font-semibold mt-0.5">
-              Learn →
-            </Link>
+            <Link to="/trust-center" className="shrink-0 text-xs text-primary font-semibold mt-0.5">Learn →</Link>
           </div>
         )}
 
-        {/* Follower invite CTA */}
         {!fetching && (
           <div className="mt-2 rounded-2xl border border-border bg-surface p-4 flex items-center gap-3">
             <div className="h-9 w-9 rounded-xl bg-secondary flex items-center justify-center shrink-0">
@@ -357,9 +349,7 @@ export default function NotificationsPage() {
               <p className="text-sm font-semibold">Grow your network</p>
               <p className="text-xs text-muted-foreground">Connect with people from your region.</p>
             </div>
-            <Link to="/discover" className="shrink-0">
-              <ArrowRight className="h-4 w-4 text-muted-foreground" />
-            </Link>
+            <Link to="/discover"><ArrowRight className="h-4 w-4 text-muted-foreground" /></Link>
           </div>
         )}
       </div>
