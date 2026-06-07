@@ -1,10 +1,14 @@
 # ============================================================
 # Loop V1 — Cloudflare Worker
+# Production: loop-api.rald.cloud
 # ============================================================
-name            = "loop-api"
-main            = "src/index.ts"
+name               = "loop-api"
+main               = "src/index.ts"
 compatibility_date = "2025-06-01"
 compatibility_flags = ["nodejs_compat"]
+
+# Disable .workers.dev URL globally (use custom domain only)
+workers_dev = false
 
 # ── D1 — Primary SQL database ─────────────────────────────
 [[d1_databases]]
@@ -50,22 +54,29 @@ binding = "AI"
 [observability]
 enabled = true
 
-# ── Default env vars (development) ───────────────────────
+# ── Default env vars (development / wrangler dev) ────────
 [vars]
 ENVIRONMENT   = "development"
 SUPABASE_URL  = "https://onxdcikfttdmnhofsuwo.supabase.co"
 CORS_ORIGIN   = "*"
 RALD_AUTH_URL = "https://auth.rald.cloud"
-# LiveKit — set the public URL here; provision secrets via wrangler secret put
-# LIVEKIT_URL = "wss://your-project.livekit.cloud"
-# wrangler secret put LIVEKIT_API_KEY
-# wrangler secret put LIVEKIT_API_SECRET
+
+# Secrets — set via: wrangler secret put <KEY>
+# RALD_JWT_SECRET
+# SUPABASE_SERVICE_ROLE_KEY
+# TERMII_API_KEY
+# TERMII_SENDER_ID
+# OPENROUTER_API_KEY
+# LIVEKIT_API_KEY
+# LIVEKIT_API_SECRET
+# LIVEKIT_URL
 
 # ── Production environment ────────────────────────────────
 # Wrangler v4: named envs do NOT auto-inherit top-level bindings.
 # All bindings must be declared explicitly for [env.production].
 [env.production]
-name = "loop-api"
+name        = "loop-api"
+workers_dev = false
 
 [[env.production.d1_databases]]
 binding       = "DB"
@@ -96,12 +107,24 @@ class_name = "RoomSession"
 [env.production.ai]
 binding = "AI"
 
+[env.production.observability]
+enabled = true
+
 [env.production.vars]
 ENVIRONMENT   = "production"
 SUPABASE_URL  = "https://onxdcikfttdmnhofsuwo.supabase.co"
 CORS_ORIGIN   = "https://loop.rald.cloud,https://loop.ostinato-loop.pages.dev"
 RALD_AUTH_URL = "https://auth.rald.cloud"
-# LiveKit URL set via secret: wrangler secret put LIVEKIT_URL --env production
+
+# Production secrets — pushed by deploy.yml via wrangler secret put:
+# RALD_JWT_SECRET
+# SUPABASE_SERVICE_ROLE_KEY
+# TERMII_API_KEY
+# TERMII_SENDER_ID
+# OPENROUTER_API_KEY
+# LIVEKIT_API_KEY
+# LIVEKIT_API_SECRET
+# LIVEKIT_URL
 
 [[env.production.routes]]
 pattern   = "loop-api.rald.cloud/*"
