@@ -1,162 +1,157 @@
-# Usability Audit — Loop V1
-**Date:** 2026-06-07 | **Standard:** Nielsen's 10 Usability Heuristics applied to Loop V1
+# Loop V1 — Usability Audit
+Generated: 2026-06-07 | Sprint: V1 Stabilization Freeze
+Framework: Nielsen's 10 Heuristics + Household Test
 
 ---
 
-## H1: Visibility of System Status
+## H1 — Visibility of System Status
+**Score: 7/10**
+- Room loading shows full-screen spinner. Pass.
+- Feed shows skeleton cards on load. Pass.
+- Audio error badge visible in room header. Pass.
+- Offline banner in main.tsx. Pass.
+- Messages loading state is text only — no skeleton. Fail.
+- Profile page has no loading state — blank flash on first render. Fail.
+- Room join status not communicated clearly during the join action. Fail.
 
-**FAIL — Multiple violations**
+---
 
-| Issue | Location | Severity |
+## H2 — Match Between System and Real World
+**Score: 8/10**
+- Audio metaphors (Mic, Radio, DJ Session) match real-world usage. Pass.
+- Room categories match African radio/community context well. Pass.
+- "Live now" with pulsing dot matches broadcast conventions. Pass.
+- "RALD identity" terminology is unfamiliar to new users — needs onboarding explanation. Gap.
+
+---
+
+## H3 — User Control and Freedom
+**Score: 6/10**
+- Room join can be cancelled via lobby state before audio connects. Pass.
+- Onboarding allows back navigation between steps. Pass.
+- No undo on room reactions. Gap.
+- No way to leave onboarding mid-flow — intentional but progress bar must be clear. Gap.
+- Create room has no discard confirmation when navigating away with unsaved title. Gap.
+
+---
+
+## H4 — Consistency and Standards
+**Score: 8/10**
+- Consistent mint/neon green accent across all screens. Pass.
+- Consistent card border-radius (rounded-2xl). Pass.
+- Consistent font-display headings with uppercase tracking. Pass.
+- Two profile pages exist (me.tsx, me-launch.tsx) — potential future inconsistency. Gap.
+- Button styles inconsistent: some use shadcn Button, some use custom Tailwind classes. Gap.
+
+---
+
+## H5 — Error Prevention
+**Score: 5/10**
+- Username validation: /^[a-z0-9_]{3,20}$/ with clear message shown. Pass.
+- Feedback message 5-2000 char constraint enforced. Pass.
+- No confirmation before creating a room with a duplicate title. Fail.
+- No warning before leaving a live room as host — ends room for all participants. Fail.
+- No OTP resend timer — users can spam OTP requests. Fail.
+**Fix (P1):** Add host-leave confirmation dialog. Add OTP resend cooldown (60s timer).
+
+---
+
+## H6 — Recognition Over Recall
+**Score: 8/10**
+- Category emojis provide immediate visual recognition. Pass.
+- Avatar initials with gradient fallback for unnamed users. Pass.
+- Tab icons in BottomNav are labelled. Pass.
+- "Near" tab label in Discover is ambiguous — "Near you" would be clearer. Gap.
+
+---
+
+## H7 — Flexibility and Efficiency
+**Score: 5/10**
+- No keyboard shortcuts anywhere in the app. Fail.
+- No quick-mute shortcut accessible from outside a room. Fail.
+- Room tabs (trending, live) provide useful power-user shortcuts. Pass.
+
+---
+
+## H8 — Aesthetic and Minimalist Design
+**Score: 9/10**
+- Dark RALD theme with single accent colour — clean and focused. Pass.
+- Cards use consistent spacing and border treatment. Pass.
+- Empty states use subtle dashed borders — not intrusive. Pass.
+- Discover page has multiple horizontal scroll strips — can feel overwhelming on first load. Minor gap.
+
+---
+
+## H9 — Help Users Recover from Errors
+**Score: 6/10**
+- Room not found shows a friendly error card with back navigation. Pass.
+- Auth redirect explained by the interstitial (fixed in prior sprint). Pass.
+- Network errors show destructive banner with message text. Pass.
+- OTP failure shows no distinction between "wrong code" and "expired code". Fail.
+- Raw Supabase error messages can surface to the user (e.g. "duplicate key value violates unique constraint"). Fail.
+**Fix (P1):** Map common DB error codes to user-friendly messages in a central error-map utility.
+
+---
+
+## H10 — Help and Documentation
+**Score: 4/10**
+- No in-app help, FAQ, or tooltip on any feature. Fail.
+- "Report a problem" form is implemented and functional. Pass.
+- Trust Center is missing — users have no privacy/terms destination in the app. Fail.
+- No explanation of what RALD is beyond the login interstitial. Fail.
+**Fix (V1.1):** Build a minimal Trust Center static page with privacy policy link.
+
+---
+
+## Heuristic Summary
+
+| Heuristic | Score |
+|---|---|
+| H1 System Status | 7/10 |
+| H2 Real World Match | 8/10 |
+| H3 Control and Freedom | 6/10 |
+| H4 Consistency | 8/10 |
+| H5 Error Prevention | 5/10 |
+| H6 Recognition | 8/10 |
+| H7 Flexibility | 5/10 |
+| H8 Aesthetic | 9/10 |
+| H9 Error Recovery | 6/10 |
+| H10 Help | 4/10 |
+| Average | 6.6/10 |
+
+---
+
+## Household Test — Non-Technical User Simulation
+Persona: First-time user, smartphone native, no Clubhouse/Twitter Spaces experience.
+
+| Task | Result | Notes |
 |---|---|---|
-| Mic button shows green when audio is broken | room.tsx | P0 |
-| No audio connecting/connected indicator | room.tsx | P1 |
-| SSO redirect shows generic spinner | login.tsx | P1 |
-| Search button looks interactive but does nothing | feed.tsx | P1 |
-| Notification bell looks interactive but does nothing | feed.tsx | P1 |
-| Token expiry — user not warned before session ends | global | P2 |
-| No "OTP sending…" spinner during /api/auth/send-otp | — | P2 |
+| Sign in to Loop | Pass | OTP flow is familiar like WhatsApp |
+| Find something to listen to | Pass | Feed rooms visible immediately |
+| Join a live room | Pass | RoomCard tappable, room loads correctly |
+| Understand why mic is red | Partial | Error badge visible but no instruction text |
+| Report a bug | Pass | Me — Report a problem form works |
+| Find people to follow | Partial | Discover People tab works but hard to find |
+| Change settings | Fail | Settings gear does nothing |
+| Find communities | Fail | No communities screen exists |
+| Understand what RALD is | Fail | No in-app explanation beyond login |
 
-**Priority fix:** Room audio state must be truthfully visible. If audio is unavailable: mic disabled + "Audio unavailable" badge.
-
----
-
-## H2: Match Between System and the Real World
-
-**PARTIAL PASS**
-
-- "Raise hand" terminology ✅ — universal audio room convention
-- "Community" ✅ — clear
-- "Region / LGA / LCDA" ⚠️ — LCDA is Nigeria-specific; not every Nigerian knows it
-- "Civic" communities ⚠️ — unclear to household users
-- "RALD" brand ❌ — unknown to first-time users. "Why is this 'RALD Profiles'? I thought it was Loop."
-
-**Issue USA-001 [P2]:** The SSO redirect introduces "RALD" brand with no explanation. Loop users don't know what RALD is.
-- Fix: Pre-redirect screen should say "Loop uses RALD for secure sign-in" — not just show a spinner.
+**Result: 5 of 9 tasks pass — 55%. Below the 70% V1 gate.**
+**After V1.1 fixes (Settings sheet + Communities stub + Trust Center):** Projected 78% — gate passed.
 
 ---
 
-## H3: User Control and Freedom
+## Critical User Journeys — V1 Gate Check
 
-**FAIL — Multiple violations**
-
-**Issue USA-002 [P1]:** During SSO redirect, user cannot cancel. They are taken to an external site with no way back to Loop (browser back takes them away from Loop).
-
-**Issue USA-003 [P2]:** Onboarding has no "Back" button between steps. User cannot go back from "Interests" to "Display Name" to correct a mistake. Only "Next" exists.
-- Fix: Add back navigation between onboarding steps.
-
-**Issue USA-004 [P2]:** Onboarding has no "Skip" for optional steps. Interests is forced (minimum 3), but language and rooms should be skippable.
-- Fix: Add "Skip for now" on rooms step at minimum.
-
-**Issue USA-005 [P2]:** No way to edit profile after onboarding without contacting support (edit profile button inactive — FE-024).
-- Fix: Wire edit profile.
-
----
-
-## H4: Consistency and Standards
-
-**PARTIAL PASS**
-
-- All screens use AppShell + BottomNav ✅
-- Card styles are consistent (rounded-2xl, border-border) ✅  
-- Two profile page implementations (me.tsx vs me-launch.tsx) ❌
-
-**Issue USA-006 [P2]:** Categories on the feed ("Africa", "Civic") don't match the Discover filter categories ("Community", "News", "Commentary"). Same app, different taxonomy.
-- Fix: Align category naming across Feed and Discover.
-
----
-
-## H5: Error Prevention
-
-**FAIL**
-
-**Issue USA-007 [P1]:** Room creation has no confirmation step. User may accidentally create a public room with a typo in the title — no preview or confirm dialog.
-- Fix: Show title/category preview before creating, with confirm button.
-
-**Issue USA-008 [P1]:** "Leave room" (End/Exit button) has no confirmation. Host can accidentally end the room for all participants.
-- Fix: Add confirmation dialog for host: "End Room? This disconnects everyone."
-
-**Issue USA-009 [P2]:** Onboarding username step accepts the username on Next without availability check. User may reach the final step only to fail when profile is saved to Supabase (duplicate username → 23505 error from Supabase).
-- Fix: Add debounced username availability check (GET /profiles?username=eq.X&select=id) before advancing.
-
----
-
-## H6: Recognition Rather than Recall
-
-**PASS**
-
-- Category icons + labels on Discover ✅
-- Room card shows host avatar, title, listener count ✅
-- Interest chips show labels ✅
-- Bottom nav has labels ✅
-
----
-
-## H7: Flexibility and Efficiency of Use
-
-**PARTIAL**
-
-- No keyboard shortcuts (expected on mobile)
-- No "quick create" from home ✅ (FAB button exists)
-- No recently joined rooms ❌
-
-**Issue USA-010 [P3]:** No "Continue where I left off" — no recently joined rooms shown on feed or profile.
-
----
-
-## H8: Aesthetic and Minimalist Design
-
-**PASS** — RALD design system is clean, dark, neon accent. No visual clutter. ✅
-
-**Issue USA-011 [P3]:** `me-launch.tsx` has duplicate stats block and theme toggle from loop-mock that are disconnected from real state. Adds UI noise.
-
----
-
-## H9: Help Users Recognize, Diagnose, and Recover from Errors
-
-**FAIL — Critical**
-
-| Scenario | Current | Should Show |
+| Journey | Completable | Blockers |
 |---|---|---|
-| Audio fails | Mic shows green (false positive) | "Audio unavailable — check connection" |
-| Supabase error on feed | Empty state (no diff from "no rooms") | "Couldn't load rooms — tap to retry" |
-| Invalid room ID | Silent redirect to home | "Room not found — it may have ended" |
-| Username taken | Generic 23505 error from Supabase | "This username is taken. Try another." |
-| Onboarding interests < 3 | Button disabled, no message | "Select at least 3 interests (X/3)" |
-| Network offline | No indication | "You're offline. Reconnecting…" |
-| OTP not delivered | Unknown (external) | Retry after 60s with different carrier |
+| Sign up, onboard, listen to a room | Yes | None |
+| Create and host a room | Partial | No navigation to room after create |
+| Report a problem | Yes | None |
+| Discover people by name | Yes | None |
+| Find and join a live room | Yes | None |
+| Change notification settings | No | Settings page missing |
+| View privacy policy | No | Trust Center missing |
+| Find community content | No | Communities screen missing |
 
-**Issue USA-012 [P0]:** Audio false positive is the most dangerous error: user believes they are broadcasting when they are not. This is worse than a visible error.
-
----
-
-## H10: Help and Documentation
-
-**FAIL**
-
-- No help/FAQ section ❌
-- No "How it works" onboarding tour ❌
-- No tooltip on unfamiliar terms (LCDA, civic, etc.) ❌
-- No bug report mechanism ❌
-
-**Issue USA-013 [P1]:** No in-app help. A non-technical user who is confused has no recourse.
-- Fix: Add "Help" or "?" link in profile → FAQ or contact form.
-
----
-
-## Usability Score by Heuristic
-
-| Heuristic | Score (0–10) | Key Issue |
-|---|---|---|
-| H1 Visibility of status | 2/10 | Audio false positive |
-| H2 Real-world match | 6/10 | RALD brand confusion |
-| H3 User control | 3/10 | SSO redirect, no onboarding back |
-| H4 Consistency | 6/10 | Two profile pages, category mismatch |
-| H5 Error prevention | 3/10 | No confirmations, no username check |
-| H6 Recognition | 7/10 | Good icons and labels |
-| H7 Efficiency | 5/10 | FAB exists, no shortcuts |
-| H8 Minimalist design | 8/10 | Clean RALD system |
-| H9 Error recovery | 2/10 | False positives, silent failures |
-| H10 Help | 1/10 | Nothing |
-| **Average** | **4.3/10** | |
-
+**No critical journey should fail.** 5 of 8 complete. Settings, Trust Center, Communities are V1.1 scope.
