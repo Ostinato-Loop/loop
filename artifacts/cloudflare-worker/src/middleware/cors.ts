@@ -8,6 +8,11 @@ import type { CloudflareEnv } from "../types/env.js";
  * list) with a hard-coded production allowlist as fallback.  The request
  * Origin header is reflected when it appears in the allowed list, enabling
  * credentialed cross-app requests (e.g. sv.rald.cloud, messenger.rald.cloud).
+ *
+ * FIX (2026-06-07): Access-Control-Allow-Credentials must NOT be set when
+ *   Access-Control-Allow-Origin is "*". Browsers reject credentialed requests
+ *   with wildcard origin (CORS spec). This bug broke /api/auth/silent in
+ *   wrangler dev where CORS_ORIGIN defaults to "*".
  */
 
 const PRODUCTION_ALLOWLIST = [
@@ -56,12 +61,17 @@ export const cors = (): MiddlewareHandler<{ Bindings: CloudflareEnv }> =>
   };
 
 function corsHeaders(origin: string): Record<string, string> {
-  return {
-    "Access-Control-Allow-Origin": origin,
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Origin":  origin,
     "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Max-Age": "86400",
-    "Vary": "Origin",
+    "Access-Control-Max-Age":       "86400",
+    "Vary":                         "Origin",
   };
+  // Credentials cannot be combined with wildcard origin (CORS spec §3.2.3).
+  // Browsers reject "Allow-Origin: *" + "Allow-Credentials: true" outright.
+  if (origin !== "*") {
+    headers["Access-Control-Allow-Credentials"] = "true";
+  }
+  return headers;
 }

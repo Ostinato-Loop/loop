@@ -21,39 +21,36 @@
  */
 
 import { Hono } from "hono";
-import { createClient } from "@supabase/supabase-js";
 import type { CloudflareEnv } from "../types/env.js";
 
 const regions = new Hono<{ Bindings: CloudflareEnv }>();
 
 // ── Supabase REST helpers ─────────────────────────────────────────────
+//
+// FIX (2026-06-07): Previously used createClient() and accessed private
+// internal properties (.supabaseUrl, .supabaseKey) via `as unknown as`.
+// Those properties are implementation details that can change between
+// @supabase/supabase-js minor versions and have no stable type contract.
+// Now passes url + key directly — no private property access, no client.
 
-function sbClient(url: string, key: string) {
-  return createClient(url, key, { auth: { persistSession: false } });
-}
-
-type SbClient = ReturnType<typeof sbClient>;
-
-function sbGet(sb: SbClient, path: string): Promise<Response> {
-  const base = (sb as unknown as { supabaseUrl: string }).supabaseUrl;
-  return fetch(`${base}${path}`, {
+function sbGet(url: string, key: string, path: string): Promise<Response> {
+  return fetch(`${url}${path}`, {
     method: "GET",
     headers: {
-      apikey:         (sb as unknown as { supabaseKey: string }).supabaseKey,
-      Authorization:  `Bearer ${(sb as unknown as { supabaseKey: string }).supabaseKey}`,
+      apikey:         key,
+      Authorization:  `Bearer ${key}`,
       "Content-Type": "application/json",
       Accept:         "application/json",
     },
   });
 }
 
-function sbPost(sb: SbClient, path: string, body: unknown): Promise<Response> {
-  const base = (sb as unknown as { supabaseUrl: string }).supabaseUrl;
-  return fetch(`${base}${path}`, {
+function sbPost(url: string, key: string, path: string, body: unknown): Promise<Response> {
+  return fetch(`${url}${path}`, {
     method: "POST",
     headers: {
-      apikey:         (sb as unknown as { supabaseKey: string }).supabaseKey,
-      Authorization:  `Bearer ${(sb as unknown as { supabaseKey: string }).supabaseKey}`,
+      apikey:         key,
+      Authorization:  `Bearer ${key}`,
       "Content-Type": "application/json",
       Accept:         "application/json",
       Prefer:         "return=representation",
@@ -109,10 +106,11 @@ regions.get("/search", async (c) => {
     });
   }
 
-  const sb = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
 
   // Call search_region RPC (migration 009)
-  const resp = await sbPost(sb, "/rest/v1/rpc/search_region", {
+  const resp = await sbPost(sbUrl, sbKey, "/rest/v1/rpc/search_region", {
     p_query:   q,
     p_country: country,
     p_limit:   limit,
@@ -130,7 +128,7 @@ regions.get("/search", async (c) => {
 
     if (country) ilikePath += `&country=eq.${encodeURIComponent(country)}`;
 
-    const fallbackResp = await sbGet(sb, ilikePath);
+    const fallbackResp = await sbGet(sbUrl, sbKey, ilikePath);
     if (!fallbackResp.ok) {
       console.error(`[regions/search] fallback also failed ${fallbackResp.status} trace=${tid}`);
       return c.json({ error: "Region search unavailable" }, 500);
@@ -170,7 +168,8 @@ regions.get("/by-state/:stateId", async (c) => {
   const type        = c.req.query("type");  // optional: lcda | lga | city | neighbourhood
   const limit       = Math.min(Number(c.req.query("limit") ?? 50), 200);
 
-  const sb = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
 
   let path =
     `/rest/v1/rald_regions?is_active=eq.true` +
@@ -181,7 +180,7 @@ regions.get("/by-state/:stateId", async (c) => {
 
   if (type) path += `&area_type=eq.${encodeURIComponent(type)}`;
 
-  const resp = await sbGet(sb, path);
+  const resp = await sbGet(sbUrl, sbKey, path);
   if (!resp.ok) return c.json({ error: "Failed to fetch regions" }, 500);
 
   const data = await resp.json() as RegionResult[];
@@ -208,9 +207,10 @@ regions.get("/:id", async (c) => {
     return c.json({ error: "Invalid region ID format" }, 400);
   }
 
-  const sb = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  const resp = await sbPost(sb, "/rest/v1/rpc/get_region_by_id", {
+  const resp = await sbPost(sbUrl, sbKey, "/rest/v1/rpc/get_region_by_id", {
     p_id: id,
   });
 

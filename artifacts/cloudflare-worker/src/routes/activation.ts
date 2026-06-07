@@ -21,7 +21,6 @@
  */
 
 import { Hono } from "hono";
-import { createClient } from "@supabase/supabase-js";
 import type { CloudflareEnv } from "../types/env.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -32,33 +31,31 @@ const activation = new Hono<{
 }>();
 
 // ── Supabase REST helpers ─────────────────────────────────────────────
+//
+// FIX (2026-06-07): Previously used createClient() then accessed private
+// internal properties (.supabaseUrl, .supabaseKey) via `as unknown as`.
+// Those properties are undocumented Supabase internals — not in the public
+// API surface and can change between minor versions without warning.
+// Now passes url + key as plain strings; no client created, no private access.
 
-function sbClient(url: string, key: string) {
-  return createClient(url, key, { auth: { persistSession: false } });
-}
-
-type SbClient = ReturnType<typeof sbClient>;
-
-function sbGet(sb: SbClient, path: string): Promise<Response> {
-  const base = (sb as unknown as { supabaseUrl: string }).supabaseUrl;
-  return fetch(`${base}${path}`, {
+function sbGet(url: string, key: string, path: string): Promise<Response> {
+  return fetch(`${url}${path}`, {
     method: "GET",
     headers: {
-      apikey:         (sb as unknown as { supabaseKey: string }).supabaseKey,
-      Authorization:  `Bearer ${(sb as unknown as { supabaseKey: string }).supabaseKey}`,
+      apikey:         key,
+      Authorization:  `Bearer ${key}`,
       "Content-Type": "application/json",
       Accept:         "application/json",
     },
   });
 }
 
-function sbPost(sb: SbClient, path: string, body: unknown, prefer = "return=representation"): Promise<Response> {
-  const base = (sb as unknown as { supabaseUrl: string }).supabaseUrl;
-  return fetch(`${base}${path}`, {
+function sbPost(url: string, key: string, path: string, body: unknown, prefer = "return=representation"): Promise<Response> {
+  return fetch(`${url}${path}`, {
     method: "POST",
     headers: {
-      apikey:         (sb as unknown as { supabaseKey: string }).supabaseKey,
-      Authorization:  `Bearer ${(sb as unknown as { supabaseKey: string }).supabaseKey}`,
+      apikey:         key,
+      Authorization:  `Bearer ${key}`,
       "Content-Type": "application/json",
       Accept:         "application/json",
       Prefer:         prefer,
@@ -98,11 +95,12 @@ const CASCADE_LEVELS: Array<{ scope: PromotionLevel; label: string }> = [
 
 activation.post("/auto-join", requireAuth(), async (c) => {
   const user = c.get("user");
-  const sb   = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
   const tid  = traceId(c);
 
   // Fetch user's region from profile
-  const profileResp = await sbGet(sb,
+  const profileResp = await sbGet(sbUrl, sbKey,
     `/rest/v1/profiles?id=eq.${user.id}&select=country,state_id,lga_id,lcda_id,interests&limit=1`);
   if (!profileResp.ok) return c.json({ error: "Failed to fetch profile" }, 500);
   const profileRows = await profileResp.json() as {
@@ -123,7 +121,7 @@ activation.post("/auto-join", requireAuth(), async (c) => {
   const interests = body.interests ?? profile.interests ?? [];
 
   // Call Supabase RPC for regional auto-join
-  const rpcResp = await sbPost(sb, "/rest/v1/rpc/auto_join_regional_communities", {
+  const rpcResp = await sbPost(sbUrl, sbKey, "/rest/v1/rpc/auto_join_regional_communities", {
     p_user_id:  user.id,
     p_country:  country,
     p_state_id: stateId,
@@ -145,7 +143,7 @@ activation.post("/auto-join", requireAuth(), async (c) => {
   const interestJoined: string[] = [];
   if (interests.length > 0) {
     const tagList = `{${interests.slice(0, 5).map((t: string) => `"${t}"`).join(",")}}`;
-    const interestResp = await sbGet(sb,
+    const interestResp = await sbGet(sbUrl, sbKey,
       `/rest/v1/communities?visibility=eq.public&is_deleted=eq.false&is_suspended=eq.false` +
       `&type=eq.interest&interest_tags=cs.${encodeURIComponent(tagList)}` +
       `&select=id&order=member_count.desc&limit=5`);
@@ -153,7 +151,7 @@ activation.post("/auto-join", requireAuth(), async (c) => {
     if (interestResp.ok) {
       const interestComms = await interestResp.json() as { id: string }[];
       for (const comm of interestComms) {
-        const joinResp = await sbPost(sb, "/rest/v1/community_members", {
+        const joinResp = await sbPost(sbUrl, sbKey, "/rest/v1/community_members", {
           community_id: comm.id,
           user_id:      user.id,
           role:         "member",
@@ -189,7 +187,8 @@ activation.post("/auto-join", requireAuth(), async (c) => {
 // ══════════════════════════════════════════════════════════════════════
 
 activation.get("/first-room", async (c) => {
-  const sb   = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
   const tid  = traceId(c);
   const limit = Math.min(Number(c.req.query("limit") ?? 10), 30);
 
@@ -207,7 +206,7 @@ activation.get("/first-room", async (c) => {
       const payload = JSON.parse(atob(parts[1]!.replace(/-/g, "+").replace(/_/g, "/"))) as Record<string, unknown>;
       const userId  = (payload.id ?? payload.sub) as string | undefined;
       if (userId) {
-        const pResp = await sbGet(sb,
+        const pResp = await sbGet(sbUrl, sbKey,
           `/rest/v1/profiles?id=eq.${userId}&select=state_id,lga_id,lcda_id&limit=1`);
         if (pResp.ok) {
           const rows = await pResp.json() as typeof profileRegion[];
@@ -247,7 +246,7 @@ activation.get("/first-room", async (c) => {
 
     if (regionId) {
       // First get community IDs in this region
-      const commResp = await sbGet(sb,
+      const commResp = await sbGet(sbUrl, sbKey,
         `/rest/v1/communities?region_id=eq.${encodeURIComponent(regionId)}` +
         `&visibility=eq.public&is_deleted=eq.false&select=id&limit=20`);
 
@@ -260,7 +259,7 @@ activation.get("/first-room", async (c) => {
             `&select=${COMMUNITY_SELECT}` +
             `&order=is_live.desc,audience_count.desc,created_at.desc&limit=${limit}`;
 
-          const roomResp = await sbGet(sb, roomPath);
+          const roomResp = await sbGet(sbUrl, sbKey, roomPath);
           if (roomResp.ok) {
             const rooms = await roomResp.json() as unknown[];
             if (rooms.length > 0) {
@@ -278,7 +277,7 @@ activation.get("/first-room", async (c) => {
         `&select=${COMMUNITY_SELECT}` +
         `&order=is_live.desc,audience_count.desc,created_at.desc&limit=${limit}`;
 
-      const roomResp = await sbGet(sb, roomPath);
+      const roomResp = await sbGet(sbUrl, sbKey, roomPath);
       if (roomResp.ok) {
         foundRooms   = await roomResp.json() as unknown[];
         cascadeLevel = "national";
@@ -308,10 +307,11 @@ activation.get("/first-room", async (c) => {
 
 activation.get("/pulse/:communityId", async (c) => {
   const { communityId } = c.req.param();
-  const sb  = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
   const tid = traceId(c);
 
-  const resp = await sbPost(sb, "/rest/v1/rpc/get_community_pulse", {
+  const resp = await sbPost(sbUrl, sbKey, "/rest/v1/rpc/get_community_pulse", {
     p_community_id: communityId,
   });
 
@@ -324,7 +324,7 @@ activation.get("/pulse/:communityId", async (c) => {
   if (pulse.error) return c.json({ error: pulse.error }, 404);
 
   // Also fetch live rooms for this community
-  const liveRoomsResp = await sbGet(sb,
+  const liveRoomsResp = await sbGet(sbUrl, sbKey,
     `/rest/v1/rooms?community_id=eq.${communityId}&is_live=eq.true&visibility=eq.public` +
     `&select=id,title,category,audience_count,is_live,created_at,host:profiles!rooms_host_id_fkey(id,username,display_name,avatar_url)` +
     `&order=audience_count.desc&limit=5`);
@@ -344,7 +344,8 @@ activation.get("/pulse/:communityId", async (c) => {
 // ══════════════════════════════════════════════════════════════════════
 
 activation.get("/recommendations", async (c) => {
-  const sb    = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
   const tid   = traceId(c);
   const limit = Math.min(Number(c.req.query("limit") ?? 10), 30);
 
@@ -359,7 +360,7 @@ activation.get("/recommendations", async (c) => {
     `owner:profiles!communities_owner_id_fkey(username,display_name,avatar_url,is_verified)`;
 
   // Fetch regional communities
-  const regionalResp = await sbGet(sb,
+  const regionalResp = await sbGet(sbUrl, sbKey,
     `/rest/v1/communities?visibility=eq.public&is_deleted=eq.false&is_suspended=eq.false` +
     `&region_id=eq.${encodeURIComponent(regionId)}&select=${SELECT}` +
     `&order=member_count.desc&limit=${limit}`);
@@ -369,7 +370,7 @@ activation.get("/recommendations", async (c) => {
     : [];
 
   // Fetch interest communities (top by members)
-  const interestResp = await sbGet(sb,
+  const interestResp = await sbGet(sbUrl, sbKey,
     `/rest/v1/communities?visibility=eq.public&is_deleted=eq.false&is_suspended=eq.false` +
     `&type=eq.interest&select=${SELECT}` +
     `&order=member_count.desc&limit=${limit}`);
@@ -392,7 +393,7 @@ activation.get("/recommendations", async (c) => {
 
   // Ensure minimum 5 recommendations — pad with popular communities if needed
   if (merged.length < 5) {
-    const padResp = await sbGet(sb,
+    const padResp = await sbGet(sbUrl, sbKey,
       `/rest/v1/communities?visibility=eq.public&is_deleted=eq.false` +
       `&select=${SELECT}&order=member_count.desc&limit=10`);
     if (padResp.ok) {
@@ -426,7 +427,8 @@ activation.get("/recommendations", async (c) => {
 // ══════════════════════════════════════════════════════════════════════
 
 activation.get("/home-feed", async (c) => {
-  const sb        = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
   const tid       = traceId(c);
   const cfCountry = c.req.header("CF-IPCountry") ?? "NG";
   const cfRegion  = c.req.header("CF-IPRegion")  ?? "";
@@ -448,16 +450,16 @@ activation.get("/home-feed", async (c) => {
     popularStateResp,
     trendingInterestResp,
   ] = await Promise.all([
-    sbGet(sb,
+    sbGet(sbUrl, sbKey,
       `/rest/v1/communities?visibility=eq.public&is_deleted=eq.false&region_id=eq.${encodeURIComponent(regionId)}` +
       `&select=${COMM_SELECT}&order=member_count.desc&limit=6`),
-    sbGet(sb,
+    sbGet(sbUrl, sbKey,
       `/rest/v1/rooms?visibility=eq.public&is_live=eq.true` +
       `&select=${ROOM_SELECT}&order=audience_count.desc&limit=6`),
-    sbGet(sb,
+    sbGet(sbUrl, sbKey,
       `/rest/v1/communities?visibility=eq.public&is_deleted=eq.false` +
       `&country_code=eq.${cfCountry}&select=${COMM_SELECT}&order=member_count.desc&limit=6`),
-    sbGet(sb,
+    sbGet(sbUrl, sbKey,
       `/rest/v1/communities?visibility=eq.public&is_deleted=eq.false` +
       `&type=eq.interest&select=${COMM_SELECT}&order=member_count.desc&limit=6`),
   ]);
@@ -477,7 +479,7 @@ activation.get("/home-feed", async (c) => {
       const payload = JSON.parse(atob(parts[1]!.replace(/-/g, "+").replace(/_/g, "/"))) as Record<string, unknown>;
       const userId  = (payload.id ?? payload.sub) as string | undefined;
       if (userId) {
-        const yourResp = await sbGet(sb,
+        const yourResp = await sbGet(sbUrl, sbKey,
           `/rest/v1/community_members?user_id=eq.${userId}&select=community:communities!community_members_community_id_fkey(${COMM_SELECT})&limit=6`);
         if (yourResp.ok) {
           const rows = await yourResp.json() as { community: unknown }[];
@@ -506,9 +508,10 @@ activation.get("/home-feed", async (c) => {
 
 activation.get("/momentum/:userId", async (c) => {
   const { userId } = c.req.param();
-  const sb         = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  const resp = await sbGet(sb,
+  const resp = await sbGet(sbUrl, sbKey,
     `/rest/v1/community_creator_momentum?user_id=eq.${userId}` +
     `&select=community_id,promotion_level,listeners_count,rooms_hosted,retention_score,momentum_score,promotion_threshold,last_promoted_at,updated_at,community:communities!community_creator_momentum_community_id_fkey(id,name,slug,cover_url)` +
     `&order=momentum_score.desc&limit=20`);
@@ -544,9 +547,10 @@ activation.get("/momentum/:userId", async (c) => {
 
 activation.get("/badges/:communityId", async (c) => {
   const { communityId } = c.req.param();
-  const sb = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  const resp = await sbGet(sb,
+  const resp = await sbGet(sbUrl, sbKey,
     `/rest/v1/community_leader_badges?community_id=eq.${communityId}&is_active=eq.true` +
     `&select=id,badge_type,awarded_at,metadata,profile:profiles!community_leader_badges_user_id_fkey(id,username,display_name,avatar_url,is_verified)` +
     `&order=awarded_at.desc`);
@@ -565,11 +569,12 @@ activation.get("/badges/:communityId", async (c) => {
 activation.post("/badges/:communityId", requireAuth(), async (c) => {
   const { communityId } = c.req.param();
   const actor = c.get("user");
-  const sb    = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
   const tid   = traceId(c);
 
   // Auth: must be owner or admin
-  const memResp = await sbGet(sb,
+  const memResp = await sbGet(sbUrl, sbKey,
     `/rest/v1/community_members?community_id=eq.${communityId}&user_id=eq.${actor.id}&select=role&limit=1`);
   if (!memResp.ok) return c.json({ error: "Failed to verify role" }, 500);
   const memRows = await memResp.json() as { role: string }[];
@@ -588,13 +593,13 @@ activation.post("/badges/:communityId", requireAuth(), async (c) => {
   }
 
   // Target must be a member
-  const targetResp = await sbGet(sb,
+  const targetResp = await sbGet(sbUrl, sbKey,
     `/rest/v1/community_members?community_id=eq.${communityId}&user_id=eq.${body.user_id}&select=role&limit=1`);
   if (!targetResp.ok) return c.json({ error: "Failed to verify target" }, 500);
   const targetRows = await targetResp.json() as { role: string }[];
   if (!targetRows[0]) return c.json({ error: "User is not a member of this community" }, 404);
 
-  const upsertResp = await sbPost(sb, "/rest/v1/community_leader_badges", {
+  const upsertResp = await sbPost(sbUrl, sbKey, "/rest/v1/community_leader_badges", {
     community_id: communityId,
     user_id:      body.user_id,
     badge_type:   body.badge_type as BadgeType,
@@ -613,7 +618,7 @@ activation.post("/badges/:communityId", requireAuth(), async (c) => {
   const rows = await upsertResp.json() as unknown[];
 
   // Record activation event
-  await sbPost(sb, "/rest/v1/community_activation_events", {
+  await sbPost(sbUrl, sbKey, "/rest/v1/community_activation_events", {
     event_type:   "badge_awarded",
     user_id:      body.user_id,
     community_id: communityId,
@@ -643,7 +648,8 @@ const ALLOWED_CLIENT_EVENTS = [
 
 activation.post("/events", requireAuth(), async (c) => {
   const user = c.get("user");
-  const sb   = sbClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
   const tid  = traceId(c);
 
   type EventBody = {
@@ -660,7 +666,7 @@ activation.post("/events", requireAuth(), async (c) => {
     }, 400);
   }
 
-  const insertResp = await sbPost(sb, "/rest/v1/community_activation_events", {
+  const insertResp = await sbPost(sbUrl, sbKey, "/rest/v1/community_activation_events", {
     event_type:   body.event_type,
     user_id:      user.id,
     community_id: body.community_id ?? null,

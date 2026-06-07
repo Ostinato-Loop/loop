@@ -9,6 +9,11 @@
  *   - Audience: "loop"
  *
  * See AUDIT/jwt-claim-standard.md for the full specification.
+ *
+ * FIX (2026-06-07): signJwt now uses TextEncoder-based base64url encoding
+ *   to correctly handle Unicode payloads (African names, Arabic, etc.).
+ *   btoa(JSON.stringify(payload)) throws DOMException for any non-Latin-1
+ *   character. TextEncoder encodes to UTF-8 bytes first, then base64url.
  */
 
 /** Canonical issuer for all Loop-scoped tokens. */
@@ -24,6 +29,21 @@ export const TTL_OTP_S = 60 * 60 * 24 * 30; // 2_592_000
 export const TTL_SSO_S = 60 * 60 * 24 * 7;  // 604_800
 
 /**
+ * Unicode-safe base64url encoding.
+ * Encodes a string as UTF-8 bytes first, then base64url-encodes the result.
+ * This correctly handles all Unicode — including African scripts, Arabic,
+ * and emoji — unlike plain btoa() which only accepts Latin-1 (0x00–0xFF).
+ */
+function base64urlEncode(str: string): string {
+  const bytes  = new TextEncoder().encode(str);
+  const binary = Array.from(bytes, (b) => String.fromCharCode(b)).join("");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
  * Sign a JWT with HMAC-SHA256.
  * Caller is responsible for supplying a well-formed, standards-compliant payload.
  */
@@ -31,10 +51,8 @@ export async function signJwt(
   payload: Record<string, unknown>,
   secret: string,
 ): Promise<string> {
-  const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  const body = btoa(JSON.stringify(payload))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const header = base64urlEncode(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const body   = base64urlEncode(JSON.stringify(payload));
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
