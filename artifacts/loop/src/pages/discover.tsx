@@ -9,10 +9,11 @@ import {
   type PersonResult, type PersonSuggestion,
 } from "@/lib/api/people";
 import { useFollow } from "@/lib/api/follows";
+import { ReportSheet, type ReportTarget } from "@/components/report-sheet";
 import {
   Search, Sparkles, Radio, Globe2, TrendingUp,
   Mic, Calendar, Briefcase, Newspaper, ChevronRight,
-  Users, BadgeCheck, UserPlus, UserCheck, Loader2,
+  Users, BadgeCheck, UserPlus, UserCheck, Loader2, MoreVertical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -43,23 +44,19 @@ const CATEGORIES: { key: RoomCategory | "all"; label: string; emoji: string }[] 
 
 /* ── avatar helpers ─────────────────────────────────────────────────── */
 const AVATAR_COLORS = [
-  "from-emerald-500 to-teal-500",
-  "from-fuchsia-500 to-purple-500",
-  "from-amber-500 to-orange-500",
-  "from-sky-500 to-blue-500",
-  "from-rose-500 to-pink-500",
-  "from-mint to-mint-glow",
+  "from-emerald-500 to-teal-500","from-fuchsia-500 to-purple-500",
+  "from-amber-500 to-orange-500","from-sky-500 to-blue-500",
+  "from-rose-500 to-pink-500","from-mint to-mint-glow",
 ];
 function avatarColor(seed: string) {
-  let n = 0;
-  for (let i = 0; i < seed.length; i++) n += seed.charCodeAt(i);
+  let n = 0; for (let i = 0; i < seed.length; i++) n += seed.charCodeAt(i);
   return AVATAR_COLORS[n % AVATAR_COLORS.length];
 }
 function initials(name: string) {
   return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 }
 
-/* ── Sprint 01: honest empty states ────────────────────────────────── */
+/* ── Honest empty-state slots ─────────────────────────────────────── */
 function DiscussionsEmpty() {
   return (
     <div className="rounded-2xl border border-dashed border-border bg-surface/50 p-5 text-center space-y-1.5">
@@ -68,7 +65,6 @@ function DiscussionsEmpty() {
     </div>
   );
 }
-
 function OpportunitiesEmpty() {
   return (
     <div className="rounded-2xl border border-dashed border-primary/20 bg-primary/5 p-5 flex items-start gap-3">
@@ -82,7 +78,6 @@ function OpportunitiesEmpty() {
     </div>
   );
 }
-
 function NewsEmpty() {
   return (
     <div className="flex items-start gap-3 p-3 rounded-2xl border border-dashed border-border bg-surface/50">
@@ -90,119 +85,115 @@ function NewsEmpty() {
         <Newspaper className="h-5 w-5 text-muted-foreground/50" />
       </div>
       <div>
-        <p className="text-xs font-semibold">News & updates coming soon</p>
+        <p className="text-xs font-semibold">News &amp; updates coming soon</p>
         <p className="text-[11px] text-muted-foreground mt-0.5">Verified stories curated for your region.</p>
       </div>
     </div>
   );
 }
 
-/* ── skeleton ─────────────────────────────────────────────────────────── */
+/* ── Skeleton ─────────────────────────────────────────────────────── */
 function Skeleton() {
   return (
     <div className="space-y-3">
-      {[0, 1, 2].map((i) => (
-        <div key={i} className="h-32 animate-pulse rounded-2xl bg-surface" />
-      ))}
+      {[0,1,2].map((i) => <div key={i} className="h-32 animate-pulse rounded-2xl bg-surface" />)}
     </div>
   );
 }
-
 function PeopleSkeleton() {
   return (
     <div className="space-y-2">
-      {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="h-16 animate-pulse rounded-2xl bg-surface" />
-      ))}
+      {[0,1,2,3].map((i) => <div key={i} className="h-16 animate-pulse rounded-2xl bg-surface" />)}
     </div>
   );
 }
 
-/* ── person card — with real follow/unfollow ─────────────────────────── */
+/* ── Person card — follow + report ──────────────────────────────────── */
 type PersonCardProps = {
-  userId: string;
-  username: string | null;
-  displayName: string | null;
-  avatarUrl: string | null;
-  isVerified: boolean;
-  raldId: string;
-  score: number;
-  scoreLabel?: string;
+  userId: string; username: string | null; displayName: string | null;
+  avatarUrl: string | null; isVerified: boolean; raldId: string;
+  score: number; scoreLabel?: string;
+  onReport: (target: ReportTarget) => void;
 };
 
-function PersonCard({ userId, username, displayName, avatarUrl, isVerified, raldId, score, scoreLabel }: PersonCardProps) {
+function PersonCard({ userId, username, displayName, avatarUrl, isVerified, raldId, score, scoreLabel, onReport }: PersonCardProps) {
   const label = displayName ?? username ?? raldId;
   const sub   = username ? `@${username}` : raldId;
   const color = avatarColor(userId);
   const { following, loading, toggle } = useFollow(userId);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const handleToggle = async () => {
-    try {
-      await toggle();
-      toast.success(following ? `Unfollowed ${label}` : `Following ${label}`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not update follow");
-    }
+    try { await toggle(); toast.success(following ? `Unfollowed ${label}` : `Following ${label}`); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "Could not update follow"); }
   };
 
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface/60 px-4 py-3 transition-colors">
+    <div className="relative flex items-center gap-3 rounded-2xl border border-border bg-surface/60 px-4 py-3 transition-colors">
       {/* Avatar */}
       <div className="relative shrink-0">
         {avatarUrl ? (
-          <img
-            src={avatarUrl}
-            alt={label}
-            className="h-11 w-11 rounded-full object-cover"
-          />
+          <img src={avatarUrl} alt={label} className="h-11 w-11 rounded-full object-cover" />
         ) : (
           <div className={cn("h-11 w-11 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-sm font-bold", color)}>
             {initials(label)}
           </div>
         )}
-        {isVerified && (
-          <BadgeCheck className="absolute -bottom-0.5 -right-0.5 h-4 w-4 text-primary fill-background" />
-        )}
+        {isVerified && <BadgeCheck className="absolute -bottom-0.5 -right-0.5 h-4 w-4 text-primary fill-background" />}
       </div>
 
       {/* Info */}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold leading-tight">{label}</p>
         <p className="truncate text-[11px] text-muted-foreground">{sub}</p>
-        {score > 0 && (
-          <p className="text-[10px] text-primary font-medium mt-0.5">
-            {scoreLabel ?? `Score ${score}`}
-          </p>
-        )}
+        {score > 0 && <p className="text-[10px] text-primary font-medium mt-0.5">{scoreLabel ?? `Score ${score}`}</p>}
       </div>
 
-      {/* Follow / Unfollow button */}
-      <button
-        type="button"
-        onClick={handleToggle}
-        disabled={loading}
-        className={cn(
-          "shrink-0 flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all active:scale-95",
-          following
-            ? "border-border bg-secondary text-foreground"
-            : "border-primary/40 bg-primary/10 text-primary",
-        )}
+      {/* Follow */}
+      <button type="button" onClick={handleToggle} disabled={loading}
+        className={cn("shrink-0 flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all active:scale-95",
+          following ? "border-border bg-secondary text-foreground" : "border-primary/40 bg-primary/10 text-primary")}
         aria-label={following ? `Unfollow ${label}` : `Follow ${label}`}
       >
-        {loading ? (
-          <Loader2 className="h-3 w-3 animate-spin" />
-        ) : following ? (
-          <><UserCheck className="h-3 w-3" />Following</>
-        ) : (
-          <><UserPlus className="h-3 w-3" />Connect</>
-        )}
+        {loading ? <Loader2 className="h-3 w-3 animate-spin" />
+          : following ? <><UserCheck className="h-3 w-3" />Following</>
+          : <><UserPlus className="h-3 w-3" />Connect</>}
       </button>
+
+      {/* More (⋮) — report */}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setMenuOpen((o) => !o)}
+          className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-secondary transition-colors"
+          aria-label="More options"
+        >
+          <MoreVertical className="h-4 w-4" />
+        </button>
+        {menuOpen && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+            <div className="absolute right-0 top-9 z-20 w-36 rounded-xl border border-border bg-card shadow-lg py-1">
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left text-sm text-destructive hover:bg-secondary transition-colors"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onReport({ kind: "user", userId, displayName: label });
+                }}
+              >
+                Report user
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
-/* ── people tab — search + suggestions ─────────────────────────────── */
-function PeopleTab() {
+/* ── People tab ─────────────────────────────────────────────────────── */
+function PeopleTab({ onReport }: { onReport: (t: ReportTarget) => void }) {
   const [query, setQuery]             = useState("");
   const [results, setResults]         = useState<PersonResult[] | null>(null);
   const [suggestions, setSuggestions] = useState<PersonSuggestion[] | null>(null);
@@ -223,16 +214,10 @@ function PeopleTab() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!query.trim()) { setResults(null); return; }
     debounceRef.current = setTimeout(async () => {
-      setSearching(true);
-      setError(null);
-      try {
-        const r = await searchRelatedPeople(query.trim(), 20);
-        setResults(r);
-      } catch (e) {
-        setError((e as Error).message);
-      } finally {
-        setSearching(false);
-      }
+      setSearching(true); setError(null);
+      try { setResults(await searchRelatedPeople(query.trim(), 20)); }
+      catch (e) { setError((e as Error).message); }
+      finally { setSearching(false); }
     }, 350);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
@@ -249,108 +234,55 @@ function PeopleTab() {
 
   const showSearch  = query.trim().length > 0;
   const showResults = showSearch && !searching;
+  const mkCard = (p: { user_id: string; username: string | null; display_name: string | null; avatar_url: string | null; is_verified: boolean; rald_id: string }, score: number, lbl?: string) => (
+    <PersonCard key={p.user_id} userId={p.user_id} username={p.username} displayName={p.display_name}
+      avatarUrl={p.avatar_url} isVerified={p.is_verified} raldId={p.rald_id}
+      score={score} scoreLabel={lbl} onReport={onReport} />
+  );
 
   return (
     <div className="space-y-4">
-      {/* Search bar */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+        <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
           placeholder="Search people by name or @handle…"
-          className="w-full rounded-xl border border-border bg-surface pl-10 pr-4 py-2.5 text-sm outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-colors"
-        />
-        {query && (
-          <button
-            type="button"
-            onClick={() => setQuery("")}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs"
-          >
-            ✕
-          </button>
-        )}
+          className="w-full rounded-xl border border-border bg-surface pl-10 pr-4 py-2.5 text-sm outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-colors" />
+        {query && <button type="button" onClick={() => setQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">✕</button>}
       </div>
 
-      {error && (
-        <p className="text-xs text-destructive">{error}</p>
-      )}
+      {error && <p className="text-xs text-destructive">{error}</p>}
 
-      {/* Search results */}
       {showSearch && (
         <section>
           <h2 className="font-display text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
             {searching ? "Searching…" : `Results for "${query}"`}
           </h2>
-          {searching ? (
-            <PeopleSkeleton />
-          ) : showResults && results !== null ? (
-            results.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-border p-6 text-center">
-                <p className="text-sm font-semibold">No results</p>
-                <p className="text-xs text-muted-foreground mt-1">Try a different name or @handle.</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {results.map((p) => (
-                  <PersonCard
-                    key={p.user_id}
-                    userId={p.user_id}
-                    username={p.username}
-                    displayName={p.display_name}
-                    avatarUrl={p.avatar_url}
-                    isVerified={p.is_verified}
-                    raldId={p.rald_id}
-                    score={p.connection_score}
-                    scoreLabel={p.connection_score > 0 ? `Connection score ${p.connection_score}` : undefined}
-                  />
-                ))}
-              </div>
-            )
-          ) : null}
+          {searching ? <PeopleSkeleton />
+            : showResults && results !== null ? (
+              results.length === 0
+                ? <div className="rounded-2xl border border-dashed border-border p-6 text-center"><p className="text-sm font-semibold">No results</p><p className="text-xs text-muted-foreground mt-1">Try a different name or @handle.</p></div>
+                : <div className="space-y-2">{results.map((p) => mkCard(p, p.connection_score, p.connection_score > 0 ? `Connection score ${p.connection_score}` : undefined))}</div>
+            ) : null}
         </section>
       )}
 
-      {/* Suggestions */}
       {!showSearch && (
         <section>
           <div className="mb-3 flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 text-primary" />
             <h2 className="font-display text-xs font-bold uppercase tracking-wider">People you may know</h2>
           </div>
-          {loadingSugg ? (
-            <PeopleSkeleton />
-          ) : !suggestions || suggestions.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-2">
-              <Users className="h-8 w-8 text-muted-foreground/40 mx-auto" />
-              <p className="text-sm font-semibold">No suggestions yet</p>
-              <p className="text-xs text-muted-foreground">Join rooms and connect with more people to grow your network.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {suggestions.map((p) => (
-                <PersonCard
-                  key={p.user_id}
-                  userId={p.user_id}
-                  username={p.username}
-                  displayName={p.display_name}
-                  avatarUrl={p.avatar_url}
-                  isVerified={p.is_verified}
-                  raldId={p.rald_id}
-                  score={p.mutual_score}
-                  scoreLabel={p.mutual_score > 0 ? `Mutual score ${p.mutual_score}` : undefined}
-                />
-              ))}
-            </div>
-          )}
+          {loadingSugg ? <PeopleSkeleton />
+            : !suggestions || suggestions.length === 0
+            ? <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-2"><Users className="h-8 w-8 text-muted-foreground/40 mx-auto" /><p className="text-sm font-semibold">No suggestions yet</p><p className="text-xs text-muted-foreground">Join rooms and connect with more people.</p></div>
+            : <div className="space-y-2">{suggestions.map((p) => mkCard(p, p.mutual_score, p.mutual_score > 0 ? `Mutual score ${p.mutual_score}` : undefined))}</div>}
         </section>
       )}
     </div>
   );
 }
 
-/* ── main page ──────────────────────────────────────────────────────── */
+/* ── Main page ─────────────────────────────────────────────────────── */
 export default function DiscoverPage() {
   const { user, loading, profile } = useAuth();
   const navigate = useNavigate();
@@ -358,6 +290,7 @@ export default function DiscoverPage() {
   const [feedTab, setFeedTab] = useState<FeedTab>("all");
   const [category, setCategory] = useState<RoomCategory | "all">("all");
   const [error, setError] = useState<string | null>(null);
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
 
   useEffect(() => {
     if (!loading && !user) navigate("/login");
@@ -369,30 +302,23 @@ export default function DiscoverPage() {
     setRooms(null);
     listRooms({ category: category === "all" ? undefined : category })
       .then(setRooms)
-      .catch((e: Error) => {
-        console.error("[discover] listRooms:", e.message);
-        setError(e.message);
-      });
+      .catch((e: Error) => { setError(e.message); });
   }, [category, user, feedTab]);
 
-  if (loading || !user) {
-    return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
-  }
+  if (loading || !user) return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
 
   const liveRooms = rooms?.filter((r) => r.is_live) ?? [];
   const allRooms  = rooms ?? [];
 
   return (
     <AppShell>
-      {/* ── Header ── */}
       <header className="sticky top-0 z-30 bg-background/85 backdrop-blur-xl border-b border-border">
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Loop</p>
             <h1 className="font-display text-2xl font-extrabold text-gradient-mint">Discover</h1>
           </div>
-          <button
-            type="button"
+          <button type="button" onClick={() => navigate("/search")}
             className="grid h-10 w-10 place-items-center rounded-full border border-border bg-surface text-foreground active:scale-95 transition-transform"
             aria-label="Search"
           >
@@ -400,44 +326,27 @@ export default function DiscoverPage() {
           </button>
         </div>
 
-        {/* Feed tabs */}
         <div className="hide-scrollbar flex gap-1.5 overflow-x-auto px-5 pb-2 pt-1">
           {FEED_TABS.map((t) => {
             const Icon = t.icon;
             const active = feedTab === t.key;
             return (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setFeedTab(t.key)}
-                className={cn(
-                  "shrink-0 flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors",
-                  active
-                    ? "bg-primary text-primary-foreground shadow-mint"
-                    : "bg-surface text-muted-foreground hover:text-foreground border border-border",
-                )}
+              <button key={t.key} type="button" onClick={() => setFeedTab(t.key)}
+                className={cn("shrink-0 flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors",
+                  active ? "bg-primary text-primary-foreground shadow-mint" : "bg-surface text-muted-foreground hover:text-foreground border border-border")}
               >
-                <Icon className="h-3 w-3" />
-                {t.label}
+                <Icon className="h-3 w-3" />{t.label}
               </button>
             );
           })}
         </div>
 
-        {/* Category chips */}
         {feedTab !== "people" && (
           <div className="hide-scrollbar flex gap-1.5 overflow-x-auto px-5 pb-3">
             {CATEGORIES.map((c) => (
-              <button
-                key={c.key}
-                type="button"
-                onClick={() => setCategory(c.key)}
-                className={cn(
-                  "shrink-0 rounded-full px-3 py-1 text-[11px] font-medium transition-colors",
-                  category === c.key
-                    ? "bg-primary/15 text-primary border border-primary/40"
-                    : "bg-surface text-muted-foreground border border-border",
-                )}
+              <button key={c.key} type="button" onClick={() => setCategory(c.key)}
+                className={cn("shrink-0 rounded-full px-3 py-1 text-[11px] font-medium transition-colors",
+                  category === c.key ? "bg-primary/15 text-primary border border-primary/40" : "bg-surface text-muted-foreground border border-border")}
               >
                 {c.emoji && <span className="mr-1">{c.emoji}</span>}{c.label}
               </button>
@@ -454,32 +363,25 @@ export default function DiscoverPage() {
           </div>
         )}
 
-        {/* ── People tab ── */}
-        {feedTab === "people" && <PeopleTab />}
+        {feedTab === "people" && <PeopleTab onReport={setReportTarget} />}
 
-        {/* ── Live strip ── */}
         {(feedTab === "all" || feedTab === "live") && liveRooms.length > 0 && (
           <section>
             <div className="mb-3 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-primary live-dot" />
-                <h2 className="font-display text-sm font-bold uppercase tracking-wider text-foreground">
-                  Live now · {liveRooms.length}
-                </h2>
+                <h2 className="font-display text-sm font-bold uppercase tracking-wider">Live now · {liveRooms.length}</h2>
               </div>
               <button type="button" onClick={() => setFeedTab("live")} className="flex items-center gap-1 text-xs text-primary font-semibold">
                 See all <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
             <div className="hide-scrollbar -mx-5 flex gap-3 overflow-x-auto px-5 pb-1">
-              {liveRooms.slice(0, 6).map((r) => (
-                <RoomCard key={r.id} room={r} compact />
-              ))}
+              {liveRooms.slice(0, 6).map((r) => <RoomCard key={r.id} room={r} compact />)}
             </div>
           </section>
         )}
 
-        {/* ── Full feed ── */}
         {(feedTab === "all" || feedTab === "trending") && (
           <>
             <section>
@@ -487,58 +389,42 @@ export default function DiscoverPage() {
                 <Sparkles className="h-4 w-4 text-primary" />
                 <h2 className="font-display text-sm font-bold uppercase tracking-wider">For you</h2>
               </div>
-              {rooms === null ? <Skeleton /> : allRooms.length === 0 ? (
-                <EmptyState />
-              ) : (
-                <div className="space-y-3">
-                  {allRooms.slice(0, 3).map((r) => <RoomCard key={r.id} room={r} />)}
-                </div>
+              {rooms === null ? <Skeleton /> : allRooms.length === 0 ? <EmptyState /> : (
+                <div className="space-y-3">{allRooms.slice(0, 3).map((r) => <RoomCard key={r.id} room={r} />)}</div>
               )}
             </section>
-
             <DiscussionsEmpty />
-
             {allRooms.length > 3 && (
               <section>
                 <h2 className="font-display text-sm font-bold uppercase tracking-wider mb-3">More rooms</h2>
-                <div className="space-y-3">
-                  {allRooms.slice(3).map((r) => <RoomCard key={r.id} room={r} />)}
-                </div>
+                <div className="space-y-3">{allRooms.slice(3).map((r) => <RoomCard key={r.id} room={r} />)}</div>
               </section>
             )}
-
             <section>
               <h2 className="font-display text-sm font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <Briefcase className="h-3.5 w-3.5 text-primary" />Opportunities
               </h2>
               <OpportunitiesEmpty />
             </section>
-
             <section>
               <h2 className="font-display text-sm font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <Newspaper className="h-3.5 w-3.5 text-primary" />News & updates
+                <Newspaper className="h-3.5 w-3.5 text-primary" />News &amp; updates
               </h2>
               <NewsEmpty />
             </section>
           </>
         )}
 
-        {/* ── Near me tab ── */}
         {feedTab === "near" && (
           <section>
             <div className="flex items-center gap-1.5 mb-3">
               <Globe2 className="h-3.5 w-3.5 text-primary" />
               <h2 className="font-display text-sm font-bold uppercase tracking-wider">Near {profile?.state_id ?? "you"}</h2>
             </div>
-            {rooms === null ? <Skeleton /> : (
-              <div className="space-y-3">
-                {allRooms.map((r) => <RoomCard key={r.id} room={r} />)}
-              </div>
-            )}
+            {rooms === null ? <Skeleton /> : <div className="space-y-3">{allRooms.map((r) => <RoomCard key={r.id} room={r} />)}</div>}
           </section>
         )}
 
-        {/* ── Events tab ── */}
         {feedTab === "events" && (
           <section>
             <div className="flex items-center gap-1.5 mb-3">
@@ -553,6 +439,13 @@ export default function DiscoverPage() {
           </section>
         )}
       </div>
+
+      {/* Part 15: Report sheet */}
+      <ReportSheet
+        open={reportTarget !== null}
+        target={reportTarget}
+        onClose={() => setReportTarget(null)}
+      />
     </AppShell>
   );
 }
