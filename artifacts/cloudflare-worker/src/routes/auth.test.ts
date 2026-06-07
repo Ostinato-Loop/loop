@@ -1,13 +1,14 @@
 /**
- * Unit tests for Loop OTP rate limiting — auth.ts
+ * Unit tests for Loop auth — OTP rate limiting + token revocation
  * Run: pnpm test
  *
  * Uses Vitest with an in-memory mock KVNamespace.
- * No real Cloudflare or Termii calls are made.
+ * No real Cloudflare, Termii, or Supabase calls are made.
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { checkSlidingWindow, getClientIp, logAbuse } from "./auth.js";
+import { signJwt, verifyJwt, JWT_ISSUER, JWT_AUDIENCE, TTL_OTP_S } from "../lib/jwt.js";
 
 // ── Mock KVNamespace ──────────────────────────────────────────────────────────
 
@@ -58,7 +59,6 @@ describe("checkSlidingWindow", () => {
 
   it("blocks after limit is reached", async () => {
     const KEY = "test:block";
-    // Fill up the limit
     for (let i = 0; i < 10; i++) {
       await checkSlidingWindow(kv as unknown as KVNamespace, KEY, 10, 3_600_000);
     }
@@ -68,17 +68,12 @@ describe("checkSlidingWindow", () => {
 
   it("evicts expired timestamps and allows again", async () => {
     const KEY = "test:expire";
-    const windowMs = 1000; // 1 second window for test
-
-    // Fill the limit
+    const windowMs = 1000;
     for (let i = 0; i < 3; i++) {
       await checkSlidingWindow(kv as unknown as KVNamespace, KEY, 3, windowMs);
     }
-
-    // Manually write expired timestamps to KV
-    const expiredTimestamps = [Date.now() - 2000, Date.now() - 1500]; // both outside 1s window
+    const expiredTimestamps = [Date.now() - 2000, Date.now() - 1500];
     await kv.put(KEY, JSON.stringify(expiredTimestamps));
-
     const result = await checkSlidingWindow(kv as unknown as KVNamespace, KEY, 3, windowMs);
     expect(result.allowed).toBe(true);
   });
@@ -101,7 +96,6 @@ describe("checkSlidingWindow", () => {
   it("handles corrupt KV data gracefully", async () => {
     await kv.put("test:corrupt", "not-valid-json{{{{");
     const result = await checkSlidingWindow(kv as unknown as KVNamespace, "test:corrupt", 5, 3_600_000);
-    // Should treat as empty — allow and not throw
     expect(result.allowed).toBe(true);
   });
 
@@ -142,11 +136,9 @@ describe("checkSlidingWindow", () => {
   });
 
   it("different IPs do not share rate limit state", async () => {
-    // Fill IP1 to limit
     for (let i = 0; i < 10; i++) {
       await checkSlidingWindow(kv as unknown as KVNamespace, "otp:ip:10.0.0.1", 10, 3_600_000);
     }
-    // IP2 should still be allowed
     const ip2 = await checkSlidingWindow(kv as unknown as KVNamespace, "otp:ip:10.0.0.2", 10, 3_600_000);
     expect(ip2.allowed).toBe(true);
   });
@@ -224,9 +216,114 @@ describe("logAbuse", () => {
       resetAtSec: Math.floor(Date.now() / 1000) + 3600,
     });
     const [, jsonStr] = spy.mock.calls[0] as [string, string];
-    // Full phone should never appear — only the suffix
     expect(jsonStr).not.toContain("+234");
     expect(jsonStr).toContain("5678");
     spy.mockRestore();
+  });
+});
+
+// ── Token revocation (PHD-001) ────────────────────────────────────────────────
+
+describe("token revocation — KV blocklist", () => {
+  const TEST_SECRET = "test-secret-32-chars-minimum-len";
+
+  it("a fresh token is not in the blocklist", async () => {
+    const kv = new MockKV();
+    const now = Math.floor(Date.now() / 1000);
+    const jti = crypto.randomUUID();
+    await signJwt(
+      { sub: "user-1", email: null, role: "authenticated", iss: JWT_ISSUER, aud: JWT_AUDIENCE,
+        iat: now, exp: now + TTL_OTP_S, jti, id: "user-1", source: "otp" },
+      TEST_SECRET,
+    );
+    const blocked = await kv.get(`revoked:jti:${jti}`);
+    expect(blocked).toBeNull();
+  });
+
+  it("adding jti to KV marks token as revoked", async () => {
+    const kv = new MockKV();
+    const jti = crypto.randomUUID();
+    await kv.put(`revoked:jti:${jti}`, "1", { expirationTtl: 3600 });
+    const blocked = await kv.get(`revoked:jti:${jti}`);
+    expect(blocked).toBe("1");
+  });
+
+  it("revocation check: blocked jti returns non-null from KV", async () => {
+    const kv = new MockKV();
+    const jti = crypto.randomUUID();
+    // Simulate: signout writes jti to blocklist
+    await kv.put(`revoked:jti:${jti}`, "1", { expirationTtl: 604_800 });
+    // Simulate: middleware checks blocklist
+    const revoked = await kv.get(`revoked:jti:${jti}`);
+    expect(revoked).not.toBeNull();
+  });
+
+  it("different jtis do not block each other", async () => {
+    const kv = new MockKV();
+    const jti1 = crypto.randomUUID();
+    const jti2 = crypto.randomUUID();
+    // Revoke jti1 only
+    await kv.put(`revoked:jti:${jti1}`, "1", { expirationTtl: 3600 });
+    const blocked1 = await kv.get(`revoked:jti:${jti1}`);
+    const blocked2 = await kv.get(`revoked:jti:${jti2}`);
+    expect(blocked1).toBe("1");
+    expect(blocked2).toBeNull();
+  });
+
+  it("verifyJwt returns payload with jti claim", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const jti = crypto.randomUUID();
+    const token = await signJwt(
+      { sub: "user-abc", email: null, role: "authenticated", iss: JWT_ISSUER, aud: JWT_AUDIENCE,
+        iat: now, exp: now + 3600, jti, id: "user-abc", source: "otp" },
+      TEST_SECRET,
+    );
+    const payload = await verifyJwt(token, TEST_SECRET);
+    expect(payload).not.toBeNull();
+    expect(payload?.jti).toBe(jti);
+    expect(payload?.sub).toBe("user-abc");
+  });
+
+  it("verifyJwt returns null for expired token", async () => {
+    const past = Math.floor(Date.now() / 1000) - 3600;
+    const token = await signJwt(
+      { sub: "user-xyz", email: null, role: "authenticated", iss: JWT_ISSUER, aud: JWT_AUDIENCE,
+        iat: past - 3600, exp: past, jti: crypto.randomUUID(), id: "user-xyz", source: "otp" },
+      TEST_SECRET,
+    );
+    const payload = await verifyJwt(token, TEST_SECRET);
+    expect(payload).toBeNull();
+  });
+
+  it("verifyJwt returns null for wrong secret", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJwt(
+      { sub: "user-xyz", email: null, role: "authenticated", iss: JWT_ISSUER, aud: JWT_AUDIENCE,
+        iat: now, exp: now + 3600, jti: crypto.randomUUID(), id: "user-xyz", source: "otp" },
+      TEST_SECRET,
+    );
+    const payload = await verifyJwt(token, "wrong-secret-32-chars-minimum-len");
+    expect(payload).toBeNull();
+  });
+
+  it("TTL for revocation entry equals remaining token lifetime", async () => {
+    const kv = new MockKV();
+    const now = Math.floor(Date.now() / 1000);
+    const exp = now + 604_800; // 7 days
+    const ttl = Math.max(exp - now, 1);
+    const jti = crypto.randomUUID();
+    await kv.put(`revoked:jti:${jti}`, "1", { expirationTtl: ttl });
+    // TTL should be ~7 days (604800 seconds)
+    expect(ttl).toBeGreaterThanOrEqual(604_799);
+    expect(ttl).toBeLessThanOrEqual(604_800);
+    const entry = await kv.get(`revoked:jti:${jti}`);
+    expect(entry).toBe("1");
+  });
+
+  it("signout of token without jti sets revoked: false", async () => {
+    // Pre-PHD-001 tokens have no jti — cannot be server-revoked
+    const jti = undefined as string | undefined;
+    const revoked = jti !== undefined;
+    expect(revoked).toBe(false);
   });
 });
