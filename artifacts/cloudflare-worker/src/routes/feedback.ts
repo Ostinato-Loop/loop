@@ -3,16 +3,17 @@
 // Body: { message: string; page?: string }
 //
 // Stores feedback in Supabase feedback table.
-// If the table doesn't exist yet, logs and acks gracefully (non-crashing).
-// Auth required — only logged-in users can submit.
+// If the table doesn't exist yet, logs and acks gracefully.
+// Auth required.
 // LILCKY STUDIO LIMITED
 
 import { Hono } from "hono";
 import { createClient } from "@supabase/supabase-js";
 import type { CloudflareEnv } from "../types/env.js";
+import type { AuthUser } from "../middleware/auth.js";
 import { requireAuth } from "../middleware/auth.js";
 
-const app = new Hono<{ Bindings: CloudflareEnv }>();
+const app = new Hono<{ Bindings: CloudflareEnv; Variables: { user: AuthUser } }>();
 
 app.post("/", requireAuth(), async (c) => {
   const user = c.get("user");
@@ -33,7 +34,6 @@ app.post("/", requireAuth(), async (c) => {
   }
 
   const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
-
   const { error } = await supabase.from("feedback").insert({
     user_id:    user.id,
     message,
@@ -42,8 +42,8 @@ app.post("/", requireAuth(), async (c) => {
   });
 
   if (error) {
-    // feedback table may not exist yet — log but acknowledge so user gets confirmation
     console.error("[feedback] insert error:", error.code, error.message);
+    // Non-fatal — acknowledge regardless so user gets confirmation
   }
 
   return c.json({ ok: true, message: "Thank you — we'll look into it." }, 201);
