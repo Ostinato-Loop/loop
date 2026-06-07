@@ -35,6 +35,13 @@ export type Profile = {
   is_creator: boolean;
   is_verified: boolean;
   onboarded: boolean;
+  // Regional identity (migration 006)
+  country: string | null;
+  lga_id: string | null;
+  lcda_id: string | null;
+  // Trust
+  trust_score: number | null;
+  trust_level: string | null;
 };
 
 export type LoopUser = {
@@ -63,8 +70,6 @@ const RALD_TOKEN_KEY  = "rald_master_token";
 const API_BASE        = import.meta.env.VITE_API_BASE_URL ?? "";
 
 const RALD_AUTH_UI    = (import.meta.env.VITE_RALD_AUTH_URL as string | undefined) ?? "https://profiles.rald.cloud";
-// chat.rald.cloud is the Messenger frontend SPA (Cloudflare Pages).
-// messenger.rald.cloud is the API worker — do NOT navigate users there directly.
 const MESSENGER_URL   = (import.meta.env.VITE_MESSENGER_URL as string | undefined) ?? "https://chat.rald.cloud";
 const PROFILES_URL    = "https://profiles.rald.cloud";
 
@@ -88,26 +93,15 @@ export function setLoopToken(token: string) {
   localStorage.setItem(TOKEN_KEY, token);
 }
 
-/** Returns the stored RALD master token (original rald.cloud JWT) for cross-app SSO. */
 export function getRaldMasterToken(): string | null {
   return localStorage.getItem(RALD_TOKEN_KEY);
 }
 
-/**
- * Redirect the user to RALD sign-in/sign-up, returning them to `returnPath`
- * on `appUrl` after auth. Used when no rald_master_token is available.
- */
 export function redirectToRaldAuth(appUrl: string, appId: string, returnPath = "/"): void {
   const redirectTo = encodeURIComponent(`${appUrl}${returnPath}`);
   window.location.href = `${RALD_AUTH_UI}?redirect_to=${redirectTo}&app_id=${appId}`;
 }
 
-/**
- * Open Messenger with cross-app SSO.
- * If a RALD master token exists, passes it as ?rald_token so the user lands
- * directly on `path` without re-authenticating (resolves WS1-F2 / WS3-F1).
- * If no token exists, routes through RALD SSO sign-in.
- */
 export function openMessenger(path = "/chats"): void {
   const raldToken = getRaldMasterToken();
   if (raldToken && isTokenValid(raldToken)) {
@@ -118,9 +112,6 @@ export function openMessenger(path = "/chats"): void {
   }
 }
 
-/**
- * Open Profiles with cross-app SSO.
- */
 export function openProfiles(path = "/"): void {
   const raldToken = getRaldMasterToken();
   if (raldToken && isTokenValid(raldToken)) {
@@ -129,6 +120,32 @@ export function openProfiles(path = "/"): void {
   } else {
     redirectToRaldAuth(PROFILES_URL, "profiles", path);
   }
+}
+
+/** Compute a trust score from profile completeness. 0–100. */
+export function computeTrustScore(profile: Profile): number {
+  let score = 0;
+  if (profile.username)                              score += 5;
+  if (profile.display_name)                          score += 5;
+  if (profile.avatar_url)                            score += 10;
+  if (profile.bio)                                   score += 10;
+  if (profile.interests && profile.interests.length >= 3) score += 10;
+  if (profile.country)                               score += 10;
+  if (profile.state_id)                              score += 5;
+  if (profile.lga_id)                                score += 5;
+  if (profile.lcda_id)                               score += 5;
+  if (profile.onboarded)                             score += 5;
+  if (profile.is_verified)                           score += 20;
+  if (profile.is_creator)                            score += 10;
+  return Math.min(score, 100);
+}
+
+export function getTrustLevel(score: number): { level: string; next: string; nextScore: number } {
+  if (score < 20) return { level: "Member",              next: "Active Member",       nextScore: 20 };
+  if (score < 40) return { level: "Active Member",       next: "Contributor",         nextScore: 40 };
+  if (score < 60) return { level: "Contributor",         next: "Verified Contributor", nextScore: 60 };
+  if (score < 80) return { level: "Verified Contributor", next: "Trusted Leader",     nextScore: 80 };
+  return          { level: "Trusted Leader",             next: "Trusted Leader",      nextScore: 100 };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -144,7 +161,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   }, []);
 
-  // ── Listen for token expiry events dispatched by authFetch ───────────
   useEffect(() => {
     const handleExpired = () => {
       clearSession();
@@ -165,7 +181,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let raw = localStorage.getItem(TOKEN_KEY);
     if (!raw || !isTokenValid(raw)) {
       localStorage.removeItem(TOKEN_KEY);
-      // ── Silent auth: check if rald_session cookie gives us a session ──────
       try {
         const silentRes = await fetch(`${API_BASE}/api/auth/silent`, { credentials: 'include' });
         if (silentRes.ok) {
@@ -183,7 +198,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const payload = decodeJwtPayload(raw)!;
     const user: LoopUser = {
-      // RALD JWT uses id (Phase H); fall back to sub for backward compat
       id:    (payload.id ?? payload.sub) as string,
       phone: (payload.phone ?? payload.email ?? "") as string,
       role:  (payload.role ?? "user") as string | undefined,
@@ -206,9 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const appId     = params.get("app_id");
 
       if (raldToken && (appId === "loop" || appId == null)) {
-        // ── Store the master RALD token for cross-app SSO (WS1-F2 / WS3-F1) ──
         localStorage.setItem(RALD_TOKEN_KEY, raldToken);
-
         try {
           const res = await fetch(`${API_BASE}/api/auth/rald-sso`, {
             method:  "POST",
@@ -224,15 +236,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const msg = err.error ?? `RALD SSO failed (${res.status})`;
             console.error("[rald-sso] exchange rejected:", msg);
             setSsoError(msg);
-            // Remove invalid token so user is prompted to sign in again
             localStorage.removeItem(RALD_TOKEN_KEY);
           }
         } catch (e) {
           console.error("[rald-sso] exchange failed:", e);
           setSsoError("Sign-in failed. Please try again.");
         }
-
-        // Clean URL — remove SSO params
         const clean = window.location.pathname;
         window.history.replaceState({}, "", clean);
       }
@@ -253,8 +262,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    // Phase 1 — Identity Completion: logout propagation
-    // 1. Revoke the Loop API session (clears server-side state, invalidates cookie)
     const raw = localStorage.getItem(TOKEN_KEY);
     if (raw) {
       try {
@@ -263,15 +270,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           credentials: "include",
           headers: { Authorization: `Bearer ${raw}` },
         });
-      } catch { /* non-blocking — clear local state regardless */ }
+      } catch { /* non-blocking */ }
     }
-    // 2. Clear all local tokens
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(RALD_TOKEN_KEY);
     setSession(null);
     setProfile(null);
-    // 3. Propagate logout to profiles.rald.cloud (clears the RALD master session)
-    //    profiles handles the cross-app cookie revocation
     window.location.href = `${RALD_AUTH_UI}/logout?app_id=loop&redirect_to=${encodeURIComponent(window.location.origin + "/")}`;
   }, []);
 
