@@ -12,6 +12,7 @@ concurrency:
 env:
   CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
   CLOUDFLARE_API_TOKEN:   ${{ secrets.CLOUDFLARE_API_TOKEN }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ── 1. Lint ──────────────────────────────────────────────────
@@ -19,10 +20,10 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with: { version: 10 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --no-frozen-lockfile
       - name: Lint (frontend)
@@ -34,10 +35,10 @@ jobs:
     name: Typecheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with: { version: 10 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --no-frozen-lockfile
       - name: Typecheck Worker
@@ -52,10 +53,10 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with: { version: 10 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --no-frozen-lockfile
       - name: Worker tests
@@ -70,10 +71,10 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with: { version: 10 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --no-frozen-lockfile
       - name: Security audit (hard fail)
@@ -85,10 +86,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, typecheck, test, security]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with: { version: 10 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --no-frozen-lockfile
 
@@ -96,7 +97,8 @@ jobs:
         working-directory: artifacts/cloudflare-worker
         run: pnpm exec wrangler deploy --env production
 
-      - name: Push RALD_JWT_SECRET to worker
+      # ── Push all required secrets ──────────────────────────────
+      - name: Push RALD_JWT_SECRET
         working-directory: artifacts/cloudflare-worker
         env:
           RALD_JWT_SECRET: ${{ secrets.RALD_JWT_SECRET }}
@@ -106,7 +108,7 @@ jobs:
           fi
           echo "$RALD_JWT_SECRET" | pnpm exec wrangler secret put RALD_JWT_SECRET --env production
 
-      - name: Push SUPABASE_SERVICE_ROLE_KEY to worker
+      - name: Push SUPABASE_SERVICE_ROLE_KEY
         working-directory: artifacts/cloudflare-worker
         env:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -116,6 +118,67 @@ jobs:
           fi
           echo "$SUPABASE_SERVICE_ROLE_KEY" | pnpm exec wrangler secret put SUPABASE_SERVICE_ROLE_KEY --env production
 
+      - name: Push TERMII_API_KEY
+        working-directory: artifacts/cloudflare-worker
+        env:
+          TERMII_API_KEY: ${{ secrets.TERMII_API_KEY }}
+        run: |
+          if [ -z "$TERMII_API_KEY" ]; then
+            echo "WARNING: TERMII_API_KEY not set — SMS OTP will be unavailable." && exit 0
+          fi
+          echo "$TERMII_API_KEY" | pnpm exec wrangler secret put TERMII_API_KEY --env production
+
+      - name: Push TERMII_SENDER_ID
+        working-directory: artifacts/cloudflare-worker
+        env:
+          TERMII_SENDER_ID: ${{ secrets.TERMII_SENDER_ID }}
+        run: |
+          if [ -z "$TERMII_SENDER_ID" ]; then
+            echo "WARNING: TERMII_SENDER_ID not set — skipping." && exit 0
+          fi
+          echo "$TERMII_SENDER_ID" | pnpm exec wrangler secret put TERMII_SENDER_ID --env production
+
+      - name: Push OPENROUTER_API_KEY
+        working-directory: artifacts/cloudflare-worker
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "WARNING: OPENROUTER_API_KEY not set — AI features will be unavailable." && exit 0
+          fi
+          echo "$OPENROUTER_API_KEY" | pnpm exec wrangler secret put OPENROUTER_API_KEY --env production
+
+      - name: Push LIVEKIT_API_KEY
+        working-directory: artifacts/cloudflare-worker
+        env:
+          LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+        run: |
+          if [ -z "$LIVEKIT_API_KEY" ]; then
+            echo "WARNING: LIVEKIT_API_KEY not set — audio rooms will be unavailable." && exit 0
+          fi
+          echo "$LIVEKIT_API_KEY" | pnpm exec wrangler secret put LIVEKIT_API_KEY --env production
+
+      - name: Push LIVEKIT_API_SECRET
+        working-directory: artifacts/cloudflare-worker
+        env:
+          LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+        run: |
+          if [ -z "$LIVEKIT_API_SECRET" ]; then
+            echo "WARNING: LIVEKIT_API_SECRET not set — audio rooms will be unavailable." && exit 0
+          fi
+          echo "$LIVEKIT_API_SECRET" | pnpm exec wrangler secret put LIVEKIT_API_SECRET --env production
+
+      - name: Push LIVEKIT_URL (var override)
+        working-directory: artifacts/cloudflare-worker
+        env:
+          LIVEKIT_URL: ${{ secrets.LIVEKIT_URL }}
+        run: |
+          if [ -z "$LIVEKIT_URL" ]; then
+            echo "WARNING: LIVEKIT_URL not set — audio rooms will be unavailable." && exit 0
+          fi
+          echo "$LIVEKIT_URL" | pnpm exec wrangler secret put LIVEKIT_URL --env production
+
+      # ── Smoke test ──────────────────────────────────────────────
       - name: Post-deploy smoke test
         run: |
           sleep 5
@@ -136,10 +199,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, typecheck, test, security]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with: { version: 10 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --no-frozen-lockfile
 
@@ -150,14 +213,8 @@ jobs:
           PORT: "3000"
           BASE_PATH: "/"
           NODE_ENV: production
-          # B0 FIX 2026-06-07: correct env var names so client.ts receives the anon key
-          # client.ts reads VITE_SUPABASE_PUBLISHABLE_KEY (not VITE_SUPABASE_ANON_KEY)
-          # Org secret is SUPABASE_ANON_KEY (not prefixed with VITE_)
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          # Supabase project URL — org secret SUPABASE_URL
           VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          # Loop API base URL — hardcoded public endpoint (no secret required)
-          # Required so AuthProvider sends requests to loop-api.rald.cloud, not the SPA router
           VITE_API_BASE_URL: https://loop-api.rald.cloud
 
       - name: Ensure Cloudflare Pages project exists (idempotent)
@@ -177,15 +234,12 @@ jobs:
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "WARNING: CLOUDFLARE_API_TOKEN not set — skipping Pages deploy."
-            echo "Add this secret with Cloudflare Pages:Edit permission."
             exit 0
           fi
           if npx wrangler@4.16.0 pages deploy dist/public --project-name=loop --branch=main; then
             echo "Cloudflare Pages deploy succeeded"
           else
             echo "FAIL: Cloudflare Pages deploy failed."
-            echo "Verify CLOUDFLARE_API_TOKEN has Cloudflare Pages:Edit permission."
-            echo "Worker is deployed; frontend serving from last successful deploy."
             exit 1
           fi
 
