@@ -6,6 +6,7 @@
  *     ↓ /api/auth/rald-sso  → validates RALD JWT, provisions Supabase user
  *     ↓ /api/auth/silent    → cookie-based silent session check
  *     ↓ /api/communities/*  → Communities (V2 primary entity)
+ *     ↓ /api/activation/*   → Community Activation — auto-join, pulse, home-feed
  *     ↓ /api/*              → Business logic, AI, civic data (Worker)
  *     ↓ Supabase            → DB, Realtime (via service role from Worker)
  */
@@ -19,6 +20,7 @@ import { rooms } from "./routes/rooms.js";
 import { auth } from "./routes/auth.js";
 import { raldSso } from "./routes/rald-sso.js";
 import { communities } from "./routes/communities.js";
+import { activation } from "./routes/activation.js";
 import { RoomSession } from "./durable-objects/room-session.js";
 
 export { RoomSession };
@@ -35,6 +37,7 @@ app.route("/api/auth/rald-sso",   raldSso);
 app.route("/api/trending",        trending);
 app.route("/api/rooms",           rooms);
 app.route("/api/communities",     communities);
+app.route("/api/activation",      activation);
 
 // ── Shallow liveness probe (no dependency checks) ────────────────────
 app.get("/api/healthz", (c) => c.json({ ok: true, status: "live", service: "loop-api", ts: Date.now() }));
