@@ -35,14 +35,12 @@ rooms.get("/", async (c) => {
   const category    = c.req.query("category");
   const communityId = c.req.query("community_id");
 
-  // FIX: removed FK join (host:profiles!rooms_host_id_fkey) — if that FK
-  // constraint doesn't exist in the DB, Supabase REST returns an error.
-  // host_id is included directly; callers can fetch profiles separately.
-  // The join can be re-added once migrations have been verified in prod.
-  const select = [
-    "id,title,description,category,community_id,host_id,is_live",
-    "audience_count,cover_url,visibility,language,created_at,updated_at",
-  ].join(",");
+  // FIX: use select=* to avoid "column does not exist" errors when the
+  // production database is on an earlier migration than the codebase expects.
+  // community_id and host_id were added in later migrations; the FK join
+  // host:profiles!rooms_host_id_fkey was also removed for the same reason.
+  // Tighten the select once all migrations have been applied in production.
+  const select = "*";
 
   const qs = new URLSearchParams({
     select,

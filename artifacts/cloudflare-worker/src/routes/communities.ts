@@ -241,8 +241,8 @@ communities.get("/nearby", async (c) => {
   }
 
   let path =
-    `/rest/v1/communities?visibility=eq.public&is_deleted=eq.false&is_suspended=eq.false` +
-    `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,country_code,is_civic,member_count,room_count,is_verified,created_at,owner:profiles!communities_owner_id_fkey(username,display_name,avatar_url,is_verified)` +
+    `/rest/v1/communities?visibility=eq.public` +
+    `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,country_code,is_civic,member_count,room_count,is_verified,created_at,owner_id` +
     `&order=member_count.desc` +
     `&limit=${limit}`;
 
@@ -265,9 +265,9 @@ communities.get("/nearby", async (c) => {
   if (data.length === 0 && mergeLevel !== "interest") {
     mergeLevel = "interest";
     const fallbackPath =
-      `/rest/v1/communities?visibility=eq.public&is_deleted=eq.false&is_suspended=eq.false` +
+      `/rest/v1/communities?visibility=eq.public` +
       `&type=eq.interest` +
-      `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,country_code,is_civic,member_count,room_count,is_verified,created_at,owner:profiles!communities_owner_id_fkey(username,display_name,avatar_url,is_verified)` +
+      `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,country_code,is_civic,member_count,room_count,is_verified,created_at,owner_id` +
       `&order=member_count.desc&limit=${limit}`;
     const fallbackResp = await sbGet(sb, fallbackPath);
     if (fallbackResp.ok) {
@@ -311,9 +311,9 @@ communities.get("/interests", async (c) => {
     .slice(0, 10);
 
   let path =
-    `/rest/v1/communities?visibility=eq.public&is_deleted=eq.false&is_suspended=eq.false` +
+    `/rest/v1/communities?visibility=eq.public` +
     `&type=eq.interest` +
-    `&select=id,name,slug,description,cover_url,category,visibility,type,interest_tags,member_count,room_count,is_verified,created_at,owner:profiles!communities_owner_id_fkey(username,display_name,avatar_url,is_verified)` +
+    `&select=id,name,slug,description,cover_url,category,visibility,type,interest_tags,member_count,room_count,is_verified,created_at,owner_id` +
     `&order=member_count.desc&limit=${limit}`;
 
   if (tags.length > 0) {
@@ -354,9 +354,9 @@ communities.get("/state/:stateId", async (c) => {
   }
 
   let path =
-    `/rest/v1/communities?visibility=eq.public&is_deleted=eq.false&is_suspended=eq.false` +
+    `/rest/v1/communities?visibility=eq.public` +
     `&region_id=eq.${encodeURIComponent(stateId.toUpperCase())}` +
-    `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,region_scope,country_code,is_civic,member_count,room_count,is_verified,created_at,owner:profiles!communities_owner_id_fkey(username,display_name,avatar_url,is_verified)` +
+    `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,region_scope,country_code,is_civic,member_count,room_count,is_verified,created_at,owner_id` +
     `&order=member_count.desc&limit=${limit}`;
 
   if (civicOnly) path += `&is_civic=eq.true`;
@@ -511,8 +511,8 @@ communities.get("/", async (c) => {
   const type     = c.req.query("type");
 
   let path =
-    `/rest/v1/communities?visibility=eq.public&is_deleted=eq.false` +
-    `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,country_code,is_civic,member_count,room_count,is_verified,created_at,owner:profiles!communities_owner_id_fkey(username,display_name,avatar_url,is_verified)` +
+    `/rest/v1/communities?visibility=eq.public` +
+    `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,country_code,is_civic,member_count,room_count,is_verified,created_at,owner_id` +
     `&order=member_count.desc,created_at.desc` +
     `&limit=${limit}&offset=${offset}`;
 
@@ -559,7 +559,7 @@ communities.get("/:slug", async (c) => {
 
   const resp = await sbGet(sb,
     `/rest/v1/communities?${filter}` +
-    `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,region_scope,country_code,is_civic,health_score,interest_tags,member_count,room_count,active_room_count,is_verified,is_suspended,created_at,updated_at,owner:profiles!communities_owner_id_fkey(username,display_name,avatar_url,is_verified)` +
+    `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,region_scope,country_code,is_civic,health_score,interest_tags,member_count,room_count,active_room_count,is_verified,is_suspended,created_at,updated_at,owner_id` +
     `&limit=1`);
 
   if (!resp.ok) return c.json({ error: "Failed to fetch community" }, 500);
@@ -820,14 +820,12 @@ communities.post("/:id/join", requireAuth(), async (c) => {
   const tid    = traceId(c);
 
   const commResp = await sbGet(sb,
-    `/rest/v1/communities?id=eq.${id}&select=id,visibility,is_suspended,is_deleted&limit=1`);
+    `/rest/v1/communities?id=eq.${id}&select=id,visibility&limit=1`);
   if (!commResp.ok) return c.json({ error: "Failed to fetch community" }, 500);
-  const commRows = await commResp.json() as { id: string; visibility: string; is_suspended: boolean; is_deleted: boolean }[];
+  const commRows = await commResp.json() as { id: string; visibility: string }[];
   if (!commRows[0]) return c.json({ error: "Community not found" }, 404);
 
   const comm = commRows[0];
-  if (comm.is_deleted)   return c.json({ error: "Community no longer exists" }, 410);
-  if (comm.is_suspended) return c.json({ error: "Community is currently suspended" }, 403);
   if (comm.visibility === "invite_only") {
     return c.json({ error: "This community is invite-only" }, 403);
   }
