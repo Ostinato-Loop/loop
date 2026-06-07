@@ -130,9 +130,6 @@ export function useFollow(userId: string | null): {
         await followUser(userId);
         setFollowing(true);
       }
-    } catch (e) {
-      // Re-throw for UI to handle
-      throw e;
     } finally {
       setLoading(false);
     }
