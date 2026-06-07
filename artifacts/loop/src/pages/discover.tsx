@@ -510,7 +510,7 @@ export default function DiscoverPage() {
           <section>
             <div className="flex items-center gap-1.5 mb-3">
               <Globe2 className="h-3.5 w-3.5 text-primary" />
-              <h2 className="font-display text-sm font-bold uppercase tracking-wider">Near Lagos</h2>
+              <h2 className="font-display text-sm font-bold uppercase tracking-wider">Near {profile?.state_id ?? "you"}</h2>
             </div>
             {rooms === null ? <Skeleton /> : (
               <div className="space-y-3">
