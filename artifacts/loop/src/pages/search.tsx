@@ -10,7 +10,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { AppShell } from "@/components/layout/app-shell";
-import { listRooms, type Room, type RoomCategory } from "@/lib/api/rooms";
+import { listRooms, type Room } from "@/lib/api/rooms";
 import { searchRelatedPeople, type PersonResult } from "@/lib/api/people";
 import { useFollow } from "@/lib/api/follows";
 import {
