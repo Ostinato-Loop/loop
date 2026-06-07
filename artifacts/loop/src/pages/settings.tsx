@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { authedSupabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/layout/app-shell";
 import {
-  ChevronLeft, ChevronRight, Bell, Globe2, Shield,
+  ChevronLeft, ChevronRight, Bell, Shield,
   UserCircle, MapPin, Trash2, Sun, Moon, Monitor,
   BellOff, BellRing, Volume2, Check, Loader2, Lock,
 } from "lucide-react";
