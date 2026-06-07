@@ -95,7 +95,7 @@ describe("slugify", () => {
   });
 
   it("removes special characters", () => {
-    expect(slugify("Tech & Culture!")).toBe("tech--culture");
+    expect(slugify("Tech & Culture!")).toBe("tech-culture");
   });
 
   it("collapses resulting consecutive hyphens — note: raw output may have them; caller validates", () => {
