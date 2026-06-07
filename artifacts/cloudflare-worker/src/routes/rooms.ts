@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { CloudflareEnv } from "../types/env.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { requireAuth } from "../middleware/auth.js";
-import type { RoomCategory, RoomRecommendationsResponse } from "@workspace/loop-shared-types";
+import type { RoomCategory } from "@workspace/loop-shared-types";
 import { getRecommendations } from "../services/recommendations.js";
 
 const rooms = new Hono<{ Bindings: CloudflareEnv; Variables: { user: AuthUser } }>();
@@ -13,20 +13,22 @@ const rooms = new Hono<{ Bindings: CloudflareEnv; Variables: { user: AuthUser } 
  * Public listing of live and recent rooms. No authentication required.
  *
  * Query params:
- *   category — filter by room category
- *   limit    — max rooms to return (default: 20, max: 100)
- *   offset   — pagination offset (default: 0)
+ *   category     — filter by room category
+ *   community_id — filter to a specific community (V2)
+ *   limit        — max rooms to return (default: 20, max: 100)
+ *   offset       — pagination offset (default: 0)
  */
 rooms.get("/", async (c) => {
-  const supabase = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
-  const limit  = Math.min(Number(c.req.query("limit")  ?? 20), 100);
-  const offset = Math.max(Number(c.req.query("offset") ?? 0),  0);
-  const category = c.req.query("category");
+  const supabase    = createClient(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const limit       = Math.min(Number(c.req.query("limit")  ?? 20), 100);
+  const offset      = Math.max(Number(c.req.query("offset") ?? 0),  0);
+  const category    = c.req.query("category");
+  const communityId = c.req.query("community_id");
 
   let q = supabase
     .from("rooms")
     .select(
-      "id, title, description, category, is_live, audience_count, cover_url, visibility, language, created_at, updated_at, " +
+      "id, title, description, category, community_id, is_live, audience_count, cover_url, visibility, language, created_at, updated_at, " +
       "host:profiles!rooms_host_id_fkey(id, username, display_name, avatar_url, is_verified)"
     )
     .eq("visibility", "public")
@@ -35,7 +37,8 @@ rooms.get("/", async (c) => {
     .order("created_at",     { ascending: false })
     .range(offset, offset + limit - 1);
 
-  if (category) q = q.eq("category", category as RoomCategory);
+  if (category)    q = q.eq("category",     category    as RoomCategory);
+  if (communityId) q = q.eq("community_id", communityId);
 
   const { data, error } = await q;
   if (error) {
@@ -60,7 +63,7 @@ rooms.get("/", async (c) => {
  *   lang    — preferred language code (e.g. "en", "ha", "yo")
  */
 rooms.get("/recommendations", requireAuth(), async (c) => {
-  const user = c.get("user");
+  const user  = c.get("user");
   const limit = Math.min(Number(c.req.query("limit") ?? 10), 50);
   const lang  = c.req.query("lang") ?? "en";
 
@@ -78,10 +81,10 @@ rooms.post("/:roomId/queue-summary", requireAuth(), async (c) => {
   const user = c.get("user");
 
   await c.env.TASK_QUEUE.send({
-    type: "ai_summary",
+    type:        "ai_summary",
     roomId,
     requestedBy: user.id,
-    timestamp: Date.now(),
+    timestamp:   Date.now(),
   });
 
   return c.json({ ok: true, queued: true, roomId });
