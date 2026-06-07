@@ -1,6 +1,9 @@
 // Loop — Global UI Store
 // Lightweight zustand store for room state, follows, interests, and notifications.
 // Persisted to localStorage for seamless session continuity.
+//
+// P1-FIX-006: Removed hardcoded mock follows (tunde, wanjiku, ngozi) and
+// mock interests. All real users start with an empty state, not fictional data.
 // LILCKY STUDIO LIMITED
 
 import React, { createContext, useCallback, useContext, useEffect, useReducer } from "react";
@@ -31,23 +34,28 @@ type Actions = {
 
 type Store = State & Actions;
 
-const STORAGE_KEY = "loop-ui-state-v1";
+const STORAGE_KEY = "loop-ui-state-v2";
+
+/** Empty initial state — no mock data. Real user state comes from server (profile.interests, etc.) */
+function emptyState(): State {
+  return {
+    follows: {},
+    notifPrefs: {},
+    joined: {},
+    speakState: {},
+    muted: {},
+    queuePos: {},
+    interests: {},
+    publishedRooms: [],
+  };
+}
 
 function loadState(): State {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw) as State;
   } catch { /* ignore */ }
-  return {
-    follows: { tunde: true, wanjiku: true, ngozi: true },
-    notifPrefs: { tunde: "all", wanjiku: "rooms", ngozi: "all" },
-    joined: {},
-    speakState: {},
-    muted: {},
-    queuePos: {},
-    interests: { civic: true, music: true, tech: true },
-    publishedRooms: [],
-  };
+  return emptyState();
 }
 
 function reducer(state: State, action: { type: string; payload: unknown }): State {
@@ -105,21 +113,25 @@ export function LoopStoreProvider({ children }: { children: React.ReactNode }) {
 
   const store: Store = {
     ...state,
-    toggleFollow: useCallback((h) => dispatch({ type: "toggleFollow", payload: h }), []),
-    setNotifPref: useCallback((h, l) => dispatch({ type: "setNotifPref", payload: { h, l } }), []),
-    setJoined: useCallback((r, v) => dispatch({ type: "setJoined", payload: { r, v } }), []),
+    toggleFollow:  useCallback((h) => dispatch({ type: "toggleFollow", payload: h }), []),
+    setNotifPref:  useCallback((h, l) => dispatch({ type: "setNotifPref", payload: { h, l } }), []),
+    setJoined:     useCallback((r, v) => dispatch({ type: "setJoined", payload: { r, v } }), []),
     setSpeakState: useCallback((r, st) => dispatch({ type: "setSpeakState", payload: { r, st } }), []),
-    setQueuePos: useCallback((r, n) => dispatch({ type: "setQueuePos", payload: { r, n } }), []),
-    toggleMute: useCallback((r) => dispatch({ type: "toggleMute", payload: r }), []),
-    toggleInterest: useCallback((id) => dispatch({ type: "toggleInterest", payload: id }), []),
-    publishRoom: useCallback((room) => dispatch({ type: "publishRoom", payload: room }), []),
+    setQueuePos:   useCallback((r, n) => dispatch({ type: "setQueuePos", payload: { r, n } }), []),
+    toggleMute:    useCallback((r) => dispatch({ type: "toggleMute", payload: r }), []),
+    toggleInterest:useCallback((id) => dispatch({ type: "toggleInterest", payload: id }), []),
+    publishRoom:   useCallback((room) => dispatch({ type: "publishRoom", payload: room }), []),
   };
 
-  return React.createElement(LoopStoreCtx.Provider, { value: store }, children);
+  return (
+    <LoopStoreCtx.Provider value={store}>
+      {children}
+    </LoopStoreCtx.Provider>
+  );
 }
 
 export function useLoop(): Store {
   const ctx = useContext(LoopStoreCtx);
-  if (!ctx) throw new Error("useLoop must be used within LoopStoreProvider");
+  if (!ctx) throw new Error("useLoop must be used inside <LoopStoreProvider>");
   return ctx;
 }
