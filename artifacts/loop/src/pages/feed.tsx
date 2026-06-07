@@ -3,11 +3,9 @@
 //   LiveStrip hydrates from Supabase. Content area shows rooms when present,
 //   loading skeleton during fetch, error state on failure, empty state only
 //   when API returns zero results.
-// P0-006 FIX: Category chips are wired to state. Selecting a category
-//   re-fetches rooms with the category filter applied.
-// AT-LOP-007 FIX: Onboarding interests are now read from profile (server) and
-//   loop-store (local fallback) and used to surface a "Picked for you" section
-//   when the user is on the "For you" tab with no explicit category filter.
+// P0-006 FIX: Category chips are wired to state.
+// AT-LOP-007 FIX: Onboarding interests surfaced as "Picked for you".
+// V1-STAB: Bell → /notifications, Search → /search (no dead toast links).
 // LILCKY STUDIO LIMITED
 
 import { useEffect, useState, useCallback } from "react";
@@ -18,29 +16,24 @@ import { useLoop } from "@/lib/loop-store";
 import { LoopMark } from "@/components/loop-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 import { Link, useNavigate } from "react-router-dom";
 
-// UI category labels → valid DB RoomCategory values.
-// Values must match the RoomCategory enum in lib/api/rooms.ts.
-// "" means no filter (show all). Unmapped thematic labels resolve to "".
 const CATEGORIES = [
-  { label: "For you",   value: "" },
-  { label: "Community", value: "community" },
-  { label: "News",      value: "news" },
-  { label: "Commentary",value: "commentary" },
-  { label: "Music",     value: "radio" },
-  { label: "DJ",        value: "dj-session" },
-  { label: "Education", value: "education" },
-  { label: "Business",  value: "business" },
+  { label: "For you",    value: "" },
+  { label: "Community",  value: "community" },
+  { label: "News",       value: "news" },
+  { label: "Commentary", value: "commentary" },
+  { label: "Music",      value: "radio" },
+  { label: "DJ",         value: "dj-session" },
+  { label: "Education",  value: "education" },
+  { label: "Business",   value: "business" },
 ];
 
-// Map interest slugs (from profile/onboarding) → valid DB RoomCategory values
 const INTEREST_TO_CATEGORY: Record<string, string> = {
-  music: "radio",         tech: "education",      civic: "commentary",
-  business: "business",   sports: "community",    education: "education",
-  community: "community", africa: "community",    campus: "education",
-  commentary: "commentary", news: "news",          radio: "radio",
+  music: "radio",         tech: "education",        civic: "commentary",
+  business: "business",   sports: "community",      education: "education",
+  community: "community", africa: "community",      campus: "education",
+  commentary: "commentary", news: "news",            radio: "radio",
   "dj-session": "dj-session", general: "",
 };
 
@@ -49,8 +42,6 @@ export default function FeedPage() {
   const { profile } = useAuth();
   const { interests: localInterests } = useLoop();
 
-  // AT-LOP-007: derive interest categories from server profile (primary)
-  // or local loop-store (fallback from onboarding step).
   const interests: string[] = (() => {
     if (profile?.interests && profile.interests.length > 0) {
       return [...new Set(
@@ -71,10 +62,7 @@ export default function FeedPage() {
     <AppShell>
       <FeedHeader />
       <div className="px-4 pt-3 pb-6 space-y-3">
-        <RegionScroller
-          active={activeCategory}
-          onChange={setActiveCategory}
-        />
+        <RegionScroller active={activeCategory} onChange={setActiveCategory} />
         <LiveStrip category={activeCategory} interests={interests} />
       </div>
     </AppShell>
@@ -82,6 +70,7 @@ export default function FeedPage() {
 }
 
 function FeedHeader() {
+  const navigate = useNavigate();
   return (
     <header className="sticky top-0 z-30 bg-background/85 backdrop-blur-xl border-b border-border">
       <div className="px-4 pt-3 pb-2 flex items-center justify-between">
@@ -93,16 +82,16 @@ function FeedHeader() {
         </div>
         <div className="flex items-center gap-1.5">
           <button
-            className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center"
+            onClick={() => navigate("/search")}
+            className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center active:scale-95 transition-transform"
             aria-label="Search"
-            onClick={() => toast.info("Search is coming soon")}
           >
             <Search className="h-4 w-4" />
           </button>
           <button
-            className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center relative"
+            onClick={() => navigate("/notifications")}
+            className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center relative active:scale-95 transition-transform"
             aria-label="Notifications"
-            onClick={() => toast.info("Notifications coming soon")}
           >
             <Bell className="h-4 w-4" />
           </button>
@@ -112,10 +101,7 @@ function FeedHeader() {
   );
 }
 
-interface RegionScrollerProps {
-  active: string;
-  onChange: (category: string) => void;
-}
+interface RegionScrollerProps { active: string; onChange: (category: string) => void; }
 
 function RegionScroller({ active, onChange }: RegionScrollerProps) {
   return (
@@ -140,12 +126,7 @@ function RegionScroller({ active, onChange }: RegionScrollerProps) {
 
 type FeedState = "loading" | "error" | "empty" | "ready";
 
-interface LiveStripProps {
-  category: string;
-  interests: string[];
-}
-
-function LiveStrip({ category, interests }: LiveStripProps) {
+function LiveStrip({ category, interests }: { category: string; interests: string[] }) {
   const navigate = useNavigate();
   const [rooms, setRooms] = useState<ApiRoom[]>([]);
   const [state, setState] = useState<FeedState>("loading");
@@ -154,14 +135,10 @@ function LiveStrip({ category, interests }: LiveStripProps) {
   const fetchRooms = useCallback(() => {
     setState("loading");
     listRooms({ limit: 20, category: (category as RoomCategory) || undefined })
-      .then((data) => {
-        setRooms(data);
-        setState(data.length === 0 ? "empty" : "ready");
-      })
+      .then((data) => { setRooms(data); setState(data.length === 0 ? "empty" : "ready"); })
       .catch(() => setState("error"));
   }, [category]);
 
-  // AT-LOP-007: Personalised picks — fetch top-interest rooms on "For you" tab
   useEffect(() => {
     if (category === "" && interests.length > 0) {
       listRooms({ category: interests[0] as RoomCategory, limit: 5 })
@@ -172,9 +149,7 @@ function LiveStrip({ category, interests }: LiveStripProps) {
     }
   }, [category, interests]);
 
-  useEffect(() => {
-    fetchRooms();
-  }, [fetchRooms]);
+  useEffect(() => { fetchRooms(); }, [fetchRooms]);
 
   if (state === "loading") {
     return (
@@ -183,9 +158,7 @@ function LiveStrip({ category, interests }: LiveStripProps) {
           <span className="h-2 w-2 rounded-full bg-muted animate-pulse" />
           <span className="text-xs font-bold text-muted-foreground">Loading rooms…</span>
         </div>
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-24 rounded-2xl bg-secondary animate-pulse" />
-        ))}
+        {[1, 2, 3].map((i) => <div key={i} className="h-24 rounded-2xl bg-secondary animate-pulse" />)}
       </div>
     );
   }
@@ -194,10 +167,7 @@ function LiveStrip({ category, interests }: LiveStripProps) {
     return (
       <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-center">
         <p className="text-sm font-medium text-destructive mb-2">Could not load rooms</p>
-        <button
-          onClick={fetchRooms}
-          className="text-xs text-muted-foreground underline underline-offset-2"
-        >
+        <button onClick={fetchRooms} className="text-xs text-muted-foreground underline underline-offset-2">
           Try again
         </button>
       </div>
@@ -212,9 +182,7 @@ function LiveStrip({ category, interests }: LiveStripProps) {
           {category ? `No live ${category} rooms right now` : "No live rooms right now"}
         </p>
         <p className="text-xs text-muted-foreground">
-          {category
-            ? "Try a different category or check back soon"
-            : "Be the first — start a room"}
+          {category ? "Try a different category or check back soon" : "Be the first — start a room"}
         </p>
         <button
           onClick={() => navigate("/create/room")}
@@ -226,37 +194,28 @@ function LiveStrip({ category, interests }: LiveStripProps) {
     );
   }
 
-  // Deduplicate: don't show interest rooms again in the main list
   const interestIds = new Set(interestRooms.map((r) => r.id));
   const mainRooms = rooms.filter((r) => !interestIds.has(r.id));
 
   return (
     <div className="space-y-3">
-      {/* AT-LOP-007: Personalised section — shown when user has interests and is on For You */}
       {interestRooms.length > 0 && category === "" && (
         <>
           <div className="flex items-center gap-1.5">
             <span className="text-xs font-bold text-primary">Picked for you</span>
-            <span className="text-[10px] text-muted-foreground capitalize">
-              · {interestRooms[0]?.category}
-            </span>
+            <span className="text-[10px] text-muted-foreground capitalize">· {interestRooms[0]?.category}</span>
           </div>
-          {interestRooms.map((room) => (
-            <RoomCard key={`interest-${room.id}`} room={room} />
-          ))}
+          {interestRooms.map((room) => <RoomCard key={`interest-${room.id}`} room={room} />)}
           {mainRooms.length > 0 && (
             <div className="flex items-center gap-1.5 pt-1">
               <span className="h-2 w-2 rounded-full bg-live animate-pulse" />
-              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                All live rooms
-              </span>
+              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">All live rooms</span>
               <span className="ml-auto text-xs text-muted-foreground">{rooms.length} rooms</span>
             </div>
           )}
         </>
       )}
 
-      {/* Standard header when no personalization */}
       {!(interestRooms.length > 0 && category === "") && (
         <div className="flex items-center gap-1.5 mb-2">
           <span className="h-2 w-2 rounded-full bg-live animate-pulse" />
@@ -267,9 +226,7 @@ function LiveStrip({ category, interests }: LiveStripProps) {
         </div>
       )}
 
-      {mainRooms.map((room) => (
-        <RoomCard key={room.id} room={room} />
-      ))}
+      {mainRooms.map((room) => <RoomCard key={room.id} room={room} />)}
     </div>
   );
 }
@@ -284,17 +241,12 @@ function RoomCard({ room }: { room: ApiRoom }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
             <span className="inline-flex items-center gap-1 rounded-full bg-live/15 px-2 py-0.5 text-[10px] font-bold uppercase text-live">
-              <span className="h-1.5 w-1.5 rounded-full bg-live" />
-              Live
+              <span className="h-1.5 w-1.5 rounded-full bg-live" />Live
             </span>
-            {room.category && (
-              <span className="text-[10px] text-muted-foreground capitalize">{room.category}</span>
-            )}
+            {room.category && <span className="text-[10px] text-muted-foreground capitalize">{room.category}</span>}
           </div>
           <h3 className="font-semibold text-sm leading-tight truncate">{room.title}</h3>
-          {room.description && (
-            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{room.description}</p>
-          )}
+          {room.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{room.description}</p>}
         </div>
         <div className="text-right shrink-0">
           <p className="text-xs text-muted-foreground">{room.audience_count} listening</p>
