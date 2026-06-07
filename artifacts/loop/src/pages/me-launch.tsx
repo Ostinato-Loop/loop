@@ -10,7 +10,7 @@ import {
   Heart, Users, Shield, Sun, Moon, Monitor, Copy, ChevronRight, Sparkles,
   LogOut,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLoop } from "@/lib/loop-store";
 import { useAuth } from "@/hooks/use-auth";
 import { AppShell } from "@/components/layout/app-shell";
@@ -23,6 +23,17 @@ export default function MeLaunchPage() {
   const [tab, setTab] = useState<Tab>("activity");
   const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");
   const [reportOpen, setReportOpen] = useState(false);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.remove("light", "dark");
+    if (theme === "system") {
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      root.classList.add(prefersDark ? "dark" : "light");
+    } else {
+      root.classList.add(theme);
+    }
+  }, [theme]);
   const [reportMsg, setReportMsg] = useState("");
   const [reportBusy, setReportBusy] = useState(false);
 
@@ -39,7 +50,11 @@ export default function MeLaunchPage() {
     <AppShell>
     <div className="pb-6">
       <div className="relative h-32 bg-gradient-to-br from-neon/30 via-accent to-orange/20">
-        <button className="absolute top-3 right-3 h-9 w-9 rounded-full bg-background/80 backdrop-blur flex items-center justify-center" aria-label="Settings">
+        <button
+          className="absolute top-3 right-3 h-9 w-9 rounded-full bg-background/80 backdrop-blur flex items-center justify-center"
+          aria-label="Settings"
+          onClick={() => import("sonner").then(({ toast }) => toast.info("Settings coming soon"))}
+        >
           <Settings className="h-4 w-4" />
         </button>
       </div>
@@ -170,7 +185,7 @@ export default function MeLaunchPage() {
                   if (!reportMsg.trim() || reportBusy) return;
                   setReportBusy(true);
                   try {
-                    const token = localStorage.getItem("loop_access_token");
+                    const token = localStorage.getItem("loop_token");
                     await fetch("/api/feedback", {
                       method: "POST",
                       headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },

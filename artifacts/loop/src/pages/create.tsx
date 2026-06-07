@@ -38,6 +38,7 @@ const COMING_SOON: Record<string, { label: string; desc: string }> = {
   event:      { label: "Event",       desc: "Regional event scheduling is coming soon." },
   post:       { label: "Post",        desc: "Photo and media posts are coming soon." },
   article:    { label: "Article",     desc: "Long-form publishing is coming soon." },
+  community:  { label: "Community",   desc: "Community creation is coming in a future sprint." },
 };
 
 export default function CreatePage() {

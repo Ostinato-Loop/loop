@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useLoop } from "@/lib/loop-store";
 import { authedSupabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,6 +32,7 @@ type Step = typeof STEPS[number];
 
 export default function OnboardingPage() {
   const { user, loading, profile, refreshProfile } = useAuth();
+  const { setInterests: setStoreInterests } = useLoop();
   const navigate = useNavigate();
   const [stepIdx, setStepIdx] = useState(0);
   const step: Step = STEPS[stepIdx];
@@ -104,6 +106,7 @@ export default function OnboardingPage() {
     setBusy(true);
     try {
       await persist({ onboarded: true });
+      setStoreInterests(interests);
       await refreshProfile();
       navigate("/");
     } catch (err) {

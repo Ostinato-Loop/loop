@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  getRoom, joinRoom, leaveRoom,
+  getRoom, joinRoom, leaveRoom, setRoomLive,
   listMessages, listParticipants,
   sendMessage, sendReaction,
   type Room,
@@ -432,19 +432,17 @@ export default function RoomPage() {
     try { await sendReaction(roomId, user.id, emoji); } catch { /* silent */ }
   };
 
-  /* P0-003 FIX: toggleHandRaise now broadcasts via Supabase Realtime */
+  /* P0-003 FIX: toggleHandRaise broadcasts via the already-subscribed eventChannel */
   const toggleHandRaise = async () => {
-    if (!user || !roomId) return;
+    if (!user || !roomId || !eventChannel.current) return;
     const next = !handRaised;
     setHandRaised(next);
     try {
-      await supabase
-        .channel(`room:${roomId}:events`)
-        .send({
-          type: "broadcast",
-          event: "raise_hand",
-          payload: { user_id: user.id, raised: next },
-        });
+      await eventChannel.current.send({
+        type: "broadcast",
+        event: "raise_hand",
+        payload: { user_id: user.id, raised: next },
+      });
       if (next) toast.success("Hand raised — the host will be notified");
       else toast.info("Hand lowered");
     } catch {
@@ -456,6 +454,7 @@ export default function RoomPage() {
   const endRoom = async () => {
     if (!roomId || !user) return;
     try {
+      await setRoomLive(roomId, false);
       await leaveRoom(roomId, user.id);
     } catch { /* ignore */ }
     navigate("/");
@@ -570,17 +569,19 @@ export default function RoomPage() {
         )}
       </section>
 
-      {/* ── AI Summary ─────────────────────────────────────────────── */}
-      <section className="mx-5 mb-3 overflow-hidden rounded-2xl border border-primary/20 bg-surface">
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-          <Sparkles className="h-3 w-3 text-primary" />
-          <span className="text-[10px] font-bold uppercase tracking-wider text-primary">Pinned AI summary</span>
-          <span className="ml-auto text-[10px] text-muted-foreground">Live</span>
-        </div>
-        <p className="px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-          {room.ai_summary ?? "A multilingual transcript and summary will appear here as the conversation evolves."}
-        </p>
-      </section>
+      {/* ── AI Summary — only shown when a summary exists ─────────── */}
+      {room.ai_summary && (
+        <section className="mx-5 mb-3 overflow-hidden rounded-2xl border border-primary/20 bg-surface">
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+            <Sparkles className="h-3 w-3 text-primary" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-primary">Pinned AI summary</span>
+            <span className="ml-auto text-[10px] text-muted-foreground">Live</span>
+          </div>
+          <p className="px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+            {room.ai_summary}
+          </p>
+        </section>
+      )}
 
       {/* ── Audience grid ──────────────────────────────────────────── */}
       {listeners.length > 0 && (

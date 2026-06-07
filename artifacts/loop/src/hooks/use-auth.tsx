@@ -29,6 +29,7 @@ export type Profile = {
   bio: string | null;
   language: string | null;
   interests: string[] | null;
+  state_id: string | null;
   is_creator: boolean;
   is_verified: boolean;
   onboarded: boolean;
@@ -236,7 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const raw = localStorage.getItem(TOKEN_KEY);
     if (raw) {
       try {
-        await fetch(`${API_BASE}/api/auth/logout`, {
+        await fetch(`${API_BASE}/api/auth/signout`, {
           method: "POST",
           credentials: "include",
           headers: { Authorization: `Bearer ${raw}` },

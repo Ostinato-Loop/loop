@@ -21,24 +21,27 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Link, useNavigate } from "react-router-dom";
 
+// UI category labels → valid DB RoomCategory values.
+// Values must match the RoomCategory enum in lib/api/rooms.ts.
+// "" means no filter (show all). Unmapped thematic labels resolve to "".
 const CATEGORIES = [
-  { label: "For you", value: "" },
-  { label: "Africa",  value: "africa" },
-  { label: "Civic",   value: "civic" },
-  { label: "Music",   value: "music" },
-  { label: "Sports",  value: "sports" },
-  { label: "Campus",  value: "campus" },
-  { label: "Tech",    value: "tech" },
-  { label: "Business",value: "business" },
+  { label: "For you",   value: "" },
+  { label: "Community", value: "community" },
+  { label: "News",      value: "news" },
+  { label: "Commentary",value: "commentary" },
+  { label: "Music",     value: "radio" },
+  { label: "DJ",        value: "dj-session" },
+  { label: "Education", value: "education" },
+  { label: "Business",  value: "business" },
 ];
 
-// Map interest slugs (from profile/onboarding) → Loop category values
+// Map interest slugs (from profile/onboarding) → valid DB RoomCategory values
 const INTEREST_TO_CATEGORY: Record<string, string> = {
-  music: "music",    tech: "tech",        civic: "civic",
-  business: "business", sports: "sports", education: "tech",
-  community: "civic", africa: "africa",   campus: "campus",
-  commentary: "civic", news: "civic",     radio: "music",
-  "dj-session": "music", general: "",
+  music: "radio",         tech: "education",      civic: "commentary",
+  business: "business",   sports: "community",    education: "education",
+  community: "community", africa: "community",    campus: "education",
+  commentary: "commentary", news: "news",          radio: "radio",
+  "dj-session": "dj-session", general: "",
 };
 
 export default function FeedPage() {
@@ -143,6 +146,7 @@ interface LiveStripProps {
 }
 
 function LiveStrip({ category, interests }: LiveStripProps) {
+  const navigate = useNavigate();
   const [rooms, setRooms] = useState<ApiRoom[]>([]);
   const [state, setState] = useState<FeedState>("loading");
   const [interestRooms, setInterestRooms] = useState<ApiRoom[]>([]);
@@ -211,13 +215,13 @@ function LiveStrip({ category, interests }: LiveStripProps) {
           {category
             ? "Try a different category or check back soon"
             : "Be the first — start a room"}
+        </p>
         <button
           onClick={() => navigate("/create/room")}
           className="mt-3 text-xs font-semibold text-primary underline underline-offset-2"
         >
           Start a room →
         </button>
-        </p>
       </div>
     );
   }

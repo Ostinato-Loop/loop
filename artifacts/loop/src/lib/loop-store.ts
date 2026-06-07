@@ -29,6 +29,7 @@ type Actions = {
   setQueuePos: (roomId: string, n: number) => void;
   toggleMute: (roomId: string) => void;
   toggleInterest: (id: string) => void;
+  setInterests: (ids: string[]) => void;
   publishRoom: (r: { id: string; title: string; category: string; scope: string }) => void;
 };
 
@@ -93,6 +94,12 @@ function reducer(state: State, action: { type: string; payload: unknown }): Stat
       const id = action.payload as string;
       return { ...state, interests: { ...state.interests, [id]: !state.interests[id] } };
     }
+    case "setInterests": {
+      const ids = action.payload as string[];
+      const interests: Record<string, boolean> = {};
+      ids.forEach((id) => { interests[id.toLowerCase()] = true; });
+      return { ...state, interests };
+    }
     case "publishRoom": {
       const room = action.payload as { id: string; title: string; category: string; scope: string };
       return { ...state, publishedRooms: [{ ...room, at: Date.now() }, ...state.publishedRooms] };
@@ -120,6 +127,7 @@ export function LoopStoreProvider({ children }: { children: React.ReactNode }) {
     setQueuePos:   useCallback((r, n) => dispatch({ type: "setQueuePos", payload: { r, n } }), []),
     toggleMute:    useCallback((r) => dispatch({ type: "toggleMute", payload: r }), []),
     toggleInterest:useCallback((id) => dispatch({ type: "toggleInterest", payload: id }), []),
+    setInterests:  useCallback((ids) => dispatch({ type: "setInterests", payload: ids }), []),
     publishRoom:   useCallback((room) => dispatch({ type: "publishRoom", payload: room }), []),
   };
 

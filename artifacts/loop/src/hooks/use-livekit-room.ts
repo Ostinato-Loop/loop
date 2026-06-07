@@ -117,8 +117,9 @@ export function useLiveKitRoom(
       return;
     }
     try {
-      // next = true means we want to speak (unmuted) → enable mic
-      await lk.localParticipant.setMicrophoneEnabled(next);
+      // next = false → user will be unmuted → enable mic
+      // next = true  → user will be muted   → disable mic
+      await lk.localParticipant.setMicrophoneEnabled(!next);
     } catch {
       setMuted(!next); // revert on error
     }

@@ -367,7 +367,7 @@ export default function DiscoverPage() {
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Loop</p>
-            <h1 className="font-display text-2xl font-extrabold text-gradient-mint">Feed</h1>
+            <h1 className="font-display text-2xl font-extrabold text-gradient-mint">Discover</h1>
           </div>
           <button
             type="button"
@@ -445,7 +445,7 @@ export default function DiscoverPage() {
                   Live now · {liveRooms.length}
                 </h2>
               </div>
-              <button type="button" className="flex items-center gap-1 text-xs text-primary font-semibold">
+              <button type="button" onClick={() => setFeedTab("live")} className="flex items-center gap-1 text-xs text-primary font-semibold">
                 See all <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
