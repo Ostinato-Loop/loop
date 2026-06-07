@@ -3,11 +3,15 @@
  *
  * Phase H (Identity Axiom): Loop does NOT issue its own JWTs.
  * The RALD JWT (signed with RALD_JWT_SECRET) is the session token.
- * Accepts Bearer token (RALD JWT) OR rald_session cookie.
+ * Accepts Bearer token OR rald_session cookie.
+ *
+ * IDN-001 (2026-06-07): JWT verification delegated to shared lib/jwt.ts.
+ *                        Inline verifyRaldJwt removed.
  */
 import type { MiddlewareHandler } from "hono";
 import type { CloudflareEnv } from "../types/env.js";
 import { parseSessionCookie } from "../lib/cookie.js";
+import { verifyJwt } from "../lib/jwt.js";
 
 export type AuthUser = {
   id: string;
@@ -22,48 +26,33 @@ declare module "hono" {
   }
 }
 
-async function verifyRaldJwt(token: string, secret: string): Promise<AuthUser | null> {
-  try {
-    const [header, body, sig] = token.split(".");
-    if (!header || !body || !sig) return null;
-    const enc = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      "raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
-    );
-    const sigBytes = Uint8Array.from(
-      atob(sig.replace(/-/g, "+").replace(/_/g, "/")),
-      (c) => c.charCodeAt(0),
-    );
-    const valid = await crypto.subtle.verify(
-      "HMAC", key, sigBytes, enc.encode(`${header}.${body}`),
-    );
-    if (!valid) return null;
-    const payload = JSON.parse(
-      atob(body.replace(/-/g, "+").replace(/_/g, "/")),
-    ) as { id?: string; sub?: string; email?: string; phone?: string; role?: string; exp?: number };
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
-    const id = payload.id ?? payload.sub;
-    if (!id) return null;
-    return { id, email: payload.email, phone: payload.phone, role: payload.role ?? "user" };
-  } catch {
-    return null;
-  }
+async function extractUser(token: string, secret: string): Promise<AuthUser | null> {
+  const payload = await verifyJwt(token, secret);
+  if (!payload) return null;
+  const id = (payload.id ?? payload.sub) as string | undefined;
+  if (!id) return null;
+  return {
+    id,
+    email: payload.email  as string | undefined,
+    phone: payload.phone  as string | undefined,
+    role: (payload.role   as string | undefined) ?? "user",
+  };
 }
 
 /**
  * requireAuth — validates RALD JWT from:
- *   1. Authorization: Bearer <token>  (explicit — API calls)
+ *   1. Authorization: Bearer <token>  (preferred — API calls)
  *   2. Cookie: rald_session=<token>   (implicit — browser requests)
  */
 export const requireAuth = (): MiddlewareHandler<{ Bindings: CloudflareEnv }> =>
   async (c, next) => {
     const secret = c.env.RALD_JWT_SECRET;
 
-    // 1. Bearer token (preferred)
+    // 1. Bearer token
     const authHeader = c.req.header("Authorization");
     if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.slice(7);
-      const user  = await verifyRaldJwt(token, secret);
+      const user  = await extractUser(token, secret);
       if (user) { c.set("user", user); return next(); }
       return c.json({ error: "Invalid or expired token" }, 401);
     }
@@ -71,7 +60,7 @@ export const requireAuth = (): MiddlewareHandler<{ Bindings: CloudflareEnv }> =>
     // 2. rald_session cookie (silent SSO)
     const cookie = parseSessionCookie(c.req.header("Cookie"));
     if (cookie) {
-      const user = await verifyRaldJwt(cookie, secret);
+      const user = await extractUser(cookie, secret);
       if (user) { c.set("user", user); return next(); }
     }
 
