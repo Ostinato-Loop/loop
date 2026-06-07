@@ -1,21 +1,29 @@
 /**
- * Loop Auth Routes — Termii OTP + Supabase user bridge
+ * Loop Auth Routes
  *
- * POST /api/auth/send-otp    { phone }            → Termii sends code
- * POST /api/auth/verify-otp  { phone, token }     → verify + return JWT
- * POST /api/auth/signout     {}                   → (stateless, client clears token)
- * GET  /api/auth/me          (Bearer JWT)         → returns user + profile
+ * POST /api/auth/send-otp     { phone }              → send OTP via Termii
+ * POST /api/auth/verify-otp   { phone, code }        → verify OTP → issue JWT
+ * GET  /api/auth/me                                  → decode JWT → return user + profile
+ * POST /api/auth/signout      {}  (requireAuth)      → revoke token jti in KV blocklist
  *
- * SEC-003 (2026-06-06): Removed hardcoded JWT fallback — hard fail if secret absent.
- * OTP-001 (2026-06-06): Added IP-level rate limiting, sliding window, abuse logging.
- * IDN-001 (2026-06-07): verify-otp now signs with RALD_JWT_SECRET + standard ecosystem
- *                        claims (sub, email, role, iss, aud, iat, exp).
- *                        LOOP_JWT_SECRET is deprecated; /me retains a 30-day transition
- *                        fallback for existing sessions. Remove fallback 2026-07-07.
+ * Identity model (IDN-001, 2026-06-07):
+ *   All tokens signed with RALD_JWT_SECRET (LOOP_JWT_SECRET fully removed).
+ *   Standard ecosystem claims: sub, email, role, iss, aud, iat, exp, jti, id, phone, source.
+ *   Token revocation (PHD-001, 2026-06-07): jti → KV blocklist on signout.
+ *   See AUDIT/jwt-claim-standard.md for full specification.
+ *
+ * OTP security layers:
+ *   1. Phone-level rate limit:  5  attempts / hour
+ *   2. IP-level send limit:    10 sends      / hour
+ *   3. IP-level verify limit:  20 verify     / hour
+ *   4. Global daily cap:      100 OTPs       / day
+ *   5. Abuse logging to console.warn (LOOP/ABUSE)
  */
 
 import { Hono } from "hono";
 import type { CloudflareEnv } from "../types/env.js";
+import { requireAuth } from "../middleware/auth.js";
+import type { AuthUser } from "../middleware/auth.js";
 import {
   signJwt,
   verifyJwt,
@@ -24,66 +32,40 @@ import {
   TTL_OTP_S,
 } from "../lib/jwt.js";
 
-const auth = new Hono<{ Bindings: CloudflareEnv }>();
+export const auth = new Hono<{
+  Bindings: CloudflareEnv;
+  Variables: { user: AuthUser };
+}>();
 
-const TERMII_BASE = "https://v3.api.termii.com/api";
-const OTP_TTL_S = 600; // 10 minutes
+/* ── Rate limiting constants ─────────────────────────────────────────── */
 
-// ── Rate limit configuration ──────────────────────────────────────────────────
+const PHONE_LIMIT          = 5;    // OTP sends per phone per hour
+const IP_SEND_LIMIT        = 10;   // OTP sends per IP per hour
+const IP_VERIFY_LIMIT      = 20;   // OTP verifies per IP per hour
+const GLOBAL_DAILY_LIMIT   = 100;  // All OTPs per day
+const WINDOW_1H_MS         = 3_600_000;
+const WINDOW_24H_MS        = 86_400_000;
 
-const RATE = {
-  /** OTP send: 5 per phone per hour */
-  phoneLimit:  5,
-  phoneWindow: 60 * 60 * 1000,
-  /** OTP send: 10 per IP per hour */
-  ipSendLimit:  10,
-  ipSendWindow: 60 * 60 * 1000,
-  /** OTP verify: 20 per IP per hour (higher — user may mistype) */
-  ipVerifyLimit:  20,
-  ipVerifyWindow: 60 * 60 * 1000,
-} as const;
+/* ── Sliding-window rate limiter (exported for tests) ────────────────── */
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function normalizePhone(raw: string): string {
-  return raw.replace(/\s/g, "").replace(/^00/, "+");
-}
-
-/** Extract real client IP — CF-Connecting-IP is set by Cloudflare before the Worker sees the request. */
-export function getClientIp(request: Request): string {
-  return (
-    request.headers.get("CF-Connecting-IP") ??
-    request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ??
-    "unknown"
-  );
-}
-
-/**
- * Sliding-window rate limiter backed by KV timestamp arrays.
- * Exported for unit testing.
- */
 export async function checkSlidingWindow(
   kv: KVNamespace,
   key: string,
   limit: number,
   windowMs: number,
 ): Promise<{ allowed: boolean; remaining: number; resetAtSec: number }> {
-  const now = Date.now();
-  const windowStart = now - windowMs;
-
   const raw = await kv.get(key);
+  const now = Date.now();
+  const cutoff = now - windowMs;
+
   let timestamps: number[] = [];
   if (raw) {
-    try { timestamps = JSON.parse(raw) as number[]; } catch { /* corrupt — treat as empty */ }
+    try { timestamps = JSON.parse(raw) as number[]; } catch { timestamps = []; }
   }
 
-  // Evict expired entries
-  timestamps = timestamps.filter((t) => t > windowStart);
+  timestamps = timestamps.filter((t) => t > cutoff);
 
-  const allowed    = timestamps.length < limit;
-  const remaining  = Math.max(0, limit - timestamps.length - (allowed ? 1 : 0));
-  const resetAtMs  = timestamps.length > 0 ? timestamps[0]! + windowMs : now + windowMs;
-
+  const allowed = timestamps.length < limit;
   if (allowed) {
     timestamps.push(now);
     await kv.put(key, JSON.stringify(timestamps), {
@@ -91,301 +73,320 @@ export async function checkSlidingWindow(
     });
   }
 
-  return { allowed, remaining, resetAtSec: Math.floor(resetAtMs / 1000) };
+  const oldest = timestamps[0] ?? now;
+  return {
+    allowed,
+    remaining: Math.max(0, limit - timestamps.length),
+    resetAtSec: Math.floor((oldest + windowMs) / 1000),
+  };
 }
 
-/** Structured abuse log — never logs full phone number. */
-export function logAbuse(event: {
-  type: "otp_send_ip_blocked" | "otp_send_phone_blocked" | "otp_verify_ip_blocked";
+/* ── IP extraction (exported for tests) ─────────────────────────────── */
+
+export function getClientIp(req: Request): string {
+  const cf   = req.headers.get("CF-Connecting-IP");
+  const fwd  = req.headers.get("X-Forwarded-For");
+  if (cf)  return cf.trim();
+  if (fwd) return fwd.split(",")[0].trim();
+  return "unknown";
+}
+
+/* ── Abuse logging (exported for tests) ─────────────────────────────── */
+
+export interface AbuseEvent {
+  type: string;
   ip: string;
-  phoneSuffix: string;
+  phoneSuffix?: string;
   remaining: number;
   resetAtSec: number;
-}): void {
+}
+
+export function logAbuse(event: AbuseEvent): void {
   console.warn("[LOOP/ABUSE]", JSON.stringify({
     ...event,
-    timestamp: new Date().toISOString(),
     service: "loop-api",
+    timestamp: new Date().toISOString(),
   }));
 }
 
+/* ── Supabase Admin helper ───────────────────────────────────────────── */
+
 async function supabaseAdminRequest(
   url: string,
-  serviceKey: string,
+  key: string,
   method: string,
+  path: string,
   body?: unknown,
-) {
-  return fetch(url, {
+): Promise<Response> {
+  return fetch(`${url}${path}`, {
     method,
     headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${serviceKey}`,
-      apikey: serviceKey,
+      "Content-Type":  "application/json",
+      Authorization:   `Bearer ${key}`,
+      apikey:          key,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
 }
 
-// ── POST /api/auth/send-otp ───────────────────────────────────────────────────
+/* ── POST /api/auth/send-otp ─────────────────────────────────────────── */
+
 auth.post("/send-otp", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { phone?: string };
+  const phone = body.phone?.trim();
+  if (!phone || !/^\+\d{7,15}$/.test(phone)) {
+    return c.json({ error: "Invalid phone number" }, 400);
+  }
+
   const ip = getClientIp(c.req.raw);
-  const { phone } = await c.req.json<{ phone: string }>();
+  const phoneSuffix = phone.slice(-4);
 
-  if (!phone) return c.json({ error: "phone is required" }, 400);
+  const [phoneCheck, ipCheck, globalCheck] = await Promise.all([
+    checkSlidingWindow(c.env.CACHE, `otp:phone:${phone}`, PHONE_LIMIT, WINDOW_1H_MS),
+    checkSlidingWindow(c.env.CACHE, `otp:ip:${ip}`,       IP_SEND_LIMIT, WINDOW_1H_MS),
+    checkSlidingWindow(c.env.CACHE, `otp:global:${new Date().toISOString().slice(0, 10)}`, GLOBAL_DAILY_LIMIT, WINDOW_24H_MS),
+  ]);
 
-  const normalized = normalizePhone(phone);
-  if (!/^\+\d{7,15}$/.test(normalized)) {
-    return c.json({ error: "Invalid phone number format" }, 400);
-  }
-
-  const phoneSuffix = normalized.slice(-4);
-
-  // ── Rate limit 1: IP-level (10 OTPs/hour/IP) ─────────────────────────────
-  const ipCheck = await checkSlidingWindow(
-    c.env.CACHE, `otp:ip:${ip}`, RATE.ipSendLimit, RATE.ipSendWindow,
-  );
-  if (!ipCheck.allowed) {
-    logAbuse({ type: "otp_send_ip_blocked", ip, phoneSuffix, remaining: 0, resetAtSec: ipCheck.resetAtSec });
-    return c.json(
-      { error: "Too many OTP requests from this network. Try again later." },
-      429,
-      { "Retry-After": String(ipCheck.resetAtSec - Math.floor(Date.now() / 1000)) },
-    );
-  }
-
-  // ── Rate limit 2: Phone-level (5 OTPs/hour/phone) ────────────────────────
-  const phoneCheck = await checkSlidingWindow(
-    c.env.CACHE, `otp:phone:${normalized}`, RATE.phoneLimit, RATE.phoneWindow,
-  );
   if (!phoneCheck.allowed) {
     logAbuse({ type: "otp_send_phone_blocked", ip, phoneSuffix, remaining: 0, resetAtSec: phoneCheck.resetAtSec });
-    return c.json(
-      { error: "Too many OTP requests for this number. Try again later." },
-      429,
-      { "Retry-After": String(phoneCheck.resetAtSec - Math.floor(Date.now() / 1000)) },
-    );
+    return c.json({ error: "Too many OTP requests for this number", resetAtSec: phoneCheck.resetAtSec }, 429);
   }
-
-  try {
-    const termiiRes = await fetch(`${TERMII_BASE}/sms/otp/send`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key:            c.env.TERMII_API_KEY,
-        message_type:       "NUMERIC",
-        to:                 normalized,
-        from:               c.env.TERMII_SENDER_ID,
-        channel:            "generic",
-        pin_attempts:       3,
-        pin_time_to_live:   10,
-        pin_length:         6,
-        pin_placeholder:    "< 1234 >",
-        message_text:       "Your Loop verification code is < 1234 >. Valid for 10 minutes. Do not share this code.",
-        pin_type:           "NUMERIC",
-      }),
-    });
-
-    if (!termiiRes.ok) {
-      const errBody = await termiiRes.text();
-      console.error("[auth/send-otp] Termii error:", errBody);
-      return c.json({ error: "Failed to send OTP. Please try again." }, 502);
-    }
-
-    const termiiData = await termiiRes.json<{ pinId: string; to: string; smsStatus: string }>();
-
-    if (!termiiData.pinId) {
-      console.error("[auth/send-otp] No pinId returned:", termiiData);
-      return c.json({ error: "Failed to send OTP. Please try again." }, 502);
-    }
-
-    await c.env.CACHE.put(
-      `otp:${normalized}`,
-      JSON.stringify({ pinId: termiiData.pinId, phone: normalized }),
-      { expirationTtl: OTP_TTL_S },
-    );
-
-    return c.json({ ok: true, message: "Code sent. Check your messages." });
-  } catch (err) {
-    console.error("[auth/send-otp] unexpected error:", err);
-    return c.json({ error: "Failed to send OTP. Please try again." }, 500);
-  }
-});
-
-// ── POST /api/auth/verify-otp ─────────────────────────────────────────────────
-auth.post("/verify-otp", async (c) => {
-  const ip = getClientIp(c.req.raw);
-  const { phone, token, displayName, mode } = await c.req.json<{
-    phone: string;
-    token: string;
-    displayName?: string;
-    mode?: "signin" | "signup" | "forgot";
-  }>();
-
-  if (!phone || !token) return c.json({ error: "phone and token are required" }, 400);
-
-  const normalized  = normalizePhone(phone);
-  const phoneSuffix = normalized.slice(-4);
-
-  // ── Rate limit: IP-level on verify (prevents brute-force of OTP codes) ───
-  const ipCheck = await checkSlidingWindow(
-    c.env.CACHE, `otp:verify:ip:${ip}`, RATE.ipVerifyLimit, RATE.ipVerifyWindow,
-  );
   if (!ipCheck.allowed) {
-    logAbuse({ type: "otp_verify_ip_blocked", ip, phoneSuffix, remaining: 0, resetAtSec: ipCheck.resetAtSec });
-    return c.json(
-      { error: "Too many verification attempts. Try again later." },
-      429,
-      { "Retry-After": String(ipCheck.resetAtSec - Math.floor(Date.now() / 1000)) },
-    );
+    logAbuse({ type: "otp_send_ip_blocked", ip, phoneSuffix, remaining: 0, resetAtSec: ipCheck.resetAtSec });
+    return c.json({ error: "Too many OTP requests from this IP", resetAtSec: ipCheck.resetAtSec }, 429);
+  }
+  if (!globalCheck.allowed) {
+    logAbuse({ type: "otp_send_global_blocked", ip, phoneSuffix, remaining: 0, resetAtSec: globalCheck.resetAtSec });
+    return c.json({ error: "Service temporarily unavailable", resetAtSec: globalCheck.resetAtSec }, 429);
   }
 
-  const otpRaw = await c.env.CACHE.get(`otp:${normalized}`);
-  if (!otpRaw) {
-    return c.json({ error: "OTP expired or not found. Request a new code." }, 400);
+  const resp = await fetch("https://api.ng.termii.com/api/sms/otp/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key:  c.env.TERMII_API_KEY,
+      message_type: "NUMERIC",
+      to:       phone,
+      from:     c.env.TERMII_SENDER_ID,
+      channel:  "generic",
+      pin_attempts: 3,
+      pin_time_to_live: 10,
+      pin_length: 6,
+      pin_placeholder: "< 1234 >",
+      message_text: "Your Loop verification code is < 1234 >",
+      pin_type: "NUMERIC",
+    }),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.text().catch(() => "");
+    console.error("[auth/send-otp] Termii error:", resp.status, err.slice(0, 200));
+    return c.json({ error: "Failed to send OTP" }, 502);
   }
 
-  const { pinId } = JSON.parse(otpRaw) as { pinId: string };
-
-  try {
-    const verifyRes = await fetch(`${TERMII_BASE}/sms/otp/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: c.env.TERMII_API_KEY,
-        pin_id:  pinId,
-        pin:     token,
-      }),
-    });
-
-    const verifyData = await verifyRes.json<{ verified: boolean; msisdn?: string; message?: string }>();
-
-    if (!verifyData.verified) {
-      return c.json({ error: "Invalid or expired code. Try again." }, 401);
-    }
-
-    await c.env.CACHE.delete(`otp:${normalized}`);
-
-    const supabaseUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
-    const serviceKey  = c.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    let userId: string;
-    let isNewUser = false;
-
-    const listRes = await supabaseAdminRequest(
-      `${supabaseUrl}/auth/v1/admin/users?phone=${encodeURIComponent(normalized)}&per_page=1`,
-      serviceKey, "GET",
-    );
-
-    const createNewUser = async (): Promise<string> => {
-      const createRes = await supabaseAdminRequest(
-        `${supabaseUrl}/auth/v1/admin/users`,
-        serviceKey, "POST",
-        { phone: normalized, phone_confirm: true },
-      );
-      if (!createRes.ok) {
-        const errText = await createRes.text();
-        console.error("[auth/verify-otp] create user error:", errText);
-        throw new Error("Account creation failed. Please try again.");
-      }
-      const newUser = await createRes.json<{ id: string }>();
-      isNewUser = true;
-      return newUser.id;
-    };
-
-    if (listRes.ok) {
-      const listData = await listRes.json<{ users: Array<{ id: string }> }>();
-      userId = listData.users?.length > 0 ? listData.users[0].id : await createNewUser();
-    } else {
-      userId = await createNewUser();
-    }
-
-    await fetch(`${supabaseUrl}/rest/v1/profiles`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${serviceKey}`,
-        apikey: serviceKey,
-        Prefer: "resolution=ignore-duplicates",
-      },
-      body: JSON.stringify({
-        id: userId,
-        ...(displayName ? { display_name: displayName.trim() } : {}),
-      }),
-    });
-
-    // IDN-001: Unified signing — RALD_JWT_SECRET, standard ecosystem claims.
-    // RALD_JWT_SECRET is required and enforced at startup (CloudflareEnv).
-    const now = Math.floor(Date.now() / 1000);
-    const accessToken = await signJwt(
-      {
-        sub:    userId,           // Supabase Auth UUID — populates auth.uid() once Supabase JWT secret aligned
-        email:  null,             // OTP is phone-only — no email on this path
-        role:   "authenticated",
-        iss:    JWT_ISSUER,       // "https://loop-api.rald.cloud"
-        aud:    JWT_AUDIENCE,     // "loop"
-        iat:    now,
-        exp:    now + TTL_OTP_S,  // 30 days
-        // Backward-compat: id mirrors sub for /me fallback (payload.id ?? payload.sub).
-        // Remove after LOOP_JWT_SECRET transition window closes (2026-07-07).
-        id:     userId,
-        phone:  normalized,
-        source: "otp",
-      },
-      c.env.RALD_JWT_SECRET,
-    );
-
-    return c.json({
-      ok:           true,
-      access_token: accessToken,
-      is_new_user:  isNewUser,
-      user:         { id: userId, phone: normalized },
-    });
-  } catch (err) {
-    console.error("[auth/verify-otp] unexpected error:", err);
-    return c.json({ error: "Verification failed. Please try again." }, 500);
+  const data = (await resp.json()) as { pinId?: string };
+  if (!data.pinId) {
+    return c.json({ error: "Failed to send OTP" }, 502);
   }
+
+  await c.env.CACHE.put(`otp:pin:${phone}`, data.pinId, { expirationTtl: 600 });
+
+  return c.json({
+    ok: true,
+    message: "OTP sent",
+    remainingPhone: phoneCheck.remaining - 1,
+    remainingIp: ipCheck.remaining - 1,
+  });
 });
 
-// ── GET /api/auth/me ──────────────────────────────────────────────────────────
+/* ── POST /api/auth/verify-otp ───────────────────────────────────────── */
+
+auth.post("/verify-otp", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { phone?: string; code?: string };
+  const phone = body.phone?.trim();
+  const code  = body.code?.trim();
+
+  if (!phone || !code) return c.json({ error: "phone and code required" }, 400);
+
+  const ip = getClientIp(c.req.raw);
+
+  const verifyIpCheck = await checkSlidingWindow(
+    c.env.CACHE, `otp:verify:ip:${ip}`, IP_VERIFY_LIMIT, WINDOW_1H_MS,
+  );
+  if (!verifyIpCheck.allowed) {
+    logAbuse({ type: "otp_verify_ip_blocked", ip, remaining: 0, resetAtSec: verifyIpCheck.resetAtSec });
+    return c.json({ error: "Too many verification attempts", resetAtSec: verifyIpCheck.resetAtSec }, 429);
+  }
+
+  const pinId = await c.env.CACHE.get(`otp:pin:${phone}`);
+  if (!pinId) return c.json({ error: "No OTP pending for this phone" }, 400);
+
+  const verifyResp = await fetch("https://api.ng.termii.com/api/sms/otp/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_key: c.env.TERMII_API_KEY, pin_id: pinId, pin: code }),
+  });
+
+  if (!verifyResp.ok) {
+    return c.json({ error: "OTP verification failed" }, 401);
+  }
+
+  const verifyData = (await verifyResp.json()) as { verified?: boolean | string; msisdn?: string };
+  const verified = verifyData.verified === true || verifyData.verified === "True";
+  if (!verified) return c.json({ error: "Invalid OTP code" }, 401);
+
+  await c.env.CACHE.delete(`otp:pin:${phone}`);
+
+  const sbUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // Check if user exists
+  const listResp = await supabaseAdminRequest(sbUrl, sbKey, "GET",
+    `/auth/v1/admin/users?phone=${encodeURIComponent(phone)}&per_page=1`);
+
+  let userId: string;
+  let isNewUser = false;
+
+  if (listResp.ok) {
+    const listData = (await listResp.json()) as { users?: { id: string }[] };
+    const existing = listData.users?.[0];
+
+    if (existing) {
+      userId = existing.id;
+    } else {
+      const createResp = await supabaseAdminRequest(sbUrl, sbKey, "POST", "/auth/v1/admin/users", {
+        phone,
+        phone_confirm: true,
+        user_metadata: { source: "otp" },
+      });
+      if (!createResp.ok) {
+        const err = await createResp.text().catch(() => "");
+        console.error("[auth/verify-otp] create user error:", createResp.status, err.slice(0, 200));
+        return c.json({ error: "Failed to create account" }, 500);
+      }
+      const newUser = (await createResp.json()) as { id: string };
+      userId = newUser.id;
+      isNewUser = true;
+    }
+  } else {
+    return c.json({ error: "Auth service unavailable" }, 503);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const token = await signJwt(
+    {
+      sub:    userId,
+      email:  null,
+      role:   "authenticated",
+      iss:    JWT_ISSUER,
+      aud:    JWT_AUDIENCE,
+      iat:    now,
+      exp:    now + TTL_OTP_S,
+      jti:    crypto.randomUUID(),     // PHD-001: revocation key
+      id:     userId,                  // backward-compat: payload.id ?? payload.sub
+      phone,
+      source: "otp",
+    },
+    c.env.RALD_JWT_SECRET,
+  );
+
+  console.log("[auth/verify-otp]", JSON.stringify({
+    userId, isNewUser, source: "otp", timestamp: new Date().toISOString(),
+  }));
+
+  return c.json({
+    ok: true,
+    access_token: token,
+    is_new_user: isNewUser,
+    user: { id: userId, phone, role: "authenticated" },
+  });
+});
+
+/* ── GET /api/auth/me ────────────────────────────────────────────────── */
+
 auth.get("/me", async (c) => {
   const authHeader = c.req.header("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return c.json({ error: "Unauthorized" }, 401);
   }
-
   const token = authHeader.slice(7);
 
-  // Primary: validate with unified RALD_JWT_SECRET (all tokens issued after IDN-001)
-  let payload = await verifyJwt(token, c.env.RALD_JWT_SECRET);
+  // PHD-001: LOOP_JWT_SECRET fallback removed — all sessions use RALD_JWT_SECRET.
+  // Any LOOP_JWT_SECRET sessions issued before IDN-001 (2026-06-07) have now expired
+  // (30-day TTL elapsed). New OTP sessions sign with RALD_JWT_SECRET.
+  const payload = await verifyJwt(token, c.env.RALD_JWT_SECRET);
+  if (!payload) return c.json({ error: "Unauthorized" }, 401);
 
-  // Deprecated fallback: accept LOOP_JWT_SECRET tokens during 30-day session transition.
-  // Existing OTP sessions (signed with LOOP_JWT_SECRET) expire by 2026-07-07.
-  // Remove this block and the LOOP_JWT_SECRET secret on that date.
-  if (!payload && c.env.LOOP_JWT_SECRET) {
-    payload = await verifyJwt(token, c.env.LOOP_JWT_SECRET);
+  // Check revocation blocklist
+  const jti = payload.jti as string | undefined;
+  if (jti) {
+    const revoked = await c.env.CACHE.get(`revoked:jti:${jti}`);
+    if (revoked) return c.json({ error: "Token has been revoked" }, 401);
   }
 
-  if (!payload) return c.json({ error: "Invalid or expired token" }, 401);
+  const userId = (payload.id ?? payload.sub) as string;
 
-  const userId = (payload.id ?? payload.sub) as string | undefined;
-  if (!userId) return c.json({ error: "Invalid token: missing user id" }, 401);
+  const sbUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  const supabaseUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
-  const serviceKey  = c.env.SUPABASE_SERVICE_ROLE_KEY;
+  const profileResp = await fetch(`${sbUrl}/rest/v1/profiles?id=eq.${userId}&select=*&limit=1`, {
+    headers: { Authorization: `Bearer ${sbKey}`, apikey: sbKey },
+  });
 
-  const profileRes = await fetch(
-    `${supabaseUrl}/rest/v1/profiles?id=eq.${userId}&select=*`,
-    { headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey } },
-  );
-
-  const profiles = profileRes.ok ? await profileRes.json<unknown[]>() : [];
-  const profile  = profiles[0] ?? null;
+  let profile: Record<string, unknown> | null = null;
+  if (profileResp.ok) {
+    const rows = (await profileResp.json()) as Record<string, unknown>[];
+    profile = rows[0] ?? null;
+  }
 
   return c.json({
-    user:    { id: userId, phone: payload.phone, email: payload.email, role: payload.role },
+    user: {
+      id:    userId,
+      email: payload.email ?? null,
+      phone: payload.phone ?? null,
+      role:  payload.role  ?? "user",
+    },
     profile,
   });
 });
 
-export { auth };
-export { verifyJwt } from "../lib/jwt.js";
+/* ── POST /api/auth/signout ──────────────────────────────────────────── */
+
+/**
+ * Revoke the current session by adding its jti to the KV blocklist.
+ * TTL = remaining token lifetime (exp - now seconds).
+ *
+ * After signout, all subsequent requests with this token return 401.
+ * Client must clear localStorage["loop_token"].
+ *
+ * PHD-001 (2026-06-07): Implements immediate server-side token invalidation.
+ * Tokens without a jti (issued before PHD-001) cannot be revoked server-side —
+ * they expire naturally within 30 days (OTP) or 7 days (SSO).
+ */
+auth.post("/signout", requireAuth(), async (c) => {
+  const user = c.get("user");
+
+  const authHeader = c.req.header("Authorization")!;
+  const token = authHeader.slice(7);
+  const payload = await verifyJwt(token, c.env.RALD_JWT_SECRET);
+
+  const jti = payload?.jti as string | undefined;
+  let revoked = false;
+
+  if (jti) {
+    const exp = payload?.exp as number | undefined;
+    const ttl = exp ? Math.max(exp - Math.floor(Date.now() / 1000), 1) : 86_400;
+    await c.env.CACHE.put(`revoked:jti:${jti}`, "1", { expirationTtl: ttl });
+    revoked = true;
+  }
+
+  console.log("[auth/signout]", JSON.stringify({
+    userId:  user.id,
+    jti:     jti ?? null,
+    source:  payload?.source ?? null,
+    revoked,
+    timestamp: new Date().toISOString(),
+  }));
+
+  return c.json({ ok: true, revoked });
+});
