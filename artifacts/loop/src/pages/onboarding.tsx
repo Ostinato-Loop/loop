@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { listRooms, type Room } from "@/lib/api/rooms";
-import { Loader2, Users } from "lucide-react";
+import { Loader2, Settings, Users } from "lucide-react";
 
 const INTERESTS = [
   "Football", "Cricket", "Politics", "Climate", "Music", "Hip-hop",
@@ -227,8 +227,40 @@ export default function OnboardingPage() {
           <h1 className="font-display text-2xl font-bold">Jump into a room</h1>
           <p className="text-sm text-muted-foreground">Or skip to explore on your own.</p>
           {recommended.length === 0 ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Users className="h-4 w-4" /> No live rooms right now — check back soon.
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-border bg-surface p-5 text-center space-y-1">
+                <Users className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+                <p className="text-sm font-medium">No live rooms right now</p>
+                <p className="text-xs text-muted-foreground">Rooms go live throughout the day — you'll get notified.</p>
+              </div>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => { void finish(); }}
+                  className="w-full rounded-2xl border border-primary/30 bg-primary/5 p-4 text-left flex items-center gap-3"
+                >
+                  <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                    <Users className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">Explore communities</p>
+                    <p className="text-xs text-muted-foreground">Find your local and interest groups</p>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { navigate("/settings"); }}
+                  className="w-full rounded-2xl border border-border bg-surface p-4 text-left flex items-center gap-3"
+                >
+                  <div className="h-9 w-9 rounded-xl bg-surface-elev flex items-center justify-center shrink-0">
+                    <Settings className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold">Complete your profile</p>
+                    <p className="text-xs text-muted-foreground">Add a photo, bio and region</p>
+                  </div>
+                </button>
+              </div>
             </div>
           ) : (
             <div className="space-y-3">

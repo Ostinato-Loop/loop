@@ -1,10 +1,8 @@
 import { Hono } from "hono";
 import type { CloudflareEnv } from "../types/env.js";
-import type { AuthUser } from "../middleware/auth.js";
-import { requireAuth } from "../middleware/auth.js";
 import type { TrendingResponse } from "@workspace/loop-shared-types";
 
-const trending = new Hono<{ Bindings: CloudflareEnv; Variables: { user: AuthUser } }>();
+const trending = new Hono<{ Bindings: CloudflareEnv }>();
 
 /**
  * GET /api/trending
@@ -18,8 +16,12 @@ const trending = new Hono<{ Bindings: CloudflareEnv; Variables: { user: AuthUser
  *
  * Trust rule: hardcoded topic labels (e.g. "AfroTech", "Civic Watch") are
  * fake data. They inflate perceived activity. Phase 1 returns empty arrays.
+ *
+ * FIX (2026-06-07): requireAuth() removed. Trending is public feed data.
+ * Requiring auth blocked the feed page for logged-out previews and caused
+ * "Unauthorized" on every unauthenticated feed load.
  */
-trending.get("/", requireAuth(), async (c) => {
+trending.get("/", async (c) => {
   const cacheKey = "trending:v2";
 
   // ── KV cache (5 min TTL) ───────────────────────────────────────────

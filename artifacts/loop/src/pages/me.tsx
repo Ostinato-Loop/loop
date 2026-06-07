@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { authFetch } from "@/lib/api-fetch";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,14 +35,25 @@ const SETTINGS = [
   { icon: Settings, label: "Audio quality", sub: "Bandwidth & codec preferences" },
 ];
 
+type ProfileCounts = { followers: number; following: number };
+
 export default function MePage() {
   const { user, loading, profile, signOut } = useAuth();
   const navigate = useNavigate();
   const [signingOut, setSigningOut] = useState(false);
+  const [counts, setCounts] = useState<ProfileCounts>({ followers: 0, following: 0 });
 
   useEffect(() => {
     if (!loading && !user) navigate("/login");
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    if (!user) return;
+    authFetch("/api/follows/me/counts")
+      .then((r) => r.ok ? r.json() as Promise<ProfileCounts> : Promise.reject())
+      .then((data) => setCounts({ followers: data.followers ?? 0, following: data.following ?? 0 }))
+      .catch(() => {});
+  }, [user]);
 
   if (!profile || !user) return null;
 
@@ -88,8 +100,11 @@ export default function MePage() {
         </div>
 
         {/* Stats row */}
-        <div className="mt-5 grid grid-cols-3 divide-x divide-border overflow-hidden rounded-2xl bg-surface">
-          {[["0", "Rooms"], ["0", "Followers"], ["0", "Following"]].map(([v, l]) => (
+        <div className="mt-5 grid grid-cols-2 divide-x divide-border overflow-hidden rounded-2xl bg-surface">
+          {([
+            [counts.followers, "Followers"],
+            [counts.following, "Following"],
+          ] as [number, string][]).map(([v, l]) => (
             <div key={l} className="py-3 text-center">
               <p className="font-display text-xl font-bold">{v}</p>
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{l}</p>
@@ -120,8 +135,9 @@ export default function MePage() {
           {SETTINGS.map(({ icon: Icon, label, sub }, idx) => (
             <li
               key={label}
+              onClick={() => navigate("/settings")}
               className={cn(
-                "flex items-center gap-3 px-4 py-3",
+                "flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors active:bg-surface-elev",
                 idx < SETTINGS.length - 1 && "border-b border-border",
               )}
             >
