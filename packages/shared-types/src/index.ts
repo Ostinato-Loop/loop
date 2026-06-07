@@ -10,6 +10,9 @@
  *
  * V2 (2026-06-07): Communities are the primary entity.
  * Rooms belong to communities. Everything revolves around communities.
+ *
+ * V2.1 (2026-06-07): Community Infrastructure Sprint.
+ * Adds: CommunityType, CommunityModeratorPermissions, CommunityModerator, CommunityRule.
  */
 
 // ── Community ─────────────────────────────────────────────────────────
@@ -32,22 +35,59 @@ export type CommunityVisibility =
   | "private"      // discoverable, join by request
   | "invite_only"; // not discoverable, join by invite only
 
-export type CommunityRole = "owner" | "admin" | "member";
+export type CommunityRole = "owner" | "admin" | "moderator" | "member" | "banned";
+
+/** V1 community type taxonomy (from community-architecture-v1.md) */
+export type CommunityType =
+  | "regional_state"
+  | "regional_lga"
+  | "regional_lcda"
+  | "regional_city"
+  | "interest"
+  | "creator_artist"
+  | "creator_dj"
+  | "creator_radio"
+  | "creator_podcaster"
+  | "creator_sports";
+
+/** Moderator permission object — all keys default false */
+export interface CommunityModeratorPermissions {
+  can_remove_members:    boolean;
+  can_mute_members:      boolean;
+  can_pin_announcements: boolean;
+  can_approve_rooms:     boolean;
+  can_remove_rooms:      boolean;
+  can_ban_members:       boolean;
+  can_edit_rules:        boolean;
+  can_manage_events:     boolean;
+}
 
 export interface Community {
-  id:            string;
-  name:          string;
-  slug:          string;               // unique, URL-safe identifier
-  description:   string | null;
-  cover_url:     string | null;
-  category:      CommunityCategory;
-  visibility:    CommunityVisibility;
-  owner_id:      string;
-  member_count:  number;
-  room_count:    number;
-  is_verified:   boolean;
-  created_at:    string;
-  updated_at:    string;
+  id:               string;
+  name:             string;
+  slug:             string;
+  description:      string | null;
+  cover_url:        string | null;
+  category:         CommunityCategory;
+  visibility:       CommunityVisibility;
+  owner_id:         string;
+  member_count:     number;
+  room_count:       number;
+  active_room_count: number;
+  is_verified:      boolean;
+  // V1 fields (added in migration 007)
+  type?:            CommunityType;
+  region_id?:       string | null;
+  region_scope?:    string | null;
+  country_code?:    string;
+  is_civic?:        boolean;
+  health_score?:    number;
+  interest_tags?:   string[];
+  is_system?:       boolean;
+  is_suspended?:    boolean;
+  is_deleted?:      boolean;
+  created_at:       string;
+  updated_at:       string;
   owner?: {
     username:     string | null;
     display_name: string | null;
@@ -69,15 +109,45 @@ export interface CommunityMember {
   };
 }
 
+/** V1: Moderator with granular permission set */
+export interface CommunityModerator {
+  id:           string;
+  community_id: string;
+  user_id:      string;
+  promoted_by:  string;
+  permissions:  CommunityModeratorPermissions;
+  promoted_at:  string;
+  revoked_at:   string | null;
+  is_active:    boolean;
+  profile?: {
+    username:     string | null;
+    display_name: string | null;
+    avatar_url:   string | null;
+  };
+}
+
+/** V1: Numbered community rule */
+export interface CommunityRule {
+  id:           string;
+  community_id: string;
+  rule_number:  number;
+  title:        string;
+  body:         string;
+  created_by:   string;
+  updated_by:   string | null;
+  created_at:   string;
+  updated_at:   string;
+}
+
 // ── Community API shapes ──────────────────────────────────────────────
 
 export interface CreateCommunityRequest {
-  name:        string;
-  slug?:       string;               // auto-generated from name if omitted
+  name:         string;
+  slug?:        string;
   description?: string;
-  cover_url?:  string;
-  category:    CommunityCategory;
-  visibility?: CommunityVisibility;  // default: "public"
+  cover_url?:   string;
+  category:     CommunityCategory;
+  visibility?:  CommunityVisibility;
 }
 
 export interface UpdateCommunityRequest {
@@ -86,6 +156,17 @@ export interface UpdateCommunityRequest {
   cover_url?:   string;
   category?:    CommunityCategory;
   visibility?:  CommunityVisibility;
+}
+
+export interface AppointModeratorRequest {
+  user_id:      string;
+  permissions?: Partial<CommunityModeratorPermissions>;
+}
+
+export interface CreateRuleRequest {
+  rule_number: number;
+  title:       string;
+  body:        string;
 }
 
 /** GET /api/communities */
@@ -117,9 +198,16 @@ export interface CommunityMembersResponse {
   limit:   number;
 }
 
+/** GET /api/communities/nearby */
+export interface NearbyCommunitiesResponse {
+  communities:     Community[];
+  detected_region: string;
+  merge_level:     "lcda" | "lga" | "state" | "national" | "interest";
+  count:           number;
+}
+
 // ── Room ──────────────────────────────────────────────────────────────
 
-// Phase H: Room types expanded to include all 7 Loop Room categories
 export type RoomCategory =
   | "community"
   | "news"
@@ -137,7 +225,7 @@ export type ParticipantRole = "host" | "moderator" | "speaker" | "listener";
 export interface Room {
   id:             string;
   host_id:        string;
-  community_id:   string | null;      // V2: rooms belong to communities
+  community_id:   string | null;
   title:          string;
   description:    string | null;
   category:       RoomCategory;
@@ -182,7 +270,6 @@ export interface Profile {
 
 // ── API request/response shapes ───────────────────────────────────────
 
-/** GET /api/health */
 export interface HealthResponse {
   ok:          boolean;
   service:     string;
@@ -199,7 +286,6 @@ export interface HealthResponse {
   };
 }
 
-/** GET /api/trending */
 export interface TrendingTopic {
   label:    string;
   count:    number;
@@ -221,7 +307,6 @@ export interface TrendingResponse {
   generatedAt:  string;
 }
 
-/** GET /api/rooms */
 export interface RoomListResponse {
   rooms:  Room[];
   count:  number;
@@ -229,7 +314,6 @@ export interface RoomListResponse {
   limit:  number;
 }
 
-/** GET /api/rooms/recommendations */
 export interface RoomRecommendationsResponse {
   rooms:       Room[];
   userId:      string;
@@ -238,7 +322,6 @@ export interface RoomRecommendationsResponse {
   source:      "d1" | "ai-ranked" | "placeholder";
 }
 
-/** POST /api/rooms/:roomId/queue-summary */
 export interface QueueSummaryResponse {
   ok:     boolean;
   queued: boolean;

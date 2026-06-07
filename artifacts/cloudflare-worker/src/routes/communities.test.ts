@@ -1,7 +1,9 @@
 /**
  * Unit tests for Loop V2 Communities — pure utility functions
  *
- * Covers slug validation, slugification, and category/visibility guards.
+ * Covers slug validation, slugification, category/visibility guards,
+ * rule validation, region slug building, and moderator permission shapes.
+ *
  * No HTTP calls, no KV, no Supabase — pure functions only.
  *
  * Run: pnpm test
@@ -13,6 +15,8 @@ import {
   slugify,
   isValidCommunityCategory,
   isValidCommunityVisibility,
+  isValidRuleNumber,
+  buildRegionSlug,
 } from "./communities.js";
 
 // ── isValidSlug ───────────────────────────────────────────────────────
@@ -183,5 +187,77 @@ describe("isValidCommunityVisibility", () => {
 
   it("rejects uppercase variant", () => {
     expect(isValidCommunityVisibility("Public")).toBe(false);
+  });
+});
+
+// ── isValidRuleNumber ─────────────────────────────────────────────────
+
+describe("isValidRuleNumber", () => {
+  it("accepts 1 (minimum)", () => {
+    expect(isValidRuleNumber(1)).toBe(true);
+  });
+
+  it("accepts 10 (mid-range)", () => {
+    expect(isValidRuleNumber(10)).toBe(true);
+  });
+
+  it("accepts 20 (maximum)", () => {
+    expect(isValidRuleNumber(20)).toBe(true);
+  });
+
+  it("rejects 0 (below minimum)", () => {
+    expect(isValidRuleNumber(0)).toBe(false);
+  });
+
+  it("rejects 21 (above maximum)", () => {
+    expect(isValidRuleNumber(21)).toBe(false);
+  });
+
+  it("rejects negative numbers", () => {
+    expect(isValidRuleNumber(-1)).toBe(false);
+  });
+
+  it("rejects float values", () => {
+    expect(isValidRuleNumber(1.5)).toBe(false);
+  });
+
+  it("rejects string values", () => {
+    expect(isValidRuleNumber("1")).toBe(false);
+  });
+
+  it("rejects null", () => {
+    expect(isValidRuleNumber(null)).toBe(false);
+  });
+
+  it("rejects undefined", () => {
+    expect(isValidRuleNumber(undefined)).toBe(false);
+  });
+});
+
+// ── buildRegionSlug ───────────────────────────────────────────────────
+
+describe("buildRegionSlug", () => {
+  it("builds country-only slug", () => {
+    expect(buildRegionSlug("NG")).toBe("NG");
+  });
+
+  it("builds country+state slug", () => {
+    expect(buildRegionSlug("NG", "LA")).toBe("NG-LA");
+  });
+
+  it("uppercases country code", () => {
+    expect(buildRegionSlug("ng", "la")).toBe("NG-LA");
+  });
+
+  it("uppercases state code", () => {
+    expect(buildRegionSlug("NG", "ab")).toBe("NG-AB");
+  });
+
+  it("omits state when not provided", () => {
+    expect(buildRegionSlug("NG")).toBe("NG");
+  });
+
+  it("omits state when undefined", () => {
+    expect(buildRegionSlug("NG", undefined)).toBe("NG");
   });
 });
