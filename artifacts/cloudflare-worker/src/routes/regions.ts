@@ -62,7 +62,7 @@ function sbPost(sb: SbClient, path: string, body: unknown): Promise<Response> {
   });
 }
 
-function traceId(c: Parameters<typeof regions.get>[1]): string {
+function traceId(c: { req: { header(name: string): string | undefined } }): string {
   return (
     c.req.header("X-Trace-Id") ??
     c.req.header("X-Request-Id") ??
