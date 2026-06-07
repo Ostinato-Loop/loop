@@ -67,7 +67,7 @@ function sbPost(sb: SbClient, path: string, body: unknown, prefer = "return=repr
   });
 }
 
-function traceId(c: Parameters<typeof activation.get>[1]): string {
+function traceId(c: { req: { header(name: string): string | undefined } }): string {
   return (
     c.req.header("X-Trace-Id") ??
     c.req.header("X-Request-Id") ??
