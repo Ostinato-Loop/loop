@@ -9,23 +9,25 @@
 // LILCKY STUDIO LIMITED
 
 import { Hono } from "hono";
+import { createClient as _createClient } from "@supabase/supabase-js";
 import type { CloudflareEnv } from "../types/env.js";
+import type { AuthUser } from "../middleware/auth.js";
 import { requireAuth } from "../middleware/auth.js";
 
-const app = new Hono<{ Bindings: CloudflareEnv }>();
+const app = new Hono<{ Bindings: CloudflareEnv; Variables: { user: AuthUser } }>();
 
 async function signLiveKitJwt(
   apiKey: string,
   apiSecret: string,
   payload: Record<string, unknown>,
 ): Promise<string> {
-  const b64url = (obj: Record<string, unknown> | string) => {
-    const s = typeof obj === "string" ? obj : JSON.stringify(obj);
+  const b64url = (obj: Record<string, unknown>) => {
+    const s = JSON.stringify(obj);
     return btoa(unescape(encodeURIComponent(s)))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   };
-  const header = { alg: "HS256", typ: "JWT" };
-  const unsigned = `${b64url(header as unknown as Record<string, unknown>)}.${b64url(payload)}`;
+  const header: Record<string, unknown> = { alg: "HS256", typ: "JWT" };
+  const unsigned = `${b64url(header)}.${b64url(payload)}`;
 
   const key = await crypto.subtle.importKey(
     "raw",
@@ -41,7 +43,7 @@ async function signLiveKitJwt(
   return `${unsigned}.${sig}`;
 }
 
-// GET /api/audio/token?room_id=<id>&identity=<userId>
+// GET /api/audio/token?room_id=<id>
 app.get("/token", requireAuth(), async (c) => {
   const { LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL } = c.env;
 
@@ -49,7 +51,7 @@ app.get("/token", requireAuth(), async (c) => {
     return c.json(
       {
         error: "LiveKit not configured",
-        hint: "Provision LIVEKIT_API_KEY and LIVEKIT_API_SECRET via `wrangler secret put`",
+        hint: "Set LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL via `wrangler secret put`",
         configured: false,
       },
       503,
@@ -57,7 +59,8 @@ app.get("/token", requireAuth(), async (c) => {
   }
 
   const roomId   = c.req.query("room_id");
-  const identity = c.req.query("identity") ?? c.get("user").id;
+  const user     = c.get("user");
+  const identity = c.req.query("identity") ?? user.id;
 
   if (!roomId) {
     return c.json({ error: "room_id query param is required" }, 400);
@@ -68,7 +71,7 @@ app.get("/token", requireAuth(), async (c) => {
     iss: LIVEKIT_API_KEY,
     sub: identity,
     nbf: now,
-    exp: now + 4 * 3600, // 4-hour token
+    exp: now + 4 * 3600,
     jti: `${identity}-${roomId}-${now}`,
     video: {
       roomJoin:       true,
