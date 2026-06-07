@@ -15,7 +15,6 @@ import {
   Globe2, Users, Mic, MapPin, ChevronRight,
   Radio, Sparkles, Plus, Search,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
 
