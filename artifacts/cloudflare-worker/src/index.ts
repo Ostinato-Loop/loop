@@ -10,6 +10,7 @@
  *     ↓ /api/communities/*  → Communities (V2 primary entity)
  *     ↓ /api/activation/*   → Community Activation — auto-join, pulse, home-feed
  *     ↓ /api/regions/*      → RALD Region Registry — location search & lookup
+ *     ↓ /api/follows/*      → Relationship Graph — follow / unfollow / counts
  *     ↓ /api/*              → Business logic, AI, civic data (Worker)
  *     ↓ Supabase            → DB, Realtime (via service role from Worker)
  */
@@ -27,6 +28,7 @@ import { activation } from "./routes/activation.js";
 import { regions } from "./routes/regions.js";
 import { audio } from "./routes/audio.js";
 import { feedback } from "./routes/feedback.js";
+import { follows } from "./routes/follows.js";
 import { RoomSession } from "./durable-objects/room-session.js";
 
 export { RoomSession };
@@ -47,6 +49,7 @@ app.route("/api/activation",      activation);
 app.route("/api/regions",         regions);
 app.route("/api/audio",           audio);
 app.route("/api/feedback",        feedback);
+app.route("/api/follows",         follows);
 
 // ── Shallow liveness probe (no dependency checks) ────────────────────
 app.get("/api/healthz", (c) => c.json({ ok: true, status: "live", service: "loop-api", ts: Date.now() }));
