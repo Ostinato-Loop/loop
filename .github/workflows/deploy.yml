@@ -58,7 +58,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --no-frozen-lockfile
-      - name: Run test suite
+      - name: Worker tests
+        working-directory: artifacts/cloudflare-worker
+        run: pnpm run test
+      - name: Frontend tests
         working-directory: artifacts/loop
         run: pnpm run test
 
@@ -103,15 +106,19 @@ jobs:
           fi
           echo "$RALD_JWT_SECRET" | pnpm exec wrangler secret put RALD_JWT_SECRET --env production
 
-      - name: Push LOOP_JWT_SECRET to worker
+      - name: Push LOOP_JWT_SECRET to worker (deprecated — optional)
         working-directory: artifacts/cloudflare-worker
         env:
           LOOP_JWT_SECRET: ${{ secrets.LOOP_JWT_SECRET }}
         run: |
+          # LOOP_JWT_SECRET is deprecated (IDN-001, 2026-06-07). New tokens use RALD_JWT_SECRET.
+          # Retained for 30-day transition: /me accepts old sessions until 2026-07-07.
+          # Remove this step and the secret from CF Worker on 2026-07-07.
           if [ -z "$LOOP_JWT_SECRET" ]; then
-            echo "FATAL: LOOP_JWT_SECRET is not set in GitHub secrets" && exit 1
+            echo "NOTICE: LOOP_JWT_SECRET not set — skipping (deprecated; acceptable after IDN-001 deploy)"
+          else
+            echo "$LOOP_JWT_SECRET" | pnpm exec wrangler secret put LOOP_JWT_SECRET --env production
           fi
-          echo "$LOOP_JWT_SECRET" | pnpm exec wrangler secret put LOOP_JWT_SECRET --env production
 
       - name: Push SUPABASE_SERVICE_ROLE_KEY to worker
         working-directory: artifacts/cloudflare-worker
@@ -145,8 +152,6 @@ jobs:
         working-directory: artifacts/loop
         run: pnpm run build
         env:
-          # PORT and BASE_PATH are required by vite.config.ts at config-load time.
-          # For a static Pages build PORT is unused at runtime; we supply 3000 to satisfy the guard.
           PORT: "3000"
           BASE_PATH: "/"
           NODE_ENV: production
