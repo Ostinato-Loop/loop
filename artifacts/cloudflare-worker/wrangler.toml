@@ -52,10 +52,14 @@ enabled = true
 
 # ── Default env vars (development) ───────────────────────
 [vars]
-ENVIRONMENT  = "development"
-SUPABASE_URL = "https://onxdcikfttdmnhofsuwo.supabase.co"
-CORS_ORIGIN  = "*"
+ENVIRONMENT   = "development"
+SUPABASE_URL  = "https://onxdcikfttdmnhofsuwo.supabase.co"
+CORS_ORIGIN   = "*"
 RALD_AUTH_URL = "https://auth.rald.cloud"
+# LiveKit — set the public URL here; provision secrets via wrangler secret put
+# LIVEKIT_URL = "wss://your-project.livekit.cloud"
+# wrangler secret put LIVEKIT_API_KEY
+# wrangler secret put LIVEKIT_API_SECRET
 
 # ── Production environment ────────────────────────────────
 # Wrangler v4: named envs do NOT auto-inherit top-level bindings.
@@ -93,10 +97,11 @@ class_name = "RoomSession"
 binding = "AI"
 
 [env.production.vars]
-ENVIRONMENT  = "production"
-SUPABASE_URL = "https://onxdcikfttdmnhofsuwo.supabase.co"
-CORS_ORIGIN  = "https://loop.rald.cloud,https://loop.ostinato-loop.pages.dev"
+ENVIRONMENT   = "production"
+SUPABASE_URL  = "https://onxdcikfttdmnhofsuwo.supabase.co"
+CORS_ORIGIN   = "https://loop.rald.cloud,https://loop.ostinato-loop.pages.dev"
 RALD_AUTH_URL = "https://auth.rald.cloud"
+# LiveKit URL set via secret: wrangler secret put LIVEKIT_URL --env production
 
 [[env.production.routes]]
 pattern   = "loop-api.rald.cloud/*"
