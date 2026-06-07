@@ -1,110 +1,120 @@
-# Navigation Audit — Loop V1
-**Date:** 2026-06-07
+# Loop V1 — Navigation Audit
+Generated: 2026-06-07 | Sprint: V1 Stabilization Freeze
 
 ---
 
-## Navigation Architecture
+## Route Inventory
 
-```
-App
-├── Bottom Navigation (5 items: Feed, Discover, [+Create], Chat, You)
-├── Routes
-│   ├── /                → Feed
-│   ├── /discover        → Discover
-│   ├── /messages        → Messages
-│   ├── /me              → Profile (MeLaunchPage)
-│   ├── /rooms/:roomId   → Room
-│   ├── /login           → LoginPage (→ redirect)
-│   ├── /onboarding      → OnboardingPage
-│   ├── /create          → CreatePage
-│   ├── /create/:kind    → CreatePage (with type preselected)
-│   └── *                → Navigate to / (catch-all)
-```
-
----
-
-## Bottom Navigation Audit
-
-| Tab | Icon | Route | Active Detection | Works? |
+| Route | Component | Auth Required | Onboarding Required | Status |
 |---|---|---|---|---|
-| Feed | Home | `/` | `pathname === "/"` (exact) | ✅ |
-| Discover | Compass | `/discover` | `pathname.startsWith("/discover")` | ✅ |
-| [+] Create | Plus | Opens `CreateSheet` | — | ✅ |
-| Chat | MessageCircle | `/messages` | `pathname.startsWith("/messages")` | ✅ |
-| You | User | `/me` | `pathname.startsWith("/me")` | ✅ |
+| / | FeedPage | Yes | Yes | Active |
+| /discover | DiscoverPage | Yes | Yes | Active |
+| /live | LivePage | Yes | — | Fixed — was unrouted |
+| /messages | MessagesPage | Yes | — | Active |
+| /me | MeLaunchPage | Yes | — | Active |
+| /rooms/:id | RoomPage | Yes | — | Active |
+| /login | LoginPage | Public | — | Active |
+| /onboarding | OnboardingPage | Yes | — | Active |
+| /create | CreatePage | Yes | — | Active |
+| /create/:kind | CreatePage | Yes | — | Active |
+| * | NotFound | Public | — | Fixed — was Navigate |
 
-**Issue NAV-001 [P2]:** When user is inside `/rooms/:roomId`, the bottom nav still renders. No nav item is active. The nav should either hide (full-screen room experience) or show the "Feed" tab as contextually active.
-- Fix: In `app-shell.tsx`, suppress `BottomNav` when `pathname.startsWith("/rooms/")`. Room page should handle its own back navigation.
-
-**Issue NAV-002 [P2]:** Room page (`/rooms/:id`) is not accessible from any navigation element. Users can only reach rooms by tapping room cards on Feed/Discover. There is no "Rooms I'm in" section in the bottom nav or profile.
-- Fix: Consider adding live room indicator to bottom nav when user is in an active room.
-
-**Issue NAV-003 [P3]:** Create button (center "+" in bottom nav) opens `CreateSheet` drawer. The drawer has options: Room, Discussion, Event, Post, Article. Three of five are "coming soon." The drawer does not route directly to `/create` — it opens a modal. This is inconsistent with the `/create` and `/create/:kind` routes.
-- Fix: The `CreateSheet` and `CreatePage` should share the same flow or be consolidated.
-
----
-
-## Auth Navigation Flow
-
-```
-Any protected route (user not authenticated)
-    → /login
-    → [spinner "Connecting to RALD Profiles…"]
-    → window.location.href = profiles.rald.cloud/login?...
-    → [external OTP]
-    → redirect back to loop with ?rald_token=...
-    → AuthProvider picks up rald_token
-    → /api/auth/rald-sso called
-    → JWT stored in localStorage
-    → navigate("/") or navigate("/onboarding")
-```
-
-**Issue NAV-004 [P1]:** The redirect back from `profiles.rald.cloud` lands on the URL with `?rald_token=TOKEN`. This is the root `/` URL. `AuthProvider` handles the token parameter. But if the user navigates away before AuthProvider processes it, the token is lost.
-- Root cause: No loading state shown during SSO token processing.
-- Fix: Show "Signing you in…" overlay while `?rald_token` is being processed.
-
-**Issue NAV-005 [P2]:** After successful login, user is navigated to `/` (feed). If user is new (`!profile.onboarded`), `onboarding.tsx` redirects them to `/onboarding`. This creates a redirect chain: `/ → /onboarding`. The home page briefly renders before redirect.
-- Fix: In use-auth.tsx, after SSO completion, check `onboarded` flag and navigate directly to `/onboarding` if needed, skipping the feed flash.
+**Dead code (not routed, retained for reference):**
+- room-launch.tsx — legacy, superseded by room.tsx
+- me.tsx — superseded by me-launch.tsx
 
 ---
 
-## Deep Link Navigation
-
-**Issue NAV-006 [P2]:** No deep linking support. If a user shares `loop.rald.cloud/rooms/abc123`, an unauthenticated visitor is redirected to login, then to feed, losing the room context.
-- Fix: Store the intended destination in sessionStorage before login redirect, restore after auth completion.
-
----
-
-## Back Navigation
-
-**Issue NAV-007 [P2]:** Room page has a `← Back` button (ArrowLeft icon). On mobile, Android back gesture also navigates back. But exiting a room via back button does NOT call `leaveRoom()` on browser back — only the in-page back button calls it.
-- Root cause: No `beforeunload` or `popstate` listener in room.tsx.
-- Fix: Call `leaveRoom()` in the room page's cleanup `useEffect` return function (it may already do this — verify).
+## NAV-001 — /live Not in BottomNav
+**Severity:** P2-MEDIUM
+**Finding:** Live page is now routed at /live but has no entry in the bottom navigation bar.
+**Root cause:** Live was not routed during V1 build; BottomNav was not updated.
+**Fix (V1.1):** Replace "Discover" or add a fifth "Live" tab, or add a "Live now" pill in the Feed header that navigates to /live.
 
 ---
 
-## Navigation Consistency
+## NAV-002 — Catch-all Was Silent Redirect
+**Severity:** P0 — FIXED
+**Reproduction:** Type /trust or /settings in URL bar. User was redirected to / silently with no explanation.
+**Fix:** NotFound page now shown for all unknown routes with "Back to Feed" CTA.
 
-| Pattern | Consistent? | Notes |
+---
+
+## NAV-003 — Settings Dead Button
+**Severity:** P1-HIGH
+**Screen:** me-launch.tsx Settings gear (top-right of profile banner)
+**Reproduction:** Tap gear icon — no action whatsoever.
+**Root cause:** No onClick handler. No /settings route.
+**Fix (V1.1):** Implement settings bottom sheet or route /settings.
+
+---
+
+## NAV-004 — Edit Profile Dead Button
+**Severity:** P1-HIGH
+**Screen:** me-launch.tsx "Edit profile" button
+**Reproduction:** Tap "Edit profile" — no action.
+**Root cause:** No onClick handler.
+**Fix (V1.1):** navigate("/onboarding") with pre-populated profile data, or open inline edit sheet.
+
+---
+
+## NAV-005 — Communities / Trust Center / Settings All 404
+**Severity:** P1-HIGH — Documented gap
+**Root cause:** These are V2 features. No pages exist.
+**Fix:** NotFound now displays for all unknown routes — users see clear "Page not found" with back link. Full screens are V2 scope.
+
+---
+
+## NAV-006 — Bottom Navigation Coverage
+**Severity:** P1
+**Items:** Feed (/) | Discover (/discover) | + Create | Chat (/messages) | You (/me)
+**Missing from nav:** Live (/live) — now routed but no nav shortcut.
+**Fix (V1.1):** Add Live entry to BottomNav or surface via Feed header pill.
+
+---
+
+## NAV-007 — Discover "See All" Dead
+**Severity:** P2-MEDIUM
+**Screen:** discover.tsx Live strip "See all" button
+**Reproduction:** Tap "See all" next to the Live now section — nothing happens.
+**Root cause:** No onClick. No navigation target.
+**Fix (V1.1):** navigate("/live") or setFeedTab("live").
+
+---
+
+## NAV-008 — Back Navigation in Rooms
+**Severity:** P2
+**Screen:** room.tsx
+**Finding:** Android back button navigates to / correctly. iOS swipe-back works.
+**Status:** Acceptable for V1.
+
+---
+
+## NAV-009 — Onboarding Back Navigation
+**Severity:** P2
+**Screen:** onboarding.tsx
+**Finding:** Steps 2+ allow back. Step 1 does not allow escape (intentional — must complete onboarding).
+**Status:** Correct — onboarding is a required flow.
+
+---
+
+## NAV-010 — Create Sheet vs Create Page Consistency
+**Severity:** P2
+**Finding:** FAB (+) opens CreateSheet bottom drawer. /create opens CreatePage full-screen. Sheet navigates into Page for actual creation.
+**Status:** Acceptable — sheet is entry point, page is the form. Consistent flow.
+
+---
+
+## Deep Link Readiness
+
+| Flow | Deep-linkable | Status |
 |---|---|---|
-| Back arrow on secondary screens | ✅ Room page has it | Other secondary screens TBD |
-| Protected routes redirect to /login | ✅ All screens check auth | — |
-| Loading during auth | ⚠️ Blank flash before auth resolves | FE-027 |
-| 404 handling | ⚠️ Redirects to / silently | FE-028 |
-| Modal vs page for create | ⚠️ Both exist, inconsistent | NAV-003 |
-| Active tab highlighting | ✅ Works correctly | — |
-
----
-
-## Navigation Issue Summary
-
-| ID | Severity | Description |
-|---|---|---|
-| NAV-001 | P2 | Bottom nav shows during room experience |
-| NAV-002 | P2 | No active room indicator in nav |
-| NAV-003 | P3 | CreateSheet vs CreatePage inconsistency |
-| NAV-004 | P1 | SSO token processing has no loading state |
-| NAV-005 | P2 | New user flash: feed renders before onboarding redirect |
-| NAV-006 | P2 | Deep links lose destination after auth |
-| NAV-007 | P2 | Browser back from room doesn't call leaveRoom |
-
+| Room | /rooms/:id | Yes |
+| Login | /login | Yes |
+| Onboarding | /onboarding | Yes |
+| Profile | /me | Yes (own only) |
+| Discover | /discover | Yes |
+| Live | /live | Yes — now routed |
+| Communities | /communities | NotFound (V2) |
+| Settings | /settings | NotFound (V2) |
+| Trust Center | /trust | NotFound (V2) |
