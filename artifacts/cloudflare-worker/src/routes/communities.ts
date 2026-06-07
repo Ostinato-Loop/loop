@@ -107,7 +107,7 @@ export function buildRegionSlug(countryCode: string, stateCode?: string): string
 }
 
 /** Extract traceId from request headers (X-Trace-Id or X-Request-Id) */
-function traceId(c: Parameters<typeof communities.get>[1]): string {
+function traceId(c: { req: { header(name: string): string | undefined } }): string {
   return (
     c.req.header("X-Trace-Id") ??
     c.req.header("X-Request-Id") ??
@@ -122,7 +122,7 @@ function sbClient(url: string, key: string) {
 }
 
 function sbGet(
-  sb: ReturnType<typeof createClient>,
+  sb: ReturnType<typeof sbClient>,
   path: string,
 ): Promise<Response> {
   const base = (sb as unknown as { supabaseUrl: string }).supabaseUrl;
@@ -139,7 +139,7 @@ function sbGet(
 }
 
 function sbPost(
-  sb: ReturnType<typeof createClient>,
+  sb: ReturnType<typeof sbClient>,
   path: string,
   body: unknown,
   prefer = "return=representation",
@@ -159,7 +159,7 @@ function sbPost(
 }
 
 function sbPatch(
-  sb: ReturnType<typeof createClient>,
+  sb: ReturnType<typeof sbClient>,
   path: string,
   body: unknown,
 ): Promise<Response> {
@@ -178,7 +178,7 @@ function sbPatch(
 }
 
 function sbDelete(
-  sb: ReturnType<typeof createClient>,
+  sb: ReturnType<typeof sbClient>,
   path: string,
 ): Promise<Response> {
   const base = (sb as unknown as { supabaseUrl: string }).supabaseUrl;
@@ -227,7 +227,7 @@ communities.get("/nearby", async (c) => {
 
   // Build query: try to find communities with matching region_id
   // Region IDs follow RALD convention: "NG-LA" for Lagos State, "NG" for Nigeria
-  let mergeLevel: "lcda" | "lga" | "state" | "national" | "interest" = "interest";
+  let mergeLevel: string = "interest";
   let regionFilter = "";
 
   if (cfRegion) {
