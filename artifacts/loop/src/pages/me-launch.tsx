@@ -25,6 +25,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useLoop } from "@/lib/loop-store";
 import { useAuth, computeTrustScore, getTrustLevel } from "@/hooks/use-auth";
+import { useMyFollowCounts } from "@/lib/api/follows";
 import { AppShell } from "@/components/layout/app-shell";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -160,6 +161,7 @@ export default function MeLaunchPage() {
   const [tab, setTab] = useState<Tab>("activity");
   const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");
   const { items: completionItems, pct: completionPct } = useProfileCompletion();
+  const { followers, following } = useMyFollowCounts();
 
   /* theme */
   useEffect(() => {
@@ -278,14 +280,14 @@ export default function MeLaunchPage() {
               onClick={() => setTab("followers")}
               className={cn("rounded-2xl p-3 text-center transition", tab === "followers" ? "bg-secondary ring-2 ring-neon/40" : "bg-secondary")}
             >
-              <div className="text-lg font-extrabold">0</div>
+              <div className="text-lg font-extrabold">{followers}</div>
               <div className="text-[10px] text-muted-foreground">Followers</div>
             </button>
             <button
               onClick={() => setTab("following")}
               className={cn("rounded-2xl p-3 text-center transition", tab === "following" ? "bg-secondary ring-2 ring-neon/40" : "bg-secondary")}
             >
-              <div className="text-lg font-extrabold">0</div>
+              <div className="text-lg font-extrabold">{following}</div>
               <div className="text-[10px] text-muted-foreground">Following</div>
             </button>
             <div className="rounded-2xl p-3 text-center bg-neon/10 border border-neon/40">
