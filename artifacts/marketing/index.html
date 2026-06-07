@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Loop — Africa's Audio Conversation Platform</title>
+  <meta name="description" content="Loop is Africa's premier audio room platform — live civic discussions, community conversations, and real-time local news. Speak. Listen. Connect." />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta property="og:title" content="Loop — Speak. Listen. Connect." />
+  <meta property="og:description" content="Africa's audio room for civic conversations, live news, and community." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://loop.rald.cloud/opengraph.jpg" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 32' fill='none'><path d='M16 4c-6.6 0-12 5.4-12 12s5.4 12 12 12c4.4 0 8-2.4 11-6l5-6 5-6c3-3.6 6.6-6 11-6 6.6 0 12 5.4 12 12s-5.4 12-12 12c-4.4 0-8-2.4-11-6l-5-6-5-6c-3-3.6-6.6-6-11-6z' stroke='%2300FF88' stroke-width='4' stroke-linejoin='round' stroke-linecap='round'/></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0A1F16;
+      --bg-card:    #0D2419;
+      --bg-elev:    #112E1E;
+      --border:     #163828;
+      --border-hi:  #1e4a30;
+      --fg:         #ECFDF5;
+      --fg-muted:   #8aab96;
+      --fg-dim:     #4d7a60;
+      --neon:       #00FF88;
+      --neon-dim:   #00D96F;
+      --neon-glow:  rgba(0,255,136,0.25);
+      --neon-glow2: rgba(0,255,136,0.08);
+      --radius:     14px;
+      --font-display: 'Bricolage Grotesque', 'Space Grotesk', system-ui, sans-serif;
+      --font-body:    'Inter', system-ui, sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg);
+      color: var(--fg);
+      min-height: 100vh;
+      line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Noise texture overlay ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.35;
+    }
+
+    /* ── Ambient radial glow ── */
+    body::after {
+      content: '';
+      position: fixed;
+      top: -20%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 900px;
+      height: 600px;
+      background: radial-gradient(ellipse at center, rgba(0,255,136,0.06) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 clamp(1.5rem, 5vw, 4rem);
+      height: 68px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(10, 31, 22, 0.85);
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-decoration: none;
+      user-select: none;
+    }
+
+    .logo-letter {
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--fg);
+      letter-spacing: -0.03em;
+      line-height: 1;
+    }
+
+    .logo-mark {
+      width: 44px;
+      height: 22px;
+      color: var(--neon);
+      filter: drop-shadow(0 0 6px var(--neon-dim));
+      flex-shrink: 0;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 22px;
+      height: 40px;
+      border-radius: 10px;
+      font-family: var(--font-body);
+      font-size: 0.875rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.18s ease;
+      cursor: pointer;
+      white-space: nowrap;
+      border: none;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--fg-muted);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover {
+      background: var(--bg-elev);
+      color: var(--fg);
+      border-color: var(--border-hi);
+    }
+
+    .btn-primary {
+      background: var(--neon);
+      color: #041A0D;
+      box-shadow: 0 0 20px var(--neon-glow), 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .btn-primary:hover {
+      background: #1aff94;
+      box-shadow: 0 0 32px rgba(0,255,136,0.45), 0 2px 12px rgba(0,0,0,0.4);
+      transform: translateY(-1px);
+    }
+    .btn-primary:active { transform: translateY(0); }
+
+    .btn-lg {
+      height: 54px;
+      padding: 0 32px;
+      font-size: 1rem;
+      border-radius: 12px;
+    }
+
+    /* ── HERO ── */
+    .hero {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 120px clamp(1.5rem, 6vw, 6rem) 80px;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(0,255,136,0.3);
+      background: rgba(0,255,136,0.06);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--neon-dim);
+      letter-spacing: 0.02em;
+      margin-bottom: 2rem;
+    }
+
+    .hero-badge-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--neon);
+      animation: pulse-dot 2s ease infinite;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.7); }
+    }
+
+    .hero-h1 {
+      font-family: var(--font-display);
+      font-size: clamp(2.8rem, 7vw, 6rem);
+      font-weight: 800;
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      max-width: 900px;
+      margin-bottom: 1.5rem;
+    }
+
+    .hero-h1 .accent {
+      background: linear-gradient(135deg, #00FF88 0%, #00D96F 40%, #4DFFA8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 0 20px rgba(0,255,136,0.3));
+    }
+
+    .hero-sub {
+      font-size: clamp(1.05rem, 2.2vw, 1.3rem);
+      color: var(--fg-muted);
+      max-width: 560px;
+      line-height: 1.65;
+      margin-bottom: 2.75rem;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .hero-scroll {
+      position: absolute;
+      bottom: 2.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      color: var(--fg-dim);
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateX(-50%) translateY(0); }
+      50% { transform: translateX(-50%) translateY(6px); }
+    }
+
+    .scroll-line {
+      width: 1px;
+      height: 40px;
+      background: linear-gradient(to bottom, var(--fg-dim), transparent);
+    }
+
+    /* ── AUDIO WAVE DECORATION ── */
+    .wave-container {
+      margin: 0 auto 2rem;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      height: 48px;
+    }
+
+    .wave-bar {
+      width: 4px;
+      border-radius: 2px;
+      background: var(--neon);
+      opacity: 0.7;
+      animation: wave-anim 1.4s ease-in-out infinite;
+    }
+    .wave-bar:nth-child(1) { animation-delay: 0s;    height: 20px; }
+    .wave-bar:nth-child(2) { animation-delay: 0.12s; height: 36px; }
+    .wave-bar:nth-child(3) { animation-delay: 0.24s; height: 28px; }
+    .wave-bar:nth-child(4) { animation-delay: 0.36s; height: 44px; }
+    .wave-bar:nth-child(5) { animation-delay: 0.48s; height: 32px; }
+    .wave-bar:nth-child(6) { animation-delay: 0.36s; height: 44px; }
+    .wave-bar:nth-child(7) { animation-delay: 0.24s; height: 28px; }
+    .wave-bar:nth-child(8) { animation-delay: 0.12s; height: 36px; }
+    .wave-bar:nth-child(9) { animation-delay: 0s;    height: 20px; }
+
+    @keyframes wave-anim {
+      0%, 100% { transform: scaleY(0.5); opacity: 0.4; }
+      50%       { transform: scaleY(1);   opacity: 0.9; }
+    }
+
+    /* ── SECTION SHARED ── */
+    section {
+      position: relative;
+      z-index: 1;
+    }
+
+    .section-inner {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 0 clamp(1.5rem, 5vw, 4rem);
+    }
+
+    .section-label {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--neon-dim);
+      margin-bottom: 1rem;
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-size: clamp(1.9rem, 4vw, 3rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 1.25rem;
+    }
+
+    .section-sub {
+      font-size: 1.0625rem;
+      color: var(--fg-muted);
+      max-width: 540px;
+      line-height: 1.65;
+    }
+
+    /* ── DIVIDER ── */
+    .divider {
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--border), transparent);
+      margin: 0;
+    }
+
+    /* ── FEATURES ── */
+    .features {
+      padding: 100px 0;
+    }
+
+    .features-header {
+      text-align: center;
+      margin-bottom: 64px;
+    }
+    .features-header .section-sub { margin: 0 auto; }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, var(--neon-glow2) 0%, transparent 60%);
+      opacity: 0;
+      transition: opacity 0.3s;
+      border-radius: inherit;
+    }
+
+    .feature-card:hover {
+      border-color: var(--border-hi);
+      transform: translateY(-3px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 0 0 1px rgba(0,255,136,0.06);
+    }
+    .feature-card:hover::before { opacity: 1; }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: rgba(0,255,136,0.1);
+      border: 1px solid rgba(0,255,136,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      margin-bottom: 20px;
+      position: relative;
+    }
+
+    .feature-title {
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 10px;
+    }
+
+    .feature-desc {
+      font-size: 0.9375rem;
+      color: var(--fg-muted);
+      line-height: 1.6;
+    }
+
+    /* ── ROOMS MOCKUP ── */
+    .mockup-section {
+      padding: 80px 0 100px;
+    }
+
+    .mockup-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: center;
+    }
+
+    .mockup-text .section-sub { max-width: 440px; margin-bottom: 2rem; }
+
+    .stat-row {
+      display: flex;
+      gap: 32px;
+      margin-top: 2.5rem;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .stat-num {
+      font-family: var(--font-display);
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      color: var(--neon);
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 0.8125rem;
+      color: var(--fg-dim);
+      font-weight: 500;
+    }
+
+    .room-mockup {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px rgba(0,255,136,0.05);
+    }
+
+    .room-mockup-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+
+    .room-live-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255,50,50,0.1);
+      border: 1px solid rgba(255,50,50,0.25);
+      border-radius: 999px;
+      padding: 4px 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #ff6060;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .room-live-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #ff4444;
+      animation: pulse-dot 1.5s ease infinite;
+    }
+
+    .room-listeners {
+      font-size: 0.8125rem;
+      color: var(--fg-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .room-title {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+    }
+
+    .room-category {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--neon-dim);
+      background: rgba(0,217,111,0.1);
+      border: 1px solid rgba(0,217,111,0.2);
+      border-radius: 999px;
+      padding: 2px 10px;
+      margin-bottom: 20px;
+    }
+
+    .room-speakers {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .speaker-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .speaker-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      flex-shrink: 0;
+      border: 2px solid transparent;
+    }
+
+    .speaker-avatar.speaking {
+      border-color: var(--neon);
+      box-shadow: 0 0 12px var(--neon-glow);
+      animation: speaking-pulse 1.8s ease infinite;
+    }
+
+    @keyframes speaking-pulse {
+      0%, 100% { box-shadow: 0 0 8px var(--neon-glow); }
+      50% { box-shadow: 0 0 20px rgba(0,255,136,0.5); }
+    }
+
+    .speaker-name {
+      flex: 1;
+      font-size: 0.9375rem;
+      font-weight: 500;
+    }
+
+    .speaker-tag {
+      font-size: 0.7rem;
+      color: var(--fg-dim);
+      font-weight: 500;
+    }
+
+    .wave-mini {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      height: 16px;
+    }
+
+    .wave-mini span {
+      width: 3px;
+      border-radius: 2px;
+      background: var(--neon);
+      animation: wave-anim 1s ease-in-out infinite;
+    }
+    .wave-mini span:nth-child(1) { height: 8px;  animation-delay: 0s; }
+    .wave-mini span:nth-child(2) { height: 14px; animation-delay: 0.15s; }
+    .wave-mini span:nth-child(3) { height: 10px; animation-delay: 0.3s; }
+
+    /* ── LANGUAGES ── */
+    .langs-section {
+      padding: 80px 0;
+    }
+
+    .langs-header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    .langs-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .lang-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--bg-card);
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: all 0.18s;
+    }
+
+    .lang-chip:hover {
+      border-color: var(--border-hi);
+      background: var(--bg-elev);
+      transform: translateY(-1px);
+    }
+
+    .lang-flag { font-size: 1.2rem; }
+
+    /* ── CTA SECTION ── */
+    .cta-section {
+      padding: 100px 0;
+    }
+
+    .cta-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: clamp(48px, 6vw, 80px);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cta-card::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 400px;
+      background: radial-gradient(ellipse, rgba(0,255,136,0.07) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .cta-card .section-label { margin-bottom: 1.25rem; }
+
+    .cta-card .section-title {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 800;
+      max-width: 680px;
+      margin: 0 auto 1.25rem;
+    }
+
+    .cta-card .section-sub {
+      font-size: 1.0625rem;
+      max-width: 480px;
+      margin: 0 auto 2.5rem;
+    }
+
+    .cta-actions {
+      display: flex;
+      gap: 14px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .cta-note {
+      margin-top: 1.25rem;
+      font-size: 0.8125rem;
+      color: var(--fg-dim);
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid var(--border);
+      padding: 40px clamp(1.5rem, 5vw, 4rem);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .footer-copy {
+      font-size: 0.8125rem;
+      color: var(--fg-dim);
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 20px;
+    }
+
+    .footer-links a {
+      font-size: 0.8125rem;
+      color: var(--fg-dim);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .footer-links a:hover { color: var(--fg-muted); }
+
+    /* ── GLOW LINE ── */
+    .glow-line {
+      height: 1px;
+      background: linear-gradient(to right, transparent 0%, var(--neon-dim) 30%, var(--neon) 50%, var(--neon-dim) 70%, transparent 100%);
+      opacity: 0.35;
+    }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 768px) {
+      .mockup-layout { grid-template-columns: 1fr; gap: 40px; }
+      .mockup-text { order: 1; }
+      .room-mockup-wrap { order: 2; }
+      .stat-row { gap: 20px; }
+      .nav-actions .btn-ghost { display: none; }
+      .features-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--fg-dim); }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <a href="#" class="nav-logo" aria-label="Loop">
+      <span class="logo-letter">l</span>
+      <svg class="logo-mark" viewBox="0 0 64 32" fill="none" aria-hidden="true">
+        <path d="M16 4c-6.6 0-12 5.4-12 12s5.4 12 12 12c4.4 0 8-2.4 11-6l5-6 5-6c3-3.6 6.6-6 11-6 6.6 0 12 5.4 12 12s-5.4 12-12 12c-4.4 0-8-2.4-11-6l-5-6-5-6c-3-3.6-6.6-6-11-6z" stroke="currentColor" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-letter" style="margin-left:-2px">p</span>
+    </a>
+    <div class="nav-actions">
+      <a href="https://profiles.rald.cloud/login" class="btn btn-ghost">Log in</a>
+      <a href="https://profiles.rald.cloud/register" class="btn btn-primary">Join the Loop</a>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-badge">
+      <span class="hero-badge-dot"></span>
+      Private Beta · Africa First
+    </div>
+
+    <div class="wave-container" aria-hidden="true">
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+      <div class="wave-bar"></div>
+    </div>
+
+    <h1 class="hero-h1">
+      Africa's Voice,<br>
+      <span class="accent">Live &amp; Unfiltered</span>
+    </h1>
+    <p class="hero-sub">
+      Loop is the audio room built for Africa — real conversations about your city,
+      your community, and what matters to you. Live. Local. Yours.
+    </p>
+    <div class="hero-actions">
+      <a href="https://profiles.rald.cloud/register" class="btn btn-primary btn-lg">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
+        Join the Loop
+      </a>
+      <a href="https://profiles.rald.cloud/login" class="btn btn-ghost btn-lg">Log in</a>
+    </div>
+
+    <div class="hero-scroll" aria-hidden="true">
+      <span>Scroll</span>
+      <div class="scroll-line"></div>
+    </div>
+  </section>
+
+  <div class="glow-line"></div>
+
+  <!-- FEATURES -->
+  <section class="features">
+    <div class="section-inner">
+      <div class="features-header">
+        <span class="section-label">Platform</span>
+        <h2 class="section-title">Built for the way Africa speaks</h2>
+        <p class="section-sub">Audio-first. Community-powered. Geo-aware. Loop meets you where you are.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">🎙️</div>
+          <h3 class="feature-title">Live Audio Rooms</h3>
+          <p class="feature-desc">Host or join real-time conversations on civic issues, local news, sports, music, and more. No video. No noise. Just voices.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🏘️</div>
+          <h3 class="feature-title">Hyper-local Communities</h3>
+          <p class="feature-desc">Find your LCDA, your LGA, your city. Connect with people in your exact neighbourhood — not just your country.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🗳️</div>
+          <h3 class="feature-title">Civic Conversations</h3>
+          <p class="feature-desc">Track elections, council decisions, and local governance. Loop amplifies the voices that make democracy work at ground level.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">⚽</div>
+          <h3 class="feature-title">Live Sports &amp; Entertainment</h3>
+          <p class="feature-desc">React to AFCON, the Premier League, and Nollywood in real time with fans from your city and beyond.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📍</div>
+          <h3 class="feature-title">RALD Region Intelligence</h3>
+          <p class="feature-desc">Content auto-surfaces for your location — state, LGA, and LCDA — so you always find what's relevant without searching.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🌍</div>
+          <h3 class="feature-title">Multilingual by Design</h3>
+          <p class="feature-desc">Hausa, Yoruba, Igbo, Kiswahili, Arabic, French, Portugues — Loop is built for the full linguistic reality of the continent.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- LIVE ROOM MOCKUP -->
+  <section class="mockup-section">
+    <div class="section-inner">
+      <div class="mockup-layout">
+        <div class="mockup-text">
+          <span class="section-label">Audio Rooms</span>
+          <h2 class="section-title">Join a room.<br>Hear something real.</h2>
+          <p class="section-sub">Every room is live, local, and unfiltered. Talk about your community, your leaders, your city — with your people.</p>
+
+          <div class="stat-row">
+            <div class="stat">
+              <span class="stat-num">8+</span>
+              <span class="stat-label">Languages</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num">36+</span>
+              <span class="stat-label">States covered</span>
+            </div>
+            <div class="stat">
+              <span class="stat-num">∞</span>
+              <span class="stat-label">Conversations</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="room-mockup-wrap">
+          <div class="room-mockup">
+            <div class="room-mockup-header">
+              <span class="room-live-badge">
+                <span class="room-live-dot"></span>
+                Live
+              </span>
+              <span class="room-listeners">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                1,247 listening
+              </span>
+            </div>
+            <p class="room-title">Lagos Traffic: Who is really to blame?</p>
+            <span class="room-category">🏛️ Civic</span>
+            <div class="room-speakers">
+              <div class="speaker-row">
+                <div class="speaker-avatar speaking" style="background:linear-gradient(135deg,#1a472a,#2d6a4f)">🎤</div>
+                <div style="flex:1">
+                  <div class="speaker-name">Chukwuemeka A.</div>
+                  <div class="speaker-tag">Lagos Island · Host</div>
+                </div>
+                <div class="wave-mini">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+              <div class="speaker-row">
+                <div class="speaker-avatar" style="background:linear-gradient(135deg,#1c3a5e,#2a5298)">👤</div>
+                <div style="flex:1">
+                  <div class="speaker-name">Amaka O.</div>
+                  <div class="speaker-tag">Lekki · Speaker</div>
+                </div>
+              </div>
+              <div class="speaker-row">
+                <div class="speaker-avatar" style="background:linear-gradient(135deg,#3d1a5e,#6b2fa0)">👤</div>
+                <div style="flex:1">
+                  <div class="speaker-name">Musa A.</div>
+                  <div class="speaker-tag">Ikeja · Speaker</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider"></div>
+
+  <!-- LANGUAGES -->
+  <section class="langs-section">
+    <div class="section-inner">
+      <div class="langs-header">
+        <span class="section-label">Languages</span>
+        <h2 class="section-title">Your language. Your Loop.</h2>
+        <p class="section-sub" style="margin:0 auto">Converse in the language that feels like home.</p>
+      </div>
+      <div class="langs-grid">
+        <div class="lang-chip"><span class="lang-flag">🇳🇬</span> English</div>
+        <div class="lang-chip"><span class="lang-flag">🇳🇬</span> Hausa</div>
+        <div class="lang-chip"><span class="lang-flag">🇳🇬</span> Yoruba</div>
+        <div class="lang-chip"><span class="lang-flag">🇳🇬</span> Igbo</div>
+        <div class="lang-chip"><span class="lang-flag">🇰🇪</span> Kiswahili</div>
+        <div class="lang-chip"><span class="lang-flag">🇫🇷</span> Français</div>
+        <div class="lang-chip"><span class="lang-flag">🇸🇦</span> العربية</div>
+        <div class="lang-chip"><span class="lang-flag">🇵🇹</span> Português</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="glow-line"></div>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <div class="section-inner">
+      <div class="cta-card">
+        <span class="section-label">Get Access</span>
+        <h2 class="section-title">Ready to enter the Loop?</h2>
+        <p class="section-sub">Loop is in private beta. Join now and be among the first voices shaping Africa's audio future.</p>
+        <div class="cta-actions">
+          <a href="https://profiles.rald.cloud/register" class="btn btn-primary btn-lg">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg>
+            Join the Loop
+          </a>
+          <a href="https://profiles.rald.cloud/login" class="btn btn-ghost btn-lg">Already have an account</a>
+        </div>
+        <p class="cta-note">By joining, you agree to Loop's Terms of Service and Privacy Policy.<br>Your profile is secured by RALD Identity.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <a href="#" class="nav-logo" style="gap:5px" aria-label="Loop">
+      <span class="logo-letter" style="font-size:1.1rem">l</span>
+      <svg style="width:32px;height:16px;color:var(--neon)" viewBox="0 0 64 32" fill="none" aria-hidden="true">
+        <path d="M16 4c-6.6 0-12 5.4-12 12s5.4 12 12 12c4.4 0 8-2.4 11-6l5-6 5-6c3-3.6 6.6-6 11-6 6.6 0 12 5.4 12 12s-5.4 12-12 12c-4.4 0-8-2.4-11-6l-5-6-5-6c-3-3.6-6.6-6-11-6z" stroke="currentColor" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/>
+      </svg>
+      <span class="logo-letter" style="font-size:1.1rem;margin-left:-2px">p</span>
+    </a>
+    <p class="footer-copy">© 2026 Lilcky Studio Limited. All rights reserved.</p>
+    <div class="footer-links">
+      <a href="https://profiles.rald.cloud/login">Log in</a>
+      <a href="https://profiles.rald.cloud/register">Sign up</a>
+      <a href="#">Privacy</a>
+      <a href="#">Terms</a>
+    </div>
+  </footer>
+
+</body>
+</html>
