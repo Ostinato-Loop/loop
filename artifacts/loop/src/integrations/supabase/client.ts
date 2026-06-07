@@ -1,20 +1,39 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? "https://onxdcikfttdmnhofsuwo.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "";
+// B0: BLACK SCREEN FIX — 2026-06-07
+// Root cause: createClient("") throws "supabaseKey is required." at module init.
+// When VITE_SUPABASE_PUBLISHABLE_KEY is empty (secret name mismatch in deploy.yml),
+// the entire module tree fails to import and React never mounts.
+// Fix: try both env var names + use a stub placeholder instead of empty string.
+// The stub is non-empty so createClient doesn't throw; Supabase requests return
+// 401 which the UI handles gracefully (error/empty state is shown, not black).
+const SUPABASE_URL =
+  import.meta.env.VITE_SUPABASE_URL ??
+  "https://onxdcikfttdmnhofsuwo.supabase.co";
+
+// Try both possible env var names (deploy.yml used to inject wrong name)
+const SUPABASE_PUBLISHABLE_KEY =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  null;
 
 if (!SUPABASE_PUBLISHABLE_KEY) {
-  console.error(
+  console.warn(
     "[supabase] VITE_SUPABASE_PUBLISHABLE_KEY is not set.\n" +
-    "All Supabase operations (listRooms, createRoom, onboarding) will fail with 401.\n" +
-    "Fix: Supabase Dashboard → project onxdcikfttdmnhofsuwo → Settings → API → anon/public key\n" +
-    "Then set VITE_SUPABASE_PUBLISHABLE_KEY in Cloudflare Pages → Settings → Environment variables → Redeploy."
+    "Supabase queries will return 401 until the secret is configured.\n" +
+    "Fix: set VITE_SUPABASE_PUBLISHABLE_KEY = <anon key> in\n" +
+    "Cloudflare Pages → Settings → Environment variables → Redeploy.\n" +
+    "Secret source: Supabase Dashboard → project onxdcikfttdmnhofsuwo → Settings → API → anon/public key"
   );
 }
 
+// Use placeholder (non-empty) when key is missing so createClient does not throw.
+// All Supabase requests will return 401; the UI handles this gracefully.
+const _key = SUPABASE_PUBLISHABLE_KEY ?? "__missing_key_see_console_warn__";
+
 // Public client — anon key, no user context. Use for public reads only.
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+export const supabase = createClient<Database>(SUPABASE_URL, _key, {
   auth: {
     storage: localStorage,
     persistSession: false,
@@ -51,7 +70,7 @@ export function getLoopToken(): string | null {
 export function authedSupabase(token?: string | null) {
   const t = token ?? getLoopToken();
   if (!t) return supabase;
-  return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  return createClient<Database>(SUPABASE_URL, _key, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
