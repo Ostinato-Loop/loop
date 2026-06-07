@@ -130,11 +130,11 @@ function buildNudges(profile: ReturnType<typeof useAuth>["profile"], score: numb
     });
   }
   if (score < 60) {
-    const level = getTrustLevel(score);
+    const lvl = getTrustLevel(score);
     nudges.push({
       id: "nudge-trust", kind: "trust",
-      title: `Trust score: ${score} — ${level.label}`,
-      body: `Next level: ${level.nextLabel} (${level.nextThreshold}). ${level.tip}`,
+      title:       `Trust score: ${score} — ${lvl.level}`,
+      body:        `Next level: ${lvl.next} (${lvl.nextScore} pts). Complete your profile to level up.`,
       ts: now - 14400_000, read: true,
       action: "/trust-center", actionLabel: "Learn more",
     });
