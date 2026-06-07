@@ -4,6 +4,7 @@
  * Identity Standard v1.0 (2026-06-07):
  *   - All Loop JWTs are signed with RALD_JWT_SECRET.
  *   - Required claims: sub, email, role, iss, aud, iat, exp
+ *   - Audience validated: token aud must equal JWT_AUDIENCE ("loop")
  *   - Issuer: https://loop-api.rald.cloud
  *   - Audience: "loop"
  *
@@ -70,6 +71,8 @@ export async function verifyJwt(
     if (!valid) return null;
     const payload = JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/"))) as Record<string, unknown>;
     if (typeof payload.exp === "number" && payload.exp < Math.floor(Date.now() / 1000)) return null;
+    // B4 — validate audience claim to prevent cross-service token reuse
+    if (payload.aud !== JWT_AUDIENCE) return null;
     return payload;
   } catch {
     return null;
