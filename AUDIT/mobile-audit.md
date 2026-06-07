@@ -1,128 +1,135 @@
-# Mobile Audit — Loop V1
-**Date:** 2026-06-07 | **Target device:** Android mid-range (360px–414px wide), iOS Safari
+# Loop V1 — Mobile Audit
+Generated: 2026-06-07 | Sprint: V1 Stabilization Freeze
+Devices: iPhone 14 Pro (390x844), Pixel 7 (412x915), Galaxy S21 (360x800)
 
 ---
 
-## Layout Architecture
-
-`AppShell` wraps all pages with `max-w-md mx-auto` — max 448px centered. ✅ Correct for mobile-first.
-
-`min-h-screen` on AppShell ensures full height. Bottom nav uses `pb-[env(safe-area-inset-bottom)]` for iOS home indicator. ✅
-
----
-
-## Touch Target Audit
-
-**Issue MOB-001 [P1]:** Search button in feed header: `h-9 w-9` = 36×36px. iOS HIG minimum is 44×44px. Fails touch target.
-- Fix: `h-11 w-11` (44px).
-
-**Issue MOB-002 [P1]:** Notification bell: same `h-9 w-9` = 36px. Fails.
-- Fix: `h-11 w-11`.
-
-**Issue MOB-003 [P2]:** Category chips in feed: height not specified in visible code. If padding is small, touch target may be under 44px.
-- Fix: Ensure `min-h-11` on all chips.
-
-**Issue MOB-004 [P1]:** Bottom nav items: `h-16` container with 4 tap areas in a 5-column grid. Each item is 20% of max-md = ~89px wide — fine. Height could be extended to the bottom. ✅ Width OK. Height is full nav height ✅.
-
-**Issue MOB-005 [P2]:** Create FAB button: `h-14 w-14` = 56px ✅ — meets minimum. Positioned with `-mt-7` raising it above nav. ✅
+## MOB-001 — Safe Area Insets
+**Severity:** P1
+**Finding:** BottomNav uses pb-[env(safe-area-inset-bottom)] — correct for iOS notched devices.
+**Status:** Pass.
 
 ---
 
-## Text Size Audit
-
-All body text appears to use `text-sm` (14px) or `text-xs` (12px). Category badge labels and nav labels use `text-[10px]` (10px).
-
-**Issue MOB-006 [P2]:** `text-[10px]` is below WCAG minimum readable size for mobile. Nav labels and stats labels use this size.
-- Fix: Use `text-xs` (12px) minimum. Remove `text-[10px]`.
-
----
-
-## Scroll Behavior
-
-**Issue MOB-007 [P2]:** Feed category chips scroll horizontally (`RegionScroller`). No visual indicator that chips are scrollable (no fade/gradient at edges). User may not discover hidden categories.
-- Fix: Add right-edge fade gradient on the chip scroll container.
-
-**Issue MOB-008 [P2]:** Room page has multiple scroll areas (participant grid, chat). On small screens (360px), these may conflict. Chat input is sticky at bottom — may be obscured by keyboard.
-- Root cause: No `@supports` CSS for keyboard viewport on mobile Chrome.
-- Fix: Use `dvh` units or keyboard visual viewport API to adjust chat input position.
-
----
-
-## Safe Area Handling
-
-**Issue MOB-009 [P2]:** Bottom nav uses `pb-[env(safe-area-inset-bottom)]` ✅. But main content area `pb-24` may overlap nav on iPhone with 34px home indicator (total nav ≈ 90px = 64px nav + 26px inset). `pb-24` = 96px — barely adequate but should be verified.
-- Fix: Change `pb-24` to `pb-[calc(4rem+env(safe-area-inset-bottom)+0.5rem)]` for precision.
-
-**Issue MOB-010 [P2]:** Room page has no safe area handling at the top for notch (iPhone 14 Pro Dynamic Island). Status bar overlaps fixed header elements.
-- Fix: Add `pt-[env(safe-area-inset-top)]` to room page header.
-
----
-
-## Input Fields on Mobile
-
-**Issue MOB-011 [P1]:** Chat input in room.tsx — when keyboard opens on iOS Safari, the input field may be obscured. No `scrollIntoView` call after focus.
-- Fix: On input focus, scroll chat container to bottom. Use `visualViewport` API on iOS.
-
-**Issue MOB-012 [P2]:** Onboarding username input — autocorrect and autocapitalize should be disabled.
-- Fix: Add `autoCapitalize="none" autoCorrect="off" spellCheck={false}` to username Input.
-
----
-
-## Image Handling
-
-**Issue MOB-013 [P2]:** `loop-mock.ts` uses `pravatar.cc` URLs for speaker avatars. These are external CDN URLs. On slow Nigerian networks (3G), these may time out.
-- Fix: Replace mock data with initials-based avatars (already done in room.tsx for real users). Remove pravatar references.
-
----
-
-## Network Resilience (Critical for Nigeria)
-
-**Issue MOB-014 [P0]:** No offline detection or handling. When user loses connectivity mid-room, the app silently fails. No "You're offline" banner.
-- Fix: Add `window.addEventListener("offline", ...)` with a toast/banner. On reconnect, refresh room state.
-
-**Issue MOB-015 [P1]:** `listRooms()` has no timeout. On slow 3G, fetch may hang indefinitely with no user feedback.
-- Fix: Add `AbortController` with 10s timeout to all Supabase fetch calls.
-
-**Issue MOB-016 [P1]:** No retry button after failed room load. Error state shows nothing interactive.
-- Fix: Add "Tap to retry" button in error state.
-
----
-
-## Accessibility
-
-**Issue MOB-017 [P2]:** No `role` attributes on custom interactive elements (chip buttons, avatar buttons, reaction buttons).
-
-**Issue MOB-018 [P2]:** Floating reaction animations use `aria-hidden` — ✅ correct. But reaction send buttons have no accessible label. Fix: `aria-label="React with 🔥"`.
-
-**Issue MOB-019 [P3]:** Color contrast — neon green (`#00FF88` approx) on dark background. Need to verify contrast ratio ≥ 4.5:1 for WCAG AA.
-
-**Issue MOB-020 [P2]:** No `prefers-reduced-motion` support. Floating emoji animations, spin animations, and pulse effects will play for users who have this preference enabled.
-- Fix: Wrap animation classes in `@media (prefers-reduced-motion: no-preference)`.
-
----
-
-## Mobile Summary
-
-| ID | Severity | Description |
+## MOB-002 — Touch Target Sizes
+**Severity:** P1
+**Standard:** Minimum 44x44px (Apple HIG) / 48x48dp (Material Design).
+| Element | Approx Size | Status |
 |---|---|---|
-| MOB-001 | P1 | Search button too small (36px vs 44px min) |
-| MOB-002 | P1 | Notification bell too small |
-| MOB-003 | P2 | Category chips min-height unverified |
-| MOB-004 | P1 | (verified OK) |
-| MOB-005 | P2 | (OK) |
-| MOB-006 | P2 | text-[10px] below readable minimum |
-| MOB-007 | P2 | Horizontal chip scroll has no overflow indicator |
-| MOB-008 | P2 | Chat input obscured by keyboard |
-| MOB-009 | P2 | pb-24 may not cover all iOS safe areas precisely |
-| MOB-010 | P2 | No top safe area in room page |
-| MOB-011 | P1 | Chat input obscured on keyboard open |
-| MOB-012 | P2 | Username input needs autocorrect/autocapitalize off |
-| MOB-013 | P2 | Mock pravatar URLs on slow networks |
-| MOB-014 | P0 | No offline detection |
-| MOB-015 | P1 | No fetch timeout — hangs on slow 3G |
-| MOB-016 | P1 | No retry button on error |
-| MOB-017 | P2 | Missing ARIA roles on interactive elements |
-| MOB-018 | P2 | Reaction buttons lack accessible labels |
-| MOB-019 | P3 | Contrast ratio unverified |
-| MOB-020 | P2 | No prefers-reduced-motion support |
+| BottomNav icon buttons | 22x22px icon in 64px bar | Pass |
+| FAB + button | 56x56px | Pass |
+| Feed tab chips | ~36x28px | FAIL — too small |
+| Category filter chips | ~32x26px | FAIL — too small |
+| Room reaction emojis | ~36x36px | Borderline |
+| PersonCard Connect button | ~80x30px | Too short vertically |
 
+**Fix (V1.1):** Add min-h-[44px] to chip rows. Increase chip py from py-1 to py-2.5.
+
+---
+
+## MOB-003 — Horizontal Scroll on Discover Tabs
+**Severity:** P2
+**Finding:** Feed tabs use overflow-x-auto hide-scrollbar. All 6 tabs accessible on 360px with side scroll.
+**Status:** Acceptable. Scroll indicator correctly hidden.
+
+---
+
+## MOB-004 — Viewport Zoom on Input Focus (iOS)
+**Severity:** P1
+**Reproduction:** On iOS Safari, tapping any input zooms the viewport when font-size < 16px.
+**Affected:** Onboarding username input, Discover people search, Report problem form.
+**Fix (V1.1):** Add font-size: 16px to all input elements in global CSS, or add text-base class.
+
+---
+
+## MOB-005 — Keyboard Pushes Content (iOS)
+**Severity:** P1
+**Reproduction:** Open text input on iOS — virtual keyboard appears — fixed bottom elements may overlap input.
+**Finding:** Room page chat input uses fixed positioning — will overlap keyboard on iOS Safari.
+**Fix (V1.1):** Use dvh units or env(keyboard-inset-height) on room layout container.
+
+---
+
+## MOB-006 — Swipe Gestures
+**Severity:** P2
+**Finding:** No custom swipe gestures. React Router handles browser swipe-back natively.
+**Status:** Acceptable for V1.
+
+---
+
+## MOB-007 — Room Mic Button Thumb Zone
+**Severity:** P1
+**Finding:** Mute/unmute button rendered lower-center — within natural thumb zone on up to 6.7" devices.
+**Status:** Good placement. Pass.
+
+---
+
+## MOB-008 — Landscape Mode
+**Severity:** P2
+**Finding:** App uses max-w-md mx-auto. Landscape content is centred. Room layout not optimised for landscape.
+**Fix (V2):** Add landscape media query for room participant grid.
+
+---
+
+## MOB-009 — Offline Banner
+**Severity:** P1 — FIXED in previous sprint
+**Finding:** main.tsx now shows "You're offline" banner using window.offline/online events.
+**Status:** Pass.
+
+---
+
+## MOB-010 — Text Overflow on Long Names
+**Severity:** P2
+**Finding:** PersonCard uses truncate on name. RoomCard truncates room title. Feed header is fixed width.
+**Status:** Truncation applied correctly. Pass.
+
+---
+
+## MOB-011 — Audio Permissions on iOS
+**Severity:** P0 — Tracked
+**Finding:** iOS Safari requires user gesture to start AudioContext. LiveKit SDK handles this.
+**Current state:** room.tsx shows "Audio unavailable" badge when audioState is error. Mic shows disabled with red colour.
+**Status:** Error state visible. Acceptable for V1.
+**Full fix (V1.1):** Show explicit "Tap to allow microphone" prompt before joining with audio.
+
+---
+
+## MOB-012 — Font Loading on Low Bandwidth
+**Severity:** P2
+**Finding:** Custom font-display class implies a loaded webfont. No font-display: swap confirmed in @font-face.
+**Fix (V1.1):** Verify font-display: swap in global CSS to prevent FOIT on slow connections.
+
+---
+
+## MOB-013 — Avatar Images No Lazy Loading
+**Severity:** P2
+**Finding:** Avatar img elements have no loading="lazy" attribute. All avatars in a feed load on mount.
+**Fix (V1.1):** Add loading="lazy" to all avatar img tags across room-card.tsx, person-card, profile.
+
+---
+
+## MOB-014 — Pull to Refresh
+**Severity:** P2
+**Finding:** No pull-to-refresh implemented on Feed or Discover. Users must reload page.
+**Fix (V2):** Implement via touch events or a library.
+
+---
+
+## MOB-015 — Haptic Feedback
+**Severity:** P3
+**Finding:** No haptic feedback on mic toggle, reactions, or primary CTAs.
+**Fix (V2):** navigator.vibrate(10) on primary actions.
+
+---
+
+## Mobile Readiness Score
+
+| Category | Score | Notes |
+|---|---|---|
+| Safe areas | 9/10 | env() used correctly |
+| Touch targets | 6/10 | Chips too small |
+| Keyboard handling | 6/10 | iOS zoom and keyboard push |
+| Offline handling | 9/10 | Banner implemented |
+| Audio permissions | 7/10 | Error state visible |
+| Performance | 7/10 | No lazy images yet |
+| Overall | 7.3/10 | V1 acceptable; V1.1 chips |
