@@ -1,0 +1,134 @@
+name: Lockfile Consistency Check
+
+on:
+  push:
+    branches: ["main", "develop", "staging"]
+  pull_request:
+    branches: ["main", "develop", "staging"]
+
+jobs:
+  lockfile-check:
+    name: pnpm lockfile integrity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect workspace + lockfile drift (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          WORKSPACE_CHANGED=$(git diff --name-only "$BASE_SHA" HEAD -- pnpm-workspace.yaml | wc -l | tr -d ' ')
+          LOCKFILE_CHANGED=$(git diff --name-only "$BASE_SHA" HEAD -- pnpm-lock.yaml | wc -l | tr -d ' ')
+
+          echo "pnpm-workspace.yaml changed: $WORKSPACE_CHANGED"
+          echo "pnpm-lock.yaml changed:      $LOCKFILE_CHANGED"
+
+          if [ "$WORKSPACE_CHANGED" -gt 0 ] && [ "$LOCKFILE_CHANGED" -eq 0 ]; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  LOCKFILE MISMATCH DETECTED"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  pnpm-workspace.yaml was modified in this PR but"
+            echo "  pnpm-lock.yaml was NOT updated to match."
+            echo ""
+            echo "  This will cause 'pnpm install --frozen-lockfile' to fail"
+            echo "  in CI/CD (Cloudflare, Vercel, GitHub Actions, etc.)."
+            echo ""
+            echo "  HOW TO FIX:"
+            echo "    1. On your branch, run:"
+            echo "         pnpm install --no-frozen-lockfile"
+            echo "    2. Stage the updated lockfile:"
+            echo "         git add pnpm-lock.yaml"
+            echo "    3. Commit and push:"
+            echo "         git commit -m 'chore: regenerate lockfile'"
+            echo "         git push"
+            echo ""
+            echo "  WHY THIS MATTERS:"
+            echo "    Any change to overrides, catalog entries, or"
+            echo "    minimumReleaseAgeExclude in pnpm-workspace.yaml"
+            echo "    invalidates the lockfile hash. CI/CD reads the lockfile"
+            echo "    verbatim — if it doesn't reflect the current workspace"
+            echo "    config, the install fails."
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 1
+          fi
+
+      - name: Detect workspace + lockfile drift (push)
+        if: github.event_name == 'push'
+        run: |
+          WORKSPACE_CHANGED=$(git diff --name-only HEAD~1 HEAD -- pnpm-workspace.yaml 2>/dev/null | wc -l | tr -d ' ')
+          LOCKFILE_CHANGED=$(git diff --name-only HEAD~1 HEAD -- pnpm-lock.yaml 2>/dev/null | wc -l | tr -d ' ')
+
+          echo "pnpm-workspace.yaml changed: $WORKSPACE_CHANGED"
+          echo "pnpm-lock.yaml changed:      $LOCKFILE_CHANGED"
+
+          if [ "$WORKSPACE_CHANGED" -gt 0 ] && [ "$LOCKFILE_CHANGED" -eq 0 ]; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  LOCKFILE MISMATCH DETECTED"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  pnpm-workspace.yaml was modified in commit $(git rev-parse --short HEAD)"
+            echo "  but pnpm-lock.yaml was NOT updated to match."
+            echo ""
+            echo "  This will cause 'pnpm install --frozen-lockfile' to fail"
+            echo "  in downstream CI/CD (Cloudflare, Vercel, deploy pipelines)."
+            echo ""
+            echo "  HOW TO FIX:"
+            echo "    1. Locally run:"
+            echo "         pnpm install --no-frozen-lockfile"
+            echo "    2. Commit the regenerated lockfile:"
+            echo "         git add pnpm-lock.yaml"
+            echo "         git commit -m 'chore: regenerate lockfile'"
+            echo "         git push"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Verify frozen-lockfile passes
+        run: |
+          echo "Running pnpm install --frozen-lockfile to verify lockfile integrity..."
+          pnpm install --frozen-lockfile || {
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  FROZEN LOCKFILE INSTALL FAILED"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  pnpm install --frozen-lockfile exited with an error."
+            echo "  This means the lockfile (pnpm-lock.yaml) does not match"
+            echo "  the current package manifests (pnpm-workspace.yaml,"
+            echo "  package.json files)."
+            echo ""
+            echo "  MOST COMMON CAUSES:"
+            echo "    1. pnpm-workspace.yaml changed (overrides, catalog,"
+            echo "       minimumReleaseAgeExclude) without regenerating the lockfile"
+            echo "    2. A package.json dependency was added/changed without"
+            echo "       running pnpm install"
+            echo "    3. The lockfile was manually edited"
+            echo ""
+            echo "  FIX:"
+            echo "    pnpm install --no-frozen-lockfile"
+            echo "    git add pnpm-lock.yaml"
+            echo "    git commit -m 'chore: regenerate lockfile'"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 1
+          }
+          echo "✅ Lockfile is consistent. pnpm install --frozen-lockfile passed."
