@@ -8,10 +8,21 @@
  *
  * SEC-003 (2026-06-06): Removed hardcoded JWT fallback — hard fail if secret absent.
  * OTP-001 (2026-06-06): Added IP-level rate limiting, sliding window, abuse logging.
+ * IDN-001 (2026-06-07): verify-otp now signs with RALD_JWT_SECRET + standard ecosystem
+ *                        claims (sub, email, role, iss, aud, iat, exp).
+ *                        LOOP_JWT_SECRET is deprecated; /me retains a 30-day transition
+ *                        fallback for existing sessions. Remove fallback 2026-07-07.
  */
 
 import { Hono } from "hono";
 import type { CloudflareEnv } from "../types/env.js";
+import {
+  signJwt,
+  verifyJwt,
+  JWT_ISSUER,
+  JWT_AUDIENCE,
+  TTL_OTP_S,
+} from "../lib/jwt.js";
 
 const auth = new Hono<{ Bindings: CloudflareEnv }>();
 
@@ -38,7 +49,7 @@ function normalizePhone(raw: string): string {
   return raw.replace(/\s/g, "").replace(/^00/, "+");
 }
 
-/** Extract real client IP — CF-Connecting-IP is set by Cloudflare before the Worker receives the request */
+/** Extract real client IP — CF-Connecting-IP is set by Cloudflare before the Worker sees the request. */
 export function getClientIp(request: Request): string {
   return (
     request.headers.get("CF-Connecting-IP") ??
@@ -69,9 +80,9 @@ export async function checkSlidingWindow(
   // Evict expired entries
   timestamps = timestamps.filter((t) => t > windowStart);
 
-  const allowed = timestamps.length < limit;
-  const remaining = Math.max(0, limit - timestamps.length - (allowed ? 1 : 0));
-  const resetAtMs = timestamps.length > 0 ? timestamps[0]! + windowMs : now + windowMs;
+  const allowed    = timestamps.length < limit;
+  const remaining  = Math.max(0, limit - timestamps.length - (allowed ? 1 : 0));
+  const resetAtMs  = timestamps.length > 0 ? timestamps[0]! + windowMs : now + windowMs;
 
   if (allowed) {
     timestamps.push(now);
@@ -83,7 +94,7 @@ export async function checkSlidingWindow(
   return { allowed, remaining, resetAtSec: Math.floor(resetAtMs / 1000) };
 }
 
-/** Structured abuse log — never logs full phone number */
+/** Structured abuse log — never logs full phone number. */
 export function logAbuse(event: {
   type: "otp_send_ip_blocked" | "otp_send_phone_blocked" | "otp_verify_ip_blocked";
   ip: string;
@@ -98,57 +109,13 @@ export function logAbuse(event: {
   }));
 }
 
-async function signJwt(
-  payload: Record<string, unknown>,
-  secret: string,
-): Promise<string> {
-  const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  const body = btoa(JSON.stringify(payload))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
-  );
-  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(`${header}.${body}`));
-  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig)))
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  return `${header}.${body}.${sigB64}`;
-}
-
-async function verifyJwt(
-  token: string,
-  secret: string,
-): Promise<Record<string, unknown> | null> {
-  try {
-    const [header, body, sig] = token.split(".");
-    const enc = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      "raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
-    );
-    const sigBytes = Uint8Array.from(
-      atob(sig.replace(/-/g, "+").replace(/_/g, "/")),
-      (c) => c.charCodeAt(0),
-    );
-    const valid = await crypto.subtle.verify(
-      "HMAC", key, sigBytes, enc.encode(`${header}.${body}`),
-    );
-    if (!valid) return null;
-    const payload = JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/")));
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
-    return payload;
-  } catch {
-    return null;
-  }
-}
-
 async function supabaseAdminRequest(
   url: string,
   serviceKey: string,
   method: string,
   body?: unknown,
 ) {
-  const res = await fetch(url, {
+  return fetch(url, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -157,7 +124,6 @@ async function supabaseAdminRequest(
     },
     body: body ? JSON.stringify(body) : undefined,
   });
-  return res;
 }
 
 // ── POST /api/auth/send-otp ───────────────────────────────────────────────────
@@ -174,12 +140,9 @@ auth.post("/send-otp", async (c) => {
 
   const phoneSuffix = normalized.slice(-4);
 
-  // ── Rate limit 1: IP-level (10 OTPs/hour/IP) ────────────────────────────────
+  // ── Rate limit 1: IP-level (10 OTPs/hour/IP) ─────────────────────────────
   const ipCheck = await checkSlidingWindow(
-    c.env.CACHE,
-    `otp:ip:${ip}`,
-    RATE.ipSendLimit,
-    RATE.ipSendWindow,
+    c.env.CACHE, `otp:ip:${ip}`, RATE.ipSendLimit, RATE.ipSendWindow,
   );
   if (!ipCheck.allowed) {
     logAbuse({ type: "otp_send_ip_blocked", ip, phoneSuffix, remaining: 0, resetAtSec: ipCheck.resetAtSec });
@@ -190,12 +153,9 @@ auth.post("/send-otp", async (c) => {
     );
   }
 
-  // ── Rate limit 2: Phone-level (5 OTPs/hour/phone) ───────────────────────────
+  // ── Rate limit 2: Phone-level (5 OTPs/hour/phone) ────────────────────────
   const phoneCheck = await checkSlidingWindow(
-    c.env.CACHE,
-    `otp:phone:${normalized}`,
-    RATE.phoneLimit,
-    RATE.phoneWindow,
+    c.env.CACHE, `otp:phone:${normalized}`, RATE.phoneLimit, RATE.phoneWindow,
   );
   if (!phoneCheck.allowed) {
     logAbuse({ type: "otp_send_phone_blocked", ip, phoneSuffix, remaining: 0, resetAtSec: phoneCheck.resetAtSec });
@@ -211,17 +171,17 @@ auth.post("/send-otp", async (c) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        api_key: c.env.TERMII_API_KEY,
-        message_type: "NUMERIC",
-        to: normalized,
-        from: c.env.TERMII_SENDER_ID,
-        channel: "generic",
-        pin_attempts: 3,
-        pin_time_to_live: 10,
-        pin_length: 6,
-        pin_placeholder: "< 1234 >",
-        message_text: "Your Loop verification code is < 1234 >. Valid for 10 minutes. Do not share this code.",
-        pin_type: "NUMERIC",
+        api_key:            c.env.TERMII_API_KEY,
+        message_type:       "NUMERIC",
+        to:                 normalized,
+        from:               c.env.TERMII_SENDER_ID,
+        channel:            "generic",
+        pin_attempts:       3,
+        pin_time_to_live:   10,
+        pin_length:         6,
+        pin_placeholder:    "< 1234 >",
+        message_text:       "Your Loop verification code is < 1234 >. Valid for 10 minutes. Do not share this code.",
+        pin_type:           "NUMERIC",
       }),
     });
 
@@ -263,15 +223,12 @@ auth.post("/verify-otp", async (c) => {
 
   if (!phone || !token) return c.json({ error: "phone and token are required" }, 400);
 
-  const normalized = normalizePhone(phone);
+  const normalized  = normalizePhone(phone);
   const phoneSuffix = normalized.slice(-4);
 
-  // ── Rate limit: IP-level on verify (20/hour/IP — prevents brute-force of OTP codes) ──
+  // ── Rate limit: IP-level on verify (prevents brute-force of OTP codes) ───
   const ipCheck = await checkSlidingWindow(
-    c.env.CACHE,
-    `otp:verify:ip:${ip}`,
-    RATE.ipVerifyLimit,
-    RATE.ipVerifyWindow,
+    c.env.CACHE, `otp:verify:ip:${ip}`, RATE.ipVerifyLimit, RATE.ipVerifyWindow,
   );
   if (!ipCheck.allowed) {
     logAbuse({ type: "otp_verify_ip_blocked", ip, phoneSuffix, remaining: 0, resetAtSec: ipCheck.resetAtSec });
@@ -283,7 +240,6 @@ auth.post("/verify-otp", async (c) => {
   }
 
   const otpRaw = await c.env.CACHE.get(`otp:${normalized}`);
-
   if (!otpRaw) {
     return c.json({ error: "OTP expired or not found. Request a new code." }, 400);
   }
@@ -296,8 +252,8 @@ auth.post("/verify-otp", async (c) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         api_key: c.env.TERMII_API_KEY,
-        pin_id: pinId,
-        pin: token,
+        pin_id:  pinId,
+        pin:     token,
       }),
     });
 
@@ -310,14 +266,14 @@ auth.post("/verify-otp", async (c) => {
     await c.env.CACHE.delete(`otp:${normalized}`);
 
     const supabaseUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
-    const serviceKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
+    const serviceKey  = c.env.SUPABASE_SERVICE_ROLE_KEY;
 
     let userId: string;
     let isNewUser = false;
+
     const listRes = await supabaseAdminRequest(
       `${supabaseUrl}/auth/v1/admin/users?phone=${encodeURIComponent(normalized)}&per_page=1`,
-      serviceKey,
-      "GET",
+      serviceKey, "GET",
     );
 
     const createNewUser = async (): Promise<string> => {
@@ -357,29 +313,32 @@ auth.post("/verify-otp", async (c) => {
       }),
     });
 
-    // SEC-003: No hardcoded fallback — hard fail if secret is absent.
-    const jwtSecret = c.env.LOOP_JWT_SECRET;
-    if (!jwtSecret) {
-      console.error("[auth/verify-otp] LOOP_JWT_SECRET is not configured — refusing to issue tokens");
-      return c.json({ error: "Service configuration error. Please try again later." }, 500);
-    }
-
+    // IDN-001: Unified signing — RALD_JWT_SECRET, standard ecosystem claims.
+    // RALD_JWT_SECRET is required and enforced at startup (CloudflareEnv).
+    const now = Math.floor(Date.now() / 1000);
     const accessToken = await signJwt(
       {
-        sub: userId,
-        phone: normalized,
-        iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30,
-        role: "authenticated",
+        sub:    userId,           // Supabase Auth UUID — populates auth.uid() once Supabase JWT secret aligned
+        email:  null,             // OTP is phone-only — no email on this path
+        role:   "authenticated",
+        iss:    JWT_ISSUER,       // "https://loop-api.rald.cloud"
+        aud:    JWT_AUDIENCE,     // "loop"
+        iat:    now,
+        exp:    now + TTL_OTP_S,  // 30 days
+        // Backward-compat: id mirrors sub for /me fallback (payload.id ?? payload.sub).
+        // Remove after LOOP_JWT_SECRET transition window closes (2026-07-07).
+        id:     userId,
+        phone:  normalized,
+        source: "otp",
       },
-      jwtSecret,
+      c.env.RALD_JWT_SECRET,
     );
 
     return c.json({
-      ok: true,
+      ok:           true,
       access_token: accessToken,
-      is_new_user: isNewUser,
-      user: { id: userId, phone: normalized },
+      is_new_user:  isNewUser,
+      user:         { id: userId, phone: normalized },
     });
   } catch (err) {
     console.error("[auth/verify-otp] unexpected error:", err);
@@ -396,8 +355,12 @@ auth.get("/me", async (c) => {
 
   const token = authHeader.slice(7);
 
+  // Primary: validate with unified RALD_JWT_SECRET (all tokens issued after IDN-001)
   let payload = await verifyJwt(token, c.env.RALD_JWT_SECRET);
 
+  // Deprecated fallback: accept LOOP_JWT_SECRET tokens during 30-day session transition.
+  // Existing OTP sessions (signed with LOOP_JWT_SECRET) expire by 2026-07-07.
+  // Remove this block and the LOOP_JWT_SECRET secret on that date.
   if (!payload && c.env.LOOP_JWT_SECRET) {
     payload = await verifyJwt(token, c.env.LOOP_JWT_SECRET);
   }
@@ -408,25 +371,21 @@ auth.get("/me", async (c) => {
   if (!userId) return c.json({ error: "Invalid token: missing user id" }, 401);
 
   const supabaseUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
-  const serviceKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
+  const serviceKey  = c.env.SUPABASE_SERVICE_ROLE_KEY;
 
   const profileRes = await fetch(
     `${supabaseUrl}/rest/v1/profiles?id=eq.${userId}&select=*`,
-    {
-      headers: {
-        Authorization: `Bearer ${serviceKey}`,
-        apikey: serviceKey,
-      },
-    },
+    { headers: { Authorization: `Bearer ${serviceKey}`, apikey: serviceKey } },
   );
 
   const profiles = profileRes.ok ? await profileRes.json<unknown[]>() : [];
-  const profile = profiles[0] ?? null;
+  const profile  = profiles[0] ?? null;
 
   return c.json({
-    user: { id: userId, phone: payload.phone, role: payload.role },
+    user:    { id: userId, phone: payload.phone, email: payload.email, role: payload.role },
     profile,
   });
 });
 
-export { auth, verifyJwt };
+export { auth };
+export { verifyJwt } from "../lib/jwt.js";
