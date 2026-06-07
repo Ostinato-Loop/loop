@@ -11,7 +11,6 @@ import {
   LogOut,
 } from "lucide-react";
 import { useState } from "react";
-import { userRegion } from "@/lib/loop-mock";
 import { useLoop } from "@/lib/loop-store";
 import { useAuth } from "@/hooks/use-auth";
 import { AppShell } from "@/components/layout/app-shell";
@@ -23,6 +22,9 @@ export default function MeLaunchPage() {
   const { user, profile, signOut } = useAuth();
   const [tab, setTab] = useState<Tab>("activity");
   const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportMsg, setReportMsg] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
 
   const displayName  = profile?.display_name ?? user?.phone ?? "You";
   const handle       = profile?.username ?? "";
@@ -55,9 +57,11 @@ export default function MeLaunchPage() {
             {isVerified && <BadgeCheck className="h-5 w-5 text-neon fill-neon/20" />}
           </div>
           {handle && <div className="text-xs text-muted-foreground">@{handle} · {handle}@rald.me</div>}
-          <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-            <MapPin className="h-3 w-3" />{userRegion.city}
-          </div>
+          {profile?.state_id && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+              <MapPin className="h-3 w-3" />{profile.state_id}
+            </div>
+          )}
           {bio && <p className="text-sm mt-2 leading-snug">{bio}</p>}
         </div>
 
@@ -141,6 +145,60 @@ export default function MeLaunchPage() {
             })}
           </div>
         </div>
+
+        <button
+          onClick={() => setReportOpen(true)}
+          className="mt-4 w-full h-11 rounded-2xl border border-border bg-secondary text-foreground text-sm font-semibold flex items-center justify-center gap-2"
+        >
+          Report a problem
+        </button>
+
+        {reportOpen && (
+          <div className="mt-3 rounded-2xl border border-border bg-surface p-4 space-y-3">
+            <h3 className="text-sm font-bold">What went wrong?</h3>
+            <textarea
+              value={reportMsg}
+              onChange={(e) => setReportMsg(e.target.value)}
+              placeholder="Describe the problem…"
+              rows={3}
+              maxLength={500}
+              className="w-full rounded-xl bg-background border border-border px-3 py-2 text-sm outline-none resize-none placeholder:text-muted-foreground"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  if (!reportMsg.trim() || reportBusy) return;
+                  setReportBusy(true);
+                  try {
+                    const token = localStorage.getItem("loop_access_token");
+                    await fetch("/api/feedback", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
+                      body: JSON.stringify({ message: reportMsg, page: window.location.pathname }),
+                    });
+                    setReportOpen(false);
+                    setReportMsg("");
+                    import("sonner").then(({ toast }) => toast.success("Thanks — we'll look into it."));
+                  } catch {
+                    import("sonner").then(({ toast }) => toast.error("Could not send report — try again."));
+                  } finally {
+                    setReportBusy(false);
+                  }
+                }}
+                disabled={!reportMsg.trim() || reportBusy}
+                className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-40"
+              >
+                {reportBusy ? "Sending…" : "Send report"}
+              </button>
+              <button
+                onClick={() => { setReportOpen(false); setReportMsg(""); }}
+                className="h-10 px-4 rounded-xl bg-secondary text-sm font-semibold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         <button
           onClick={() => signOut()}
