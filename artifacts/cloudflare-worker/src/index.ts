@@ -36,6 +36,10 @@ app.route("/api/trending",        trending);
 app.route("/api/rooms",           rooms);
 app.route("/api/communities",     communities);
 
+// ── Shallow liveness probe (no dependency checks) ────────────────────
+app.get("/api/healthz", (c) => c.json({ ok: true, status: "live", service: "loop-api", ts: Date.now() }));
+app.get("/healthz",     (c) => c.json({ ok: true, status: "live", service: "loop-api", ts: Date.now() }));
+
 // ── 404 ───────────────────────────────────────────────────────────────
 app.notFound((c) =>
   c.json({ error: "Not found", path: c.req.path }, 404),
