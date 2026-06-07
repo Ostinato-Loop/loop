@@ -1,21 +1,32 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { AlertCircle } from "lucide-react";
+// Loop — 404 Not Found
+// V1 Stabilization: Matches RALD dark theme, links back home.
+// LILCKY STUDIO LIMITED
+
+import { Link } from "react-router-dom";
+import { Home, Mic } from "lucide-react";
 
 export default function NotFound() {
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <Card className="w-full max-w-md mx-4">
-        <CardContent className="pt-6">
-          <div className="flex mb-4 gap-2">
-            <AlertCircle className="h-8 w-8 text-red-500" />
-            <h1 className="text-2xl font-bold text-gray-900">404 Page Not Found</h1>
-          </div>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 text-center gap-6">
+      <div className="h-20 w-20 rounded-3xl bg-surface border border-border flex items-center justify-center">
+        <Mic className="h-9 w-9 text-muted-foreground/40" />
+      </div>
 
-          <p className="mt-4 text-sm text-gray-600">
-            Did you forget to add the page to the router?
-          </p>
-        </CardContent>
-      </Card>
+      <div className="space-y-1.5">
+        <p className="text-xs font-bold uppercase tracking-widest text-primary">404</p>
+        <h1 className="text-2xl font-extrabold font-display text-foreground">Page not found</h1>
+        <p className="text-sm text-muted-foreground max-w-xs">
+          This room doesn't exist — or the link may have changed.
+        </p>
+      </div>
+
+      <Link
+        to="/"
+        className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground shadow-mint active:scale-95 transition-transform"
+      >
+        <Home className="h-4 w-4" />
+        Back to Feed
+      </Link>
     </div>
   );
 }
