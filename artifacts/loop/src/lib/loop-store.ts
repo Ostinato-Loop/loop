@@ -131,11 +131,7 @@ export function LoopStoreProvider({ children }: { children: React.ReactNode }) {
     publishRoom:   useCallback((room) => dispatch({ type: "publishRoom", payload: room }), []),
   };
 
-  return (
-    <LoopStoreCtx.Provider value={store}>
-      {children}
-    </LoopStoreCtx.Provider>
-  );
+  return React.createElement(LoopStoreCtx.Provider, { value: store }, children);
 }
 
 export function useLoop(): Store {

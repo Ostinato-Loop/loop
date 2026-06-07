@@ -281,7 +281,7 @@ export default function RoomPage() {
   const [floats, setFloats] = useState<FloatingReaction[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [draft, setDraft] = useState("");
-  const { muted, speakingIds, toggleMic, audioState, audioError } = useLiveKitRoom(
+  const { muted, speakingIds, toggleMic, audioState, audioError: _audioError } = useLiveKitRoom(
     roomId,
     user?.id,
     !loading && !!user,
