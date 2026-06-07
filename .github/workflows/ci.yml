@@ -43,8 +43,12 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
-      - name: Type check (all packages)
+      - name: Type check (worker)
+        working-directory: artifacts/cloudflare-worker
         run: pnpm run typecheck
+      - name: Type check (frontend)
+        working-directory: artifacts/loop
+        run: pnpm exec tsc --noEmit
 
   test:
     name: Tests
@@ -60,7 +64,10 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
-      - name: Run test suite
+      - name: Worker tests
+        working-directory: artifacts/cloudflare-worker
+        run: pnpm run test
+      - name: Frontend tests
         working-directory: artifacts/loop
         run: pnpm run test
 
