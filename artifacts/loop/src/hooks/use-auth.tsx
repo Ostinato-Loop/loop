@@ -19,7 +19,9 @@
  *   - Use getRaldMasterToken() + openMessenger() / openProfiles() to navigate
  *     cross-app without requiring the user to sign in again (WS1-F2 / WS3-F1 fix)
  */
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from "react";
+import { toast } from "sonner";
+import { authFetch, AUTH_EXPIRED_EVENT } from "@/lib/api-fetch";
 
 export type Profile = {
   id: string;
@@ -134,6 +136,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [ssoError, setSsoError] = useState<string | null>(null);
+  const expiredToastShown = useRef(false);
+
+  const clearSession = useCallback(() => {
+    localStorage.removeItem(TOKEN_KEY);
+    setSession(null);
+    setProfile(null);
+  }, []);
+
+  // ── Listen for token expiry events dispatched by authFetch ───────────
+  useEffect(() => {
+    const handleExpired = () => {
+      clearSession();
+      if (!expiredToastShown.current) {
+        expiredToastShown.current = true;
+        toast.error("Session expired — please sign in again", {
+          duration: 5000,
+          onDismiss: () => { expiredToastShown.current = false; },
+          onAutoClose: () => { expiredToastShown.current = false; },
+        });
+      }
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleExpired);
+  }, [clearSession]);
 
   const loadSession = useCallback(async () => {
     let raw = localStorage.getItem(TOKEN_KEY);
@@ -164,14 +190,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
     setSession({ access_token: raw, user });
     try {
-      const res = await fetch(`${API_BASE}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${raw}` },
-      });
+      const res = await authFetch(`${API_BASE}/api/auth/me`);
       if (res.ok) {
         const data = await res.json() as { user: LoopUser; profile: Profile | null };
         setProfile(data.profile);
       }
-    } catch { /* network error — still logged in */ }
+    } catch { /* network error — still logged in with local token */ }
     setLoading(false);
   }, []);
 
@@ -218,17 +242,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadSession]);
 
   const refreshProfile = useCallback(async () => {
-    const raw = localStorage.getItem(TOKEN_KEY);
-    if (!raw) return;
+    if (!localStorage.getItem(TOKEN_KEY)) return;
     try {
-      const res = await fetch(`${API_BASE}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${raw}` },
-      });
+      const res = await authFetch(`${API_BASE}/api/auth/me`);
       if (res.ok) {
         const data = await res.json() as { user: LoopUser; profile: Profile | null };
         setProfile(data.profile);
       }
-    } catch { /* silent */ }
+    } catch { /* network error — leave profile as-is */ }
   }, []);
 
   const signOut = useCallback(async () => {
