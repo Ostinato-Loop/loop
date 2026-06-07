@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { useLoop } from "@/lib/loop-store";
 import { useAuth, computeTrustScore, getTrustLevel } from "@/hooks/use-auth";
 import { useMyFollowCounts } from "@/lib/api/follows";
 import { AppShell } from "@/components/layout/app-shell";
