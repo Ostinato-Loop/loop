@@ -22,7 +22,7 @@ export default function LoginPage() {
   useEffect(() => {
     if (!loading && user) {
       navigate("/", { replace: true });
-      return;
+      return undefined;
     }
     if (!loading) {
       // Show interstitial briefly, then redirect
@@ -33,6 +33,7 @@ export default function LoginPage() {
       }, INTERSTITIAL_MS);
       return () => clearTimeout(t);
     }
+    return undefined;
   }, [user, loading, navigate]);
 
   if (loading) {

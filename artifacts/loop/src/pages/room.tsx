@@ -149,6 +149,7 @@ function HostControls({
   onToggleMic,
   onEndRoom,
   raisedHandCount,
+  audioError,
 }: {
   muted: boolean;
   onToggleMic: () => void;
@@ -201,6 +202,7 @@ function SpeakerControls({
   muted,
   onToggleMic,
   onLeave,
+  audioError,
 }: {
   muted: boolean;
   onToggleMic: () => void;
