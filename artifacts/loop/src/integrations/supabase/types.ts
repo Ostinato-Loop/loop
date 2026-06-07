@@ -24,7 +24,11 @@ export type Database = {
           interests: string[] | null
           is_creator: boolean
           is_verified: boolean
+          country: string | null
           language: string | null
+          lcda_id: string | null
+          lga_id: string | null
+          state_id: string | null
           onboarded: boolean
           updated_at: string
           username: string | null
@@ -38,7 +42,11 @@ export type Database = {
           interests?: string[] | null
           is_creator?: boolean
           is_verified?: boolean
+          country?: string | null
           language?: string | null
+          lcda_id?: string | null
+          lga_id?: string | null
+          state_id?: string | null
           onboarded?: boolean
           updated_at?: string
           username?: string | null
@@ -52,7 +60,11 @@ export type Database = {
           interests?: string[] | null
           is_creator?: boolean
           is_verified?: boolean
+          country?: string | null
           language?: string | null
+          lcda_id?: string | null
+          lga_id?: string | null
+          state_id?: string | null
           onboarded?: boolean
           updated_at?: string
           username?: string | null
