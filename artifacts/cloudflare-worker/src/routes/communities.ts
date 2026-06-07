@@ -242,7 +242,7 @@ communities.get("/nearby", async (c) => {
 
   let path =
     `/rest/v1/communities?visibility=eq.public` +
-    `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,country_code,is_civic,member_count,room_count,is_verified,created_at,owner_id` +
+    `&select=*` +
     `&order=member_count.desc` +
     `&limit=${limit}`;
 
@@ -255,8 +255,9 @@ communities.get("/nearby", async (c) => {
 
   const resp = await sbGet(sb, path);
   if (!resp.ok) {
-    console.error(`[communities/nearby] supabase error ${resp.status} trace=${tid}`);
-    return c.json({ error: "Failed to fetch nearby communities" }, 500);
+    const errBody = await resp.text().catch(() => "");
+    console.error(`[communities/nearby] supabase error ${resp.status} trace=${tid}`, errBody.slice(0,200));
+    return c.json({ error: "Failed to fetch nearby communities", _debug: errBody.slice(0,300) }, 500);
   }
 
   const data = await resp.json() as unknown[];
@@ -267,7 +268,7 @@ communities.get("/nearby", async (c) => {
     const fallbackPath =
       `/rest/v1/communities?visibility=eq.public` +
       `&type=eq.interest` +
-      `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,country_code,is_civic,member_count,room_count,is_verified,created_at,owner_id` +
+      `&select=*` +
       `&order=member_count.desc&limit=${limit}`;
     const fallbackResp = await sbGet(sb, fallbackPath);
     if (fallbackResp.ok) {
@@ -313,7 +314,7 @@ communities.get("/interests", async (c) => {
   let path =
     `/rest/v1/communities?visibility=eq.public` +
     `&type=eq.interest` +
-    `&select=id,name,slug,description,cover_url,category,visibility,type,interest_tags,member_count,room_count,is_verified,created_at,owner_id` +
+    `&select=*` +
     `&order=member_count.desc&limit=${limit}`;
 
   if (tags.length > 0) {
@@ -324,8 +325,9 @@ communities.get("/interests", async (c) => {
 
   const resp = await sbGet(sb, path);
   if (!resp.ok) {
-    console.error(`[communities/interests] supabase error ${resp.status} trace=${tid}`);
-    return c.json({ error: "Failed to fetch interest communities" }, 500);
+    const errBody = await resp.text().catch(() => "");
+    console.error(`[communities/interests] supabase error ${resp.status} trace=${tid}`, errBody.slice(0,200));
+    return c.json({ error: "Failed to fetch interest communities", _debug: errBody.slice(0,300) }, 500);
   }
 
   const data = await resp.json() as unknown[];
@@ -356,15 +358,16 @@ communities.get("/state/:stateId", async (c) => {
   let path =
     `/rest/v1/communities?visibility=eq.public` +
     `&region_id=eq.${encodeURIComponent(stateId.toUpperCase())}` +
-    `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,region_scope,country_code,is_civic,member_count,room_count,is_verified,created_at,owner_id` +
+    `&select=*` +
     `&order=member_count.desc&limit=${limit}`;
 
   if (civicOnly) path += `&is_civic=eq.true`;
 
   const resp = await sbGet(sb, path);
   if (!resp.ok) {
-    console.error(`[communities/state] supabase error ${resp.status} stateId=${stateId} trace=${tid}`);
-    return c.json({ error: "Failed to fetch state communities" }, 500);
+    const errBody = await resp.text().catch(() => "");
+    console.error(`[communities/state] supabase error ${resp.status} stateId=${stateId} trace=${tid}`, errBody.slice(0,200));
+    return c.json({ error: "Failed to fetch state communities", _debug: errBody.slice(0,300) }, 500);
   }
 
   const data = await resp.json() as unknown[];
@@ -512,7 +515,7 @@ communities.get("/", async (c) => {
 
   let path =
     `/rest/v1/communities?visibility=eq.public` +
-    `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,country_code,is_civic,member_count,room_count,is_verified,created_at,owner_id` +
+    `&select=*` +
     `&order=member_count.desc,created_at.desc` +
     `&limit=${limit}&offset=${offset}`;
 
@@ -525,8 +528,9 @@ communities.get("/", async (c) => {
 
   const resp = await sbGet(sb, path);
   if (!resp.ok) {
-    console.error("[communities/list] supabase error:", resp.status);
-    return c.json({ error: "Failed to fetch communities" }, 500);
+    const errBody = await resp.text().catch(() => "");
+    console.error("[communities/list] supabase error:", resp.status, errBody.slice(0,200));
+    return c.json({ error: "Failed to fetch communities", _debug: errBody.slice(0,300) }, 500);
   }
 
   let data = await resp.json() as unknown[];
@@ -559,10 +563,14 @@ communities.get("/:slug", async (c) => {
 
   const resp = await sbGet(sb,
     `/rest/v1/communities?${filter}` +
-    `&select=id,name,slug,description,cover_url,category,visibility,type,region_id,region_scope,country_code,is_civic,health_score,interest_tags,member_count,room_count,active_room_count,is_verified,is_suspended,created_at,updated_at,owner_id` +
+    `&select=*` +
     `&limit=1`);
 
-  if (!resp.ok) return c.json({ error: "Failed to fetch community" }, 500);
+  if (!resp.ok) {
+    const errBody = await resp.text().catch(() => "");
+    console.error(`[communities/detail] supabase error ${resp.status}`, errBody.slice(0,200));
+    return c.json({ error: "Failed to fetch community", _debug: errBody.slice(0,300) }, 500);
+  }
   const rows = await resp.json() as unknown[];
   if (!rows[0]) return c.json({ error: "Community not found" }, 404);
 

@@ -130,8 +130,13 @@ regions.get("/search", async (c) => {
 
     const fallbackResp = await sbGet(sbUrl, sbKey, ilikePath);
     if (!fallbackResp.ok) {
-      console.error(`[regions/search] fallback also failed ${fallbackResp.status} trace=${tid}`);
-      return c.json({ error: "Region search unavailable" }, 500);
+      const fbBody = await fallbackResp.text().catch(() => "");
+      console.error(`[regions/search] fallback also failed ${fallbackResp.status} trace=${tid}`, fbBody.slice(0,200));
+      return c.json({
+        error: "Region search unavailable",
+        _debug: `rpc:${resp.status} ilike:${fallbackResp.status} ${fbBody.slice(0,200)}`,
+        hint: "rald_regions table requires migration 009 — run: supabase db push",
+      }, 500);
     }
 
     const fallbackData = await fallbackResp.json() as RegionResult[];
