@@ -8,12 +8,14 @@ import {
   searchRelatedPeople, getPeopleSuggestions, hasRaldIdentity,
   type PersonResult, type PersonSuggestion,
 } from "@/lib/api/people";
+import { useFollow } from "@/lib/api/follows";
 import {
   Search, Sparkles, Radio, Globe2, TrendingUp,
   Mic, Calendar, Briefcase, Newspaper, ChevronRight,
-  Users, BadgeCheck, UserPlus,
+  Users, BadgeCheck, UserPlus, UserCheck, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 /* ── feed tab types ─────────────────────────────────────────────────── */
 type FeedTab = "all" | "live" | "near" | "trending" | "events" | "people";
@@ -57,7 +59,7 @@ function initials(name: string) {
   return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 }
 
-/* ── Sprint 01: honest empty states — no mock enrichment items ──────── */
+/* ── Sprint 01: honest empty states ────────────────────────────────── */
 function DiscussionsEmpty() {
   return (
     <div className="rounded-2xl border border-dashed border-border bg-surface/50 p-5 text-center space-y-1.5">
@@ -116,7 +118,7 @@ function PeopleSkeleton() {
   );
 }
 
-/* ── person card ────────────────────────────────────────────────────── */
+/* ── person card — with real follow/unfollow ─────────────────────────── */
 type PersonCardProps = {
   userId: string;
   username: string | null;
@@ -132,9 +134,19 @@ function PersonCard({ userId, username, displayName, avatarUrl, isVerified, rald
   const label = displayName ?? username ?? raldId;
   const sub   = username ? `@${username}` : raldId;
   const color = avatarColor(userId);
+  const { following, loading, toggle } = useFollow(userId);
+
+  const handleToggle = async () => {
+    try {
+      await toggle();
+      toast.success(following ? `Unfollowed ${label}` : `Following ${label}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not update follow");
+    }
+  };
 
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface/60 px-4 py-3 active:bg-surface transition-colors">
+    <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface/60 px-4 py-3 transition-colors">
       {/* Avatar */}
       <div className="relative shrink-0">
         {avatarUrl ? (
@@ -164,14 +176,26 @@ function PersonCard({ userId, username, displayName, avatarUrl, isVerified, rald
         )}
       </div>
 
-      {/* Action */}
+      {/* Follow / Unfollow button */}
       <button
         type="button"
-        className="shrink-0 flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary active:scale-95 transition-transform"
-        aria-label={`Connect with ${label}`}
+        onClick={handleToggle}
+        disabled={loading}
+        className={cn(
+          "shrink-0 flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all active:scale-95",
+          following
+            ? "border-border bg-secondary text-foreground"
+            : "border-primary/40 bg-primary/10 text-primary",
+        )}
+        aria-label={following ? `Unfollow ${label}` : `Follow ${label}`}
       >
-        <UserPlus className="h-3 w-3" />
-        Connect
+        {loading ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : following ? (
+          <><UserCheck className="h-3 w-3" />Following</>
+        ) : (
+          <><UserPlus className="h-3 w-3" />Connect</>
+        )}
       </button>
     </div>
   );
@@ -188,7 +212,6 @@ function PeopleTab() {
   const debounceRef                   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasIdentity                   = hasRaldIdentity();
 
-  // Load "People you may know" on mount
   useEffect(() => {
     if (!hasIdentity) { setLoadingSugg(false); return; }
     getPeopleSuggestions(10)
@@ -196,7 +219,6 @@ function PeopleTab() {
       .catch((e: Error) => { setError(e.message); setLoadingSugg(false); });
   }, [hasIdentity]);
 
-  // Debounced search
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!query.trim()) { setResults(null); return; }
@@ -290,7 +312,7 @@ function PeopleTab() {
         </section>
       )}
 
-      {/* Suggestions — shown when not actively searching */}
+      {/* Suggestions */}
       {!showSearch && (
         <section>
           <div className="mb-3 flex items-center gap-1.5">
@@ -402,7 +424,7 @@ export default function DiscoverPage() {
           })}
         </div>
 
-        {/* Category chips — hidden on People tab */}
+        {/* Category chips */}
         {feedTab !== "people" && (
           <div className="hide-scrollbar flex gap-1.5 overflow-x-auto px-5 pb-3">
             {CATEGORIES.map((c) => (
@@ -426,11 +448,11 @@ export default function DiscoverPage() {
 
       <div className="px-5 py-4 space-y-6 pb-8">
         {error && (
-            <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 flex items-center gap-2.5">
-              <span className="text-base" aria-hidden>⚠️</span>
-              <p className="text-sm font-medium text-destructive">{error}</p>
-            </div>
-          )}
+          <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 flex items-center gap-2.5">
+            <span className="text-base" aria-hidden>⚠️</span>
+            <p className="text-sm font-medium text-destructive">{error}</p>
+          </div>
+        )}
 
         {/* ── People tab ── */}
         {feedTab === "people" && <PeopleTab />}
@@ -474,10 +496,8 @@ export default function DiscoverPage() {
               )}
             </section>
 
-            {/* Discussions — Sprint 01 honest empty state */}
             <DiscussionsEmpty />
 
-            {/* More rooms */}
             {allRooms.length > 3 && (
               <section>
                 <h2 className="font-display text-sm font-bold uppercase tracking-wider mb-3">More rooms</h2>
@@ -487,7 +507,6 @@ export default function DiscoverPage() {
               </section>
             )}
 
-            {/* Opportunities — Sprint 01 honest empty state */}
             <section>
               <h2 className="font-display text-sm font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <Briefcase className="h-3.5 w-3.5 text-primary" />Opportunities
@@ -495,7 +514,6 @@ export default function DiscoverPage() {
               <OpportunitiesEmpty />
             </section>
 
-            {/* News — Sprint 01 honest empty state */}
             <section>
               <h2 className="font-display text-sm font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5">
                 <Newspaper className="h-3.5 w-3.5 text-primary" />News & updates
