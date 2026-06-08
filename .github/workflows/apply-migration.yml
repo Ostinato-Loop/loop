@@ -1,0 +1,64 @@
+name: Apply DB Migration
+
+on:
+  workflow_dispatch:
+    inputs:
+      migration:
+        description: "Migration filename (e.g. 009_rald_region_registry.sql)"
+        required: true
+        default: "009_rald_region_registry.sql"
+      confirm:
+        description: "Type APPLY to confirm"
+        required: true
+
+jobs:
+  migrate:
+    name: Apply Migration to Production
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.confirm == 'APPLY' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate migration file exists
+        run: |
+          MIGRATION="${{ github.event.inputs.migration }}"
+          if [ ! -f "supabase/migrations/$MIGRATION" ]; then
+            echo "ERROR: supabase/migrations/$MIGRATION not found"
+            exit 1
+          fi
+          echo "Migration file found: supabase/migrations/$MIGRATION"
+          wc -l "supabase/migrations/$MIGRATION"
+
+      - name: Apply migration via psql
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "ERROR: SUPABASE_DB_URL secret not set."
+            echo "Add it in: GitHub → loop repo → Settings → Secrets → Actions → New secret"
+            echo "Value: postgresql://postgres:[DB_PASSWORD]@db.onxdcikfttdmnhofsuwo.supabase.co:5432/postgres"
+            echo "Get the DB_PASSWORD from: Supabase dashboard → Settings → Database → Connection string"
+            exit 1
+          fi
+          MIGRATION="${{ github.event.inputs.migration }}"
+          echo "Applying migration: $MIGRATION"
+          psql "$SUPABASE_DB_URL" -f "supabase/migrations/$MIGRATION" --set ON_ERROR_STOP=1
+          echo "Migration applied successfully."
+
+      - name: Verify migration (rald_regions)
+        if: contains(github.event.inputs.migration, 'region')
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          COUNT=$(psql "$SUPABASE_DB_URL" -t -c "SELECT COUNT(*) FROM public.rald_regions;" 2>/dev/null | tr -d ' ')
+          echo "rald_regions row count: $COUNT"
+          if [ -z "$COUNT" ] || [ "$COUNT" -lt "1" ]; then
+            echo "ERROR: Migration may have failed — rald_regions has no rows"
+            exit 1
+          fi
+          echo "✅ Migration verified: $COUNT regions seeded"
+
+      - name: Audit log
+        if: always()
+        run: |
+          echo "MIGRATION AUDIT: migration=${{ github.event.inputs.migration }} actor=${{ github.actor }} run=${{ github.run_id }} sha=${{ github.sha }} ts=$(date -u +%Y-%m-%dT%H:%M:%SZ) status=${{ job.status }}"
