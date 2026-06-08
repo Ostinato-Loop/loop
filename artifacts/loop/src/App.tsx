@@ -1,5 +1,5 @@
 // Loop App — V1 Final Stabilization + Auth Hardening
-// ProtectedRoute: unauthenticated users redirected to /login with ?next= preserved.
+// ProtectedRoute: unauthenticated → /login?next=. Not onboarded → /onboarding.
 // /auth/callback: dedicated landing page after profiles.rald.cloud authentication.
 // All existing routes, layout, and design unchanged.
 // LILCKY STUDIO LIMITED
@@ -36,13 +36,20 @@ const queryClient = new QueryClient({
 });
 
 /**
- * ProtectedRoute — wraps pages that require an authenticated session.
- * While auth is resolving: show a spinner (preserves design, no flash of content).
- * Not authenticated: redirect to /login?next=<intended-path> so after auth
- * the user lands exactly where they wanted to go.
+ * ProtectedRoute — guards every page that requires an authenticated session.
+ *
+ * 1. While auth resolves: spinner (prevents flash of empty content on cold load).
+ * 2. No session:  → /login?next=<intended-path>  (preserved through auth callback)
+ * 3. Authenticated but profile.onboarded === false AND not already at /onboarding:
+ *    → /onboarding  (new user gate — lets first-time users set a display name before
+ *    they enter the feed, without blocking users whose profile failed to load due to
+ *    network error, since profile===null falls through rather than blocking).
+ * 4. All other cases: render children as-is.
+ *
+ * No visual changes — design is unchanged.
  */
 function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -56,6 +63,12 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   if (!user) {
     const next = encodeURIComponent(location.pathname + location.search);
     return <Navigate to={`/login?next=${next}`} replace />;
+  }
+
+  // profile===null means the /me fetch failed (network error) — don't block the user.
+  // Only gate on onboarding when we know for certain profile.onboarded is false.
+  if (profile !== null && !profile.onboarded && location.pathname !== "/onboarding") {
+    return <Navigate to="/onboarding" replace />;
   }
 
   return <>{children}</>;
