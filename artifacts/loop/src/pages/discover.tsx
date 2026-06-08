@@ -24,9 +24,10 @@ import {
 import {
   Search, Sparkles, Radio, Globe2, TrendingUp,
   Mic, Calendar, Briefcase, Newspaper, ChevronRight,
-  Users, BadgeCheck, UserPlus, MapPin, Loader2, ChevronDown,
+  Users, BadgeCheck, Check, UserPlus, MapPin, Loader2, ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useFollow } from "@/hooks/use-follow";
 
 /* ── Feed tab types ─────────────────────────────────────────────────── */
 type FeedTab = "all" | "live" | "near" | "trending" | "events" | "people";
@@ -229,6 +230,7 @@ function PersonCard({ userId, username, displayName, avatarUrl, isVerified, rald
   const label = displayName ?? username ?? raldId;
   const sub   = username ? `@${username}` : raldId;
   const color = avatarColor(userId);
+  const { following, loading, toggle } = useFollow(userId);
 
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface/60 px-4 py-3 active:bg-surface transition-colors">
@@ -249,10 +251,21 @@ function PersonCard({ userId, username, displayName, avatarUrl, isVerified, rald
       </div>
       <button
         type="button"
-        className="shrink-0 flex items-center gap-1 rounded-full border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary active:scale-95 transition-transform"
-        aria-label={`Connect with ${label}`}
+        onClick={toggle}
+        disabled={loading}
+        className={cn(
+          "shrink-0 flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold active:scale-95 transition-all disabled:opacity-50",
+          following
+            ? "border-primary/20 bg-primary/5 text-primary/70"
+            : "border-primary/40 bg-primary/10 text-primary",
+        )}
+        aria-label={following ? `Unfollow ${label}` : `Connect with ${label}`}
       >
-        <UserPlus className="h-3 w-3" /> Connect
+        {following ? (
+          <><Check className="h-3 w-3" /> Following</>
+        ) : (
+          <><UserPlus className="h-3 w-3" /> Connect</>
+        )}
       </button>
     </div>
   );
