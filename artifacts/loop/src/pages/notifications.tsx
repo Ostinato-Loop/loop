@@ -89,14 +89,17 @@ type FollowerRow = {
 async function fetchFollowingLiveRooms(userId: string): Promise<Notif[]> {
   try {
     // Get people I follow
-    const { data: follows } = await supabase
+    // Note: "follows" table exists in the DB but is not yet in the Supabase
+    // generated TypeScript types. Using any-cast until types are regenerated.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: follows } = await (supabase as any)
       .from("follows")
       .select("following_id")
       .eq("follower_id", userId)
-      .limit(100);
+      .limit(100) as { data: Array<{ following_id: string }> | null };
     if (!follows || follows.length === 0) return [];
 
-    const followingIds = follows.map((f) => (f as { following_id: string }).following_id);
+    const followingIds = follows.map((f) => f.following_id);
 
     // Get their currently live rooms
     const { data: rooms } = await supabase

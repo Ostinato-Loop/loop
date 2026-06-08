@@ -234,7 +234,7 @@ function ParticipantSheet({ p, onClose }: { p: ParticipantRow; onClose: () => vo
     let active = true;
     (async () => {
       const [profRes, countRes] = await Promise.all([
-        supabase.from("profiles").select("country, state_id, trust_score").eq("id", p.user_id).maybeSingle(),
+        supabase.from("profiles").select("country, state_id").eq("id", p.user_id).maybeSingle(),
         supabase.from("rooms").select("id", { count: "exact", head: true }).eq("host_id", p.user_id),
       ]);
       if (!active) return;
@@ -245,7 +245,8 @@ function ParticipantSheet({ p, onClose }: { p: ParticipantRow; onClose: () => vo
       ].filter(Boolean);
       setDetail({
         region: regionParts.length ? regionParts.join(" · ") : null,
-        trustScore: prof?.trust_score ?? 0,
+        // trust_score is computed client-side from profile completeness, not stored in DB
+        trustScore: p.profiles?.is_verified ? 60 : 0,
         roomsHosted: countRes.count ?? 0,
       });
     })();
