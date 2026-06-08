@@ -185,7 +185,7 @@ function PeopleTab({ onReport }: { onReport: (t: ReportTarget) => void }) {
   const [results, setResults] = useState<PersonResult[] | null>(null);
   const [suggestions, setSuggestions] = useState<PersonSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     getPeopleSuggestions(10)
