@@ -1,54 +1,97 @@
 // Loop — Profile / Me Page
-// Sprint 01 Priority 3: No mock identity data. All user data from real auth.
-// Relationship counts (followers/following/trust) show honest zeros until
-// the relationship graph API is wired (Sprint 02).
+// Progressive Trust: Edit Profile is now functional (display_name, bio, username).
+// Relationship counts show honest zeros until the graph API ships.
 // LILCKY STUDIO LIMITED
-
 
 import {
   Settings, BadgeCheck, MapPin, Mic,
   Heart, Users, Shield, Sun, Moon, Monitor, Copy, ChevronRight, Sparkles,
-  LogOut,
+  LogOut, Pencil, X, Loader2, Check,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLoop } from "@/lib/loop-store";
 import { useAuth } from "@/hooks/use-auth";
+import { authedSupabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/layout/app-shell";
 
 type Tab = "activity" | "followers" | "following" | "saved";
 
 export default function MeLaunchPage() {
-  const { follows: _follows, toggleFollow: _toggleFollow, notifPrefs: _notifPrefs, setNotifPref: _setNotifPref } = useLoop();
-  const { user, profile, signOut } = useAuth();
-  const [tab, setTab] = useState<Tab>("activity");
-  const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");
+  const { follows: _follows, toggleFollow: _tf, notifPrefs: _np, setNotifPref: _snp } = useLoop();
+  const { user, profile, signOut, refreshProfile } = useAuth();
+  const [tab, setTab]         = useState<Tab>("activity");
+  const [theme, setTheme]     = useState<"light" | "dark" | "system">("dark");
   const [reportOpen, setReportOpen] = useState(false);
+  const [reportMsg, setReportMsg]   = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
+
+  /* ── Edit profile state ── */
+  const [editOpen, setEditOpen]     = useState(false);
+  const [editName, setEditName]     = useState("");
+  const [editBio, setEditBio]       = useState("");
+  const [editHandle, setEditHandle] = useState("");
+  const [editBusy, setEditBusy]     = useState(false);
 
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove("light", "dark");
     if (theme === "system") {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      root.classList.add(prefersDark ? "dark" : "light");
+      root.classList.add(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     } else {
       root.classList.add(theme);
     }
   }, [theme]);
-  const [reportMsg, setReportMsg] = useState("");
-  const [reportBusy, setReportBusy] = useState(false);
 
-  const displayName  = profile?.display_name ?? user?.phone ?? "You";
-  const handle       = profile?.username ?? "";
-  const avatarUrl    = profile?.avatar_url ?? "";
-  const bio          = profile?.bio ?? "";
-  const isVerified   = profile?.is_verified ?? false;
+  const displayName = profile?.display_name ?? user?.phone ?? "You";
+  const handle      = profile?.username ?? "";
+  const avatarUrl   = profile?.avatar_url ?? "";
+  const bio         = profile?.bio ?? "";
+  const isVerified  = profile?.is_verified ?? false;
 
-  const followingList: unknown[] = [];
-  const followersList: unknown[] = [];
+  /* ── Open edit form with current values ── */
+  const openEdit = () => {
+    setEditName(profile?.display_name ?? "");
+    setEditBio(profile?.bio ?? "");
+    setEditHandle(profile?.username ?? "");
+    setEditOpen(true);
+  };
+
+  /* ── Save profile edits to Supabase ── */
+  const saveEdit = async () => {
+    if (!user || editBusy) return;
+    if (!editName.trim() || editName.trim().length < 2) {
+      import("sonner").then(({ toast }) => toast.error("Name must be at least 2 characters"));
+      return;
+    }
+    setEditBusy(true);
+    try {
+      const patch: Record<string, string> = { display_name: editName.trim() };
+      if (editBio.trim()) patch.bio = editBio.trim();
+      const rawHandle = editHandle.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+      if (rawHandle.length >= 3) patch.username = rawHandle.slice(0, 20);
+
+      const { error } = await authedSupabase()
+        .from("profiles")
+        .update(patch)
+        .eq("id", user.id);
+
+      if (error) throw error;
+      await refreshProfile();
+      setEditOpen(false);
+      import("sonner").then(({ toast }) => toast.success("Profile updated"));
+    } catch (err) {
+      import("sonner").then(({ toast }) =>
+        toast.error(err instanceof Error ? err.message : "Could not update profile")
+      );
+    } finally {
+      setEditBusy(false);
+    }
+  };
 
   return (
     <AppShell>
     <div className="pb-6">
+      {/* Banner */}
       <div className="relative h-32 bg-gradient-to-br from-neon/30 via-accent to-orange/20">
         <button
           className="absolute top-3 right-3 h-9 w-9 rounded-full bg-background/80 backdrop-blur flex items-center justify-center"
@@ -58,14 +101,25 @@ export default function MeLaunchPage() {
           <Settings className="h-4 w-4" />
         </button>
       </div>
+
       <div className="px-4 -mt-10">
+        {/* Avatar + edit button */}
         <div className="flex items-end justify-between">
           {avatarUrl
             ? <img src={avatarUrl} alt="" className="h-20 w-20 rounded-2xl ring-4 ring-background object-cover" />
-            : <div className="h-20 w-20 rounded-2xl ring-4 ring-background bg-secondary flex items-center justify-center text-2xl font-extrabold text-foreground">{displayName.slice(0, 1).toUpperCase()}</div>
+            : <div className="h-20 w-20 rounded-2xl ring-4 ring-background bg-secondary flex items-center justify-center text-2xl font-extrabold text-foreground">
+                {displayName.slice(0, 1).toUpperCase()}
+              </div>
           }
-          <button className="px-4 py-1.5 rounded-full bg-foreground text-background text-xs font-bold">Edit profile</button>
+          <button
+            onClick={openEdit}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-foreground text-background text-xs font-bold active:scale-95 transition-transform"
+          >
+            <Pencil className="h-3 w-3" /> Edit profile
+          </button>
         </div>
+
+        {/* Name + handle + bio */}
         <div className="mt-3">
           <div className="flex items-center gap-1.5">
             <h1 className="text-xl font-extrabold">{displayName}</h1>
@@ -80,13 +134,96 @@ export default function MeLaunchPage() {
           {bio && <p className="text-sm mt-2 leading-snug">{bio}</p>}
         </div>
 
+        {/* ── Inline Edit Profile Form ── */}
+        {editOpen && (
+          <div className="mt-4 rounded-2xl border border-primary/30 bg-surface p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold">Edit profile</h3>
+              <button
+                onClick={() => setEditOpen(false)}
+                className="h-7 w-7 rounded-full bg-secondary flex items-center justify-center"
+                aria-label="Close"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            {/* Display Name */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">Name</label>
+              <input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Your name"
+                maxLength={40}
+                className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-colors"
+              />
+            </div>
+
+            {/* Handle */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">
+                @handle <span className="text-muted-foreground/60 font-normal">(optional)</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
+                <input
+                  value={editHandle}
+                  onChange={(e) => setEditHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                  placeholder="yourhandle"
+                  maxLength={20}
+                  className="w-full h-11 rounded-xl border border-border bg-background pl-7 pr-3 text-sm outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-colors"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground pl-1">Lowercase letters, numbers, underscores. Min. 3 characters.</p>
+            </div>
+
+            {/* Bio */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-muted-foreground">
+                Bio <span className="text-muted-foreground/60 font-normal">(optional)</span>
+              </label>
+              <textarea
+                value={editBio}
+                onChange={(e) => setEditBio(e.target.value)}
+                placeholder="Tell your story in a line…"
+                rows={2}
+                maxLength={160}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none resize-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-colors placeholder:text-muted-foreground"
+              />
+              <p className="text-[11px] text-muted-foreground pl-1">{editBio.length}/160</p>
+            </div>
+
+            {/* Save / Cancel */}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={saveEdit}
+                disabled={editBusy || !editName.trim() || editName.trim().length < 2}
+                className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold flex items-center justify-center gap-1.5 disabled:opacity-40 active:scale-[0.98] transition-transform"
+              >
+                {editBusy
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <><Check className="h-3.5 w-3.5" /> Save</>
+                }
+              </button>
+              <button
+                onClick={() => setEditOpen(false)}
+                className="h-10 px-4 rounded-xl bg-secondary text-sm font-semibold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Stats */}
         <div className="grid grid-cols-3 gap-2 mt-4">
           <button onClick={() => setTab("followers")} className={`rounded-2xl p-3 text-center transition ${tab === "followers" ? "bg-secondary ring-2 ring-neon/40" : "bg-secondary"}`}>
-            <div className="text-lg font-extrabold">{followersList.length || 0}</div>
+            <div className="text-lg font-extrabold">0</div>
             <div className="text-[10px] text-muted-foreground">Followers</div>
           </button>
           <button onClick={() => setTab("following")} className={`rounded-2xl p-3 text-center transition ${tab === "following" ? "bg-secondary ring-2 ring-neon/40" : "bg-secondary"}`}>
-            <div className="text-lg font-extrabold">{followingList.length}</div>
+            <div className="text-lg font-extrabold">0</div>
             <div className="text-[10px] text-muted-foreground">Following</div>
           </button>
           <div className="rounded-2xl p-3 text-center bg-neon/10 border border-neon/40">
@@ -95,6 +232,7 @@ export default function MeLaunchPage() {
           </div>
         </div>
 
+        {/* RALD Identity */}
         <div className="mt-5 rounded-2xl border border-border p-4 bg-card">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -107,7 +245,7 @@ export default function MeLaunchPage() {
             <IdRow k="RALD ID"     v={user?.id ? `rald_${user.id.slice(0, 8)}…` : "—"} copy={!!user?.id} />
             <IdRow k="Mail"        v={handle ? `${handle}@rald.me` : "—"} copy={!!handle} />
             <IdRow k="Trust score" v="— / 100" badge />
-            <IdRow k="Badge"       v="Verified contributor" />
+            <IdRow k="Badge"       v={isVerified ? "Verified contributor" : "Not yet verified"} />
           </div>
           <div className="mt-3 pt-3 border-t border-border">
             <div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-2">Connected apps</div>
@@ -135,15 +273,16 @@ export default function MeLaunchPage() {
           </a>
         </div>
 
+        {/* Appearance */}
         <div className="mt-4 rounded-2xl border border-border p-4 bg-card">
           <div className="text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5 text-neon" />Appearance
           </div>
           <div className="grid grid-cols-3 gap-2">
             {([
-              { id: "light" as const, icon: Sun,     label: "Light" },
-              { id: "dark"  as const, icon: Moon,    label: "Dark" },
-              { id: "system" as const, icon: Monitor, label: "Auto" },
+              { id: "light"  as const, icon: Sun,     label: "Light" },
+              { id: "dark"   as const, icon: Moon,    label: "Dark"  },
+              { id: "system" as const, icon: Monitor, label: "Auto"  },
             ]).map((opt) => {
               const Icon   = opt.icon;
               const active = theme === opt.id;
@@ -161,6 +300,7 @@ export default function MeLaunchPage() {
           </div>
         </div>
 
+        {/* Report problem */}
         <button
           onClick={() => setReportOpen(true)}
           className="mt-4 w-full h-11 rounded-2xl border border-border bg-secondary text-foreground text-sm font-semibold flex items-center justify-center gap-2"
@@ -186,7 +326,7 @@ export default function MeLaunchPage() {
                   setReportBusy(true);
                   try {
                     const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
-                    const token = localStorage.getItem("loop_token");
+                    const token   = localStorage.getItem("loop_token");
                     await fetch(`${apiBase}/api/feedback`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
@@ -216,6 +356,7 @@ export default function MeLaunchPage() {
           </div>
         )}
 
+        {/* Sign out */}
         <button
           onClick={() => signOut()}
           className="mt-4 w-full h-11 rounded-2xl border border-destructive/40 bg-destructive/10 text-destructive text-sm font-semibold flex items-center justify-center gap-2"
@@ -223,35 +364,24 @@ export default function MeLaunchPage() {
           <LogOut className="h-4 w-4" /> Sign out
         </button>
 
+        {/* Activity tabs */}
         <div className="mt-5">
           <div className="flex gap-1 border-b border-border overflow-x-auto scrollbar-none">
             {(["activity", "followers", "following", "saved"] as Tab[]).map((t) => (
-              <button key={t} onClick={() => setTab(t)} className={`px-3 py-2 text-xs font-semibold capitalize border-b-2 whitespace-nowrap ${tab === t ? "border-neon text-foreground" : "border-transparent text-muted-foreground"}`}>
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`px-3 py-2 text-xs font-semibold capitalize border-b-2 whitespace-nowrap ${tab === t ? "border-neon text-foreground" : "border-transparent text-muted-foreground"}`}
+              >
                 {t}
               </button>
             ))}
           </div>
           <div className="mt-3 space-y-2">
-            {tab === "activity" && (
-              <EmptyTab
-                icon={Mic}
-                title="No activity yet"
-                body="Your rooms, reactions, and connections will appear here."
-              />
-            )}
-            {tab === "following" && (
-              followingList.length === 0
-                ? <EmptyTab icon={Users} title="Not following anyone yet" body="Join a room to discover and follow people." />
-                : null
-            )}
-            {tab === "followers" && (
-              followersList.length === 0
-                ? <EmptyTab icon={Users} title="No followers yet" body="People who follow you will appear here." />
-                : null
-            )}
-            {tab === "saved" && (
-              <EmptyTab icon={Heart} title="Nothing saved yet" body="Saved rooms, comments and events show up here." />
-            )}
+            {tab === "activity"  && <EmptyTab icon={Mic}   title="No activity yet"         body="Your rooms, reactions, and connections will appear here." />}
+            {tab === "following" && <EmptyTab icon={Users} title="Not following anyone yet" body="Join a room to discover and follow people." />}
+            {tab === "followers" && <EmptyTab icon={Users} title="No followers yet"         body="People who follow you will appear here." />}
+            {tab === "saved"     && <EmptyTab icon={Heart} title="Nothing saved yet"        body="Saved rooms, comments and events show up here." />}
           </div>
         </div>
       </div>
@@ -259,7 +389,6 @@ export default function MeLaunchPage() {
     </AppShell>
   );
 }
-
 
 function EmptyTab({ icon: Icon, title, body }: { icon: typeof Mic; title: string; body: string }) {
   return (
@@ -282,10 +411,13 @@ function IdRow({ k, v, copy, badge }: { k: string; v: string; copy?: boolean; ba
       <span className="font-semibold flex items-center gap-1.5">
         {badge && <span className="h-1.5 w-1.5 rounded-full bg-neon" />}
         {v}
-        {copy && <Copy className="h-3 w-3 text-muted-foreground cursor-pointer" onClick={() => navigator.clipboard?.writeText(v)} />}
+        {copy && (
+          <Copy
+            className="h-3 w-3 text-muted-foreground cursor-pointer"
+            onClick={() => navigator.clipboard?.writeText(v)}
+          />
+        )}
       </span>
     </div>
   );
 }
-
-
