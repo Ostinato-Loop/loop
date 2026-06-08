@@ -2,8 +2,8 @@
 // Regional identity: location badge in header, regional rooms prioritised.
 // LILCKY STUDIO LIMITED
 
-import { useEffect, useState, useCallback } from "react";
-import { Search, Bell, Radio, BadgeCheck, MapPin } from "lucide-react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { Search, Bell, Radio, BadgeCheck, MapPin, RefreshCw } from "lucide-react";
 import { listRooms, type Room as ApiRoom, type RoomCategory } from "@/lib/api/rooms";
 import { useAuth } from "@/hooks/use-auth";
 import { useLoop } from "@/lib/loop-store";
@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 import { Link, useNavigate } from "react-router-dom";
 import { formatLocation } from "@/lib/regions-data";
 import { fetchUnreadCount } from "@/lib/api/notifications";
+
+const PTR_THRESHOLD = 72; // px — pull distance required to trigger refresh
 
 const CATEGORIES = [
   { label: "For you",    value: "" },
@@ -34,6 +36,11 @@ const INTEREST_TO_CATEGORY: Record<string, string> = {
 
 export default function FeedPage() {
   const [activeCategory, setActiveCategory] = useState<string>("");
+  const [refreshKey,   setRefreshKey]   = useState(0);
+  const [pullDisplay,  setPullDisplay]  = useState(0);
+  const [refreshing,   setRefreshing]   = useState(false);
+  const startYRef = useRef(0);
+  const pullYRef  = useRef(0);
   const { profile } = useAuth();
   const { interests: localInterests } = useLoop();
 
@@ -55,9 +62,67 @@ export default function FeedPage() {
 
   const location = profile ? formatLocation(profile) : "";
 
+  // ── Pull-to-refresh ─────────────────────────────────────────────────
+  useEffect(() => {
+    const onStart = (e: TouchEvent) => {
+      if (window.scrollY > 0) return;
+      startYRef.current = e.touches[0].clientY;
+      pullYRef.current  = 0;
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!startYRef.current) return;
+      const delta = e.touches[0].clientY - startYRef.current;
+      if (delta > 0 && window.scrollY === 0) {
+        pullYRef.current = Math.min(delta * 0.45, PTR_THRESHOLD);
+        setPullDisplay(pullYRef.current);
+      } else if (delta <= 0) {
+        pullYRef.current  = 0;
+        startYRef.current = 0;
+        setPullDisplay(0);
+      }
+    };
+    const onEnd = () => {
+      const py = pullYRef.current;
+      pullYRef.current  = 0;
+      startYRef.current = 0;
+      setPullDisplay(0);
+      if (py >= PTR_THRESHOLD * 0.65) {
+        setRefreshing(true);
+        setRefreshKey(k => k + 1);
+        setTimeout(() => setRefreshing(false), 900);
+      }
+    };
+    document.addEventListener("touchstart", onStart, { passive: true });
+    document.addEventListener("touchmove",  onMove,  { passive: true });
+    document.addEventListener("touchend",   onEnd);
+    return () => {
+      document.removeEventListener("touchstart", onStart);
+      document.removeEventListener("touchmove",  onMove);
+      document.removeEventListener("touchend",   onEnd);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <AppShell>
       <FeedHeader location={location} />
+      {/* Pull-to-refresh indicator */}
+      {(pullDisplay > 4 || refreshing) && (
+        <div
+          className="flex items-center justify-center overflow-hidden transition-[height] duration-150"
+          style={{ height: refreshing ? 48 : Math.round(pullDisplay * 0.65) }}
+        >
+          <div
+            className={cn(
+              "h-8 w-8 rounded-full bg-surface border border-border flex items-center justify-center shadow-sm",
+              refreshing && "animate-spin",
+            )}
+            style={!refreshing ? { transform: `rotate(${Math.round((pullDisplay / PTR_THRESHOLD) * 180)}deg)` } : undefined}
+          >
+            <RefreshCw className="h-4 w-4 text-primary" />
+          </div>
+        </div>
+      )}
       <div className="px-4 pt-3 pb-6 space-y-3">
         {/* Regional context banner — shown when user has region */}
         {location && (
@@ -75,7 +140,7 @@ export default function FeedPage() {
         )}
 
         <CategoryScroller active={activeCategory} onChange={setActiveCategory} />
-        <LiveStrip category={activeCategory} interests={interests} profile={profile} />
+        <LiveStrip category={activeCategory} interests={interests} profile={profile} refreshKey={refreshKey} />
       </div>
     </AppShell>
   );
@@ -150,11 +215,12 @@ function CategoryScroller({ active, onChange }: { active: string; onChange: (v: 
 type FeedState = "loading" | "error" | "empty" | "ready";
 
 function LiveStrip({
-  category, interests, profile,
+  category, interests, profile, refreshKey,
 }: {
   category: string;
   interests: string[];
   profile: ReturnType<typeof useAuth>["profile"];
+  refreshKey: number;
 }) {
   const navigate = useNavigate();
   const [rooms, setRooms] = useState<ApiRoom[]>([]);
@@ -166,7 +232,8 @@ function LiveStrip({
     listRooms({ limit: 20, category: (category as RoomCategory) || undefined })
       .then(data => { setRooms(data); setState(data.length === 0 ? "empty" : "ready"); })
       .catch(() => setState("error"));
-  }, [category]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, refreshKey]);
 
   useEffect(() => {
     if (category === "" && interests.length > 0) {
