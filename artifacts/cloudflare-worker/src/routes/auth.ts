@@ -20,7 +20,7 @@
  *   5. Abuse logging to console.warn (LOOP/ABUSE)
  */
 
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { CloudflareEnv } from "../types/env.js";
 import { requireAuth } from "../middleware/auth.js";
 import type { AuthUser } from "../middleware/auth.js";
@@ -133,7 +133,7 @@ async function supabaseAdminRequest(
 
 /* ── POST /api/auth/send-otp ─────────────────────────────────────────── */
 
-auth.post("/send-otp", async (c) => {
+const sendOtpHandler = async (c: Context<{ Bindings: CloudflareEnv; Variables: { user: AuthUser } }>) => {
   const body = (await c.req.json().catch(() => ({}))) as { phone?: string };
   const phone = body.phone?.trim();
   if (!phone || !/^\+\d{7,15}$/.test(phone)) {
@@ -200,15 +200,11 @@ auth.post("/send-otp", async (c) => {
     remainingPhone: phoneCheck.remaining - 1,
     remainingIp: ipCheck.remaining - 1,
   });
-});
+};
 
-
-/* ── POST /api/auth/request-otp (alias → send-otp) ─────────────────── */
-auth.post("/request-otp", async (c) => {
-  const url = new URL(c.req.url);
-  url.pathname = url.pathname.replace(/\/request-otp$/, '/send-otp');
-  return auth.request(url.toString(), { method: 'POST', headers: c.req.raw.headers, body: c.req.raw.body }, c.env);
-});
+/* ── Register on canonical + alias path ─────────────────────────────── */
+auth.post("/send-otp",     sendOtpHandler);
+auth.post("/request-otp", sendOtpHandler);
 
 /* ── POST /api/auth/verify-otp ───────────────────────────────────────── */
 
