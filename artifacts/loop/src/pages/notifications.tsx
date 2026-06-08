@@ -15,7 +15,7 @@ import {
   ArrowRight, UserPlus, ChevronLeft, MapPin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
+import { authedSupabase } from "@/integrations/supabase/client";
 
 
 type NotifKind = "follow" | "trust" | "profile" | "room_invite" | "regional" | "system";
@@ -82,7 +82,7 @@ type FollowerRow = {
 async function fetchFollowerNotifs(userId: string): Promise<Notif[]> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabase as any)
+    const { data } = await (authedSupabase() as any)
       .from("follows")
       .select("follower_id, created_at, profiles:profiles!follows_follower_id_fkey(id, username, display_name, avatar_url, is_verified)")
       .eq("following_id", userId)
@@ -110,11 +110,11 @@ async function fetchFollowerNotifs(userId: string): Promise<Notif[]> {
 async function fetchFollowingLiveRooms(userId: string): Promise<Notif[]> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: follows } = await (supabase as any)
+    const { data: follows } = await (authedSupabase() as any)
       .from("follows").select("following_id").eq("follower_id", userId).limit(100) as { data: Array<{ following_id: string }> | null };
     if (!follows || follows.length === 0) return [];
     const ids = follows.map(f => f.following_id);
-    const { data: rooms } = await supabase
+    const { data: rooms } = await authedSupabase()
       .from("rooms").select("id, title, host_id").eq("is_live", true).in("host_id", ids).limit(5);
     if (!rooms || rooms.length === 0) return [];
     return rooms.map(r => ({
