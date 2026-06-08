@@ -43,7 +43,7 @@ const COMING_SOON: Record<string, { label: string; desc: string }> = {
 };
 
 export default function CreatePage() {
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const { kind } = useParams<{ kind?: string }>();
   const [title, setTitle] = useState("");
@@ -52,9 +52,7 @@ export default function CreatePage() {
   const [visibility, setVisibility] = useState<RoomVisibility>("public");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (!loading && !user) navigate("/login");
-  }, [user, loading, navigate]);
+  // Auth gate now handled by ProtectedRoute in App.tsx
 
   // Non-room create types — show honest placeholder
   const comingSoon = kind && kind !== "room" ? COMING_SOON[kind] : null;

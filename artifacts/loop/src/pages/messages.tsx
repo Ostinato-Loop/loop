@@ -35,15 +35,13 @@ function timeAgo(iso: string): string {
 }
 
 export default function MessagesPage() {
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<ConvoTab>("rooms");
   const [threads, setThreads] = useState<RoomThread[]>([]);
   const [fetching, setFetching] = useState(false);
 
-  useEffect(() => {
-    if (!loading && !user) navigate("/login");
-  }, [user, loading, navigate]);
+  // Auth gate now handled by ProtectedRoute in App.tsx
 
   const loadThreads = useCallback(async () => {
     if (!user) return;

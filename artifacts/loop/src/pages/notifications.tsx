@@ -199,7 +199,7 @@ export default function NotificationsPage() {
   }, [user, profile]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (!authLoading && !user) navigate("/login"); }, [authLoading, user, navigate]);
+  // Auth gate now handled by ProtectedRoute in App.tsx
 
   return (
     <AppShell>

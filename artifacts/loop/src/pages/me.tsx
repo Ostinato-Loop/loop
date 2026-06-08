@@ -35,14 +35,12 @@ const SETTINGS_ITEMS = [
 type ProfileCounts = { followers: number; following: number };
 
 export default function MePage() {
-  const { user, loading, profile, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
   const [signingOut, setSigningOut] = useState(false);
   const [counts, setCounts] = useState<ProfileCounts>({ followers: 0, following: 0 });
 
-  useEffect(() => {
-    if (!loading && !user) navigate("/login");
-  }, [user, loading, navigate]);
+  // Auth gate now handled by ProtectedRoute in App.tsx
 
   useEffect(() => {
     if (!user) return;

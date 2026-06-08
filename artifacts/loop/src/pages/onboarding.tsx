@@ -29,7 +29,7 @@ const STEPS = ["name", "enter"] as const;
 type Step = typeof STEPS[number];
 
 export default function OnboardingPage() {
-  const { user, loading, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
 
   const [stepIdx, setStepIdx] = useState(0);
@@ -39,14 +39,13 @@ export default function OnboardingPage() {
   const [busy, setBusy]               = useState(false);
   const [rooms, setRooms]             = useState<Room[]>([]);
 
-  /* ── Redirect if not authed or already onboarded ── */
+  /* ── Already-onboarded redirect (ProtectedRoute handles the auth gate) ── */
   useEffect(() => {
-    if (!loading && !user) navigate("/login");
     if (profile) {
       setDisplayName(profile.display_name ?? "");
       if (profile.onboarded) navigate("/");
     }
-  }, [loading, user, profile, navigate]);
+  }, [profile, navigate]);
 
   /* ── Fetch live rooms when on Enter step ── */
   useEffect(() => {

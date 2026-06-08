@@ -390,10 +390,7 @@ export default function DiscoverPage() {
   const [error, setError]               = useState<string | null>(null);
   const [locationSkipped, setLocationSkipped] = useState(false);
 
-  useEffect(() => {
-    if (!loading && !user) navigate("/login");
-    else if (!loading && user && profile && !profile.onboarded) navigate("/onboarding");
-  }, [loading, user, profile, navigate]);
+  // Auth + onboarding gate now handled by ProtectedRoute in App.tsx
 
   useEffect(() => {
     if (!user || feedTab === "people") return;
