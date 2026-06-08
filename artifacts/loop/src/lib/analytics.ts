@@ -1,6 +1,11 @@
 /**
  * Loop Analytics — fire-and-forget event tracker.
  *
+ * Architecture: POSTs to /api/analytics (Cloudflare Worker) rather than
+ * hitting Supabase directly. This keeps the Supabase type definitions clean —
+ * the loop_events table is not in the generated types until migration 012 is
+ * applied in production. The worker endpoint handles the raw REST insert.
+ *
  * Rules:
  *   - Never await. Never block UI. Never throw.
  *   - Swallow all errors silently.
@@ -12,8 +17,6 @@
  * LILCKY STUDIO LIMITED
  */
 
-import { authedSupabase } from "@/integrations/supabase/client";
-
 export type LoopEvent =
   | "login"
   | "signup"
@@ -23,6 +26,8 @@ export type LoopEvent =
   | "room_leave"
   | "session_start"
   | "page_view";
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
 
 let _sessionId: string | null = null;
 
@@ -34,34 +39,55 @@ function getSessionId(): string {
   return _sessionId;
 }
 
+function getToken(): string | null {
+  return localStorage.getItem("loop_token");
+}
+
+function post(event: LoopEvent, properties: Record<string, unknown>): void {
+  const token = getToken();
+  if (!token) return; // don't track unauthenticated events — no user_id to attach
+
+  const body = JSON.stringify({
+    event,
+    properties: { ...properties, path: window.location.pathname },
+    session_id: getSessionId(),
+    ts: Date.now(),
+  });
+
+  // Use sendBeacon when available so events survive page unload; fall back to fetch
+  const url = `${API_BASE}/api/analytics`;
+  if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+    const blob = new Blob([body], { type: "application/json" });
+    // sendBeacon doesn't support custom headers, so fall through to fetch for auth
+  }
+
+  // fetch: fire-and-forget, no await
+  fetch(url, {
+    method:  "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      Authorization:   `Bearer ${token}`,
+    },
+    body,
+    keepalive: true, // survives page unload in modern browsers
+  }).catch(() => {
+    // swallow — analytics must never surface errors to the user
+  });
+}
+
 export function track(
   event: LoopEvent,
   properties: Record<string, unknown> = {},
 ): void {
   try {
-    const db = authedSupabase();
-    db.from("loop_events")
-      .insert({
-        event,
-        properties: {
-          ...properties,
-          path: window.location.pathname,
-        },
-        session_id: getSessionId(),
-      })
-      .then(({ error }) => {
-        if (error && error.code !== "42P01") {
-          // 42P01 = table doesn't exist yet — migration pending, ignore
-          console.warn("[analytics]", event, error.code, error.message);
-        }
-      });
+    post(event, properties);
   } catch {
-    // analytics must never break the app
+    // swallow all synchronous errors
   }
 }
 
 /**
- * Track session duration when the user leaves.
+ * Track session_start and register a pagehide handler to capture session end.
  * Call once when AuthProvider confirms a valid session.
  */
 export function trackSessionStart(): void {
@@ -69,16 +95,7 @@ export function trackSessionStart(): void {
   track("session_start");
 
   const handleLeave = () => {
-    const duration_s = Math.round((Date.now() - startMs) / 1000);
-    // use sendBeacon so it fires even during page unload
-    try {
-      const db = authedSupabase();
-      db.from("loop_events").insert({
-        event: "session_start",
-        properties: { duration_s, path: window.location.pathname },
-        session_id: getSessionId(),
-      });
-    } catch { /* swallow */ }
+    track("session_start", { duration_s: Math.round((Date.now() - startMs) / 1000), _phase: "end" });
   };
 
   window.addEventListener("pagehide", handleLeave, { once: true });
