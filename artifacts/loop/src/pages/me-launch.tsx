@@ -13,6 +13,7 @@ import { useLoop } from "@/lib/loop-store";
 import { useAuth } from "@/hooks/use-auth";
 import { authedSupabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/layout/app-shell";
+import { useNavigate } from "react-router-dom";
 import { NotificationPrompt } from "@/components/notification-prompt";
 
 type Tab = "activity" | "followers" | "following" | "saved";
@@ -20,6 +21,7 @@ type Tab = "activity" | "followers" | "following" | "saved";
 export default function MeLaunchPage() {
   const { follows: _follows, toggleFollow: _tf, notifPrefs: _np, setNotifPref: _snp } = useLoop();
   const { user, profile, signOut, refreshProfile } = useAuth();
+  const navigate = useNavigate();
   const [tab, setTab]         = useState<Tab>("activity");
   const [theme, setTheme]     = useState<"light" | "dark" | "system">("dark");
   const [reportOpen, setReportOpen] = useState(false);
@@ -384,10 +386,10 @@ export default function MeLaunchPage() {
             ))}
           </div>
           <div className="mt-3 space-y-2">
-            {tab === "activity"  && <EmptyTab icon={Mic}   title="No activity yet"         body="Your rooms, reactions, and connections will appear here." />}
-            {tab === "following" && <EmptyTab icon={Users} title="Not following anyone yet" body="Join a room to discover and follow people." />}
-            {tab === "followers" && <EmptyTab icon={Users} title="No followers yet"         body="People who follow you will appear here." />}
-            {tab === "saved"     && <EmptyTab icon={Heart} title="Nothing saved yet"        body="Saved rooms, comments and events show up here." />}
+            {tab === "activity"  && <EmptyTab icon={Mic}   title="No activity yet"         body="Your rooms, reactions, and connections will appear here."    cta="Discover rooms"      onCta={() => navigate("/discover")} />}
+            {tab === "following" && <EmptyTab icon={Users} title="Not following anyone yet" body="Join a room to start following people you want to hear from." cta="Find rooms & people" onCta={() => navigate("/discover")} />}
+            {tab === "followers" && <EmptyTab icon={Users} title="No followers yet"         body="Host or join rooms — followers come when you participate."    cta="Discover rooms"      onCta={() => navigate("/discover")} />}
+            {tab === "saved"     && <EmptyTab icon={Heart} title="Nothing saved yet"        body="Saved rooms, comments and events show up here."              cta="Discover rooms"      onCta={() => navigate("/discover")} />}
           </div>
         </div>
       </div>
@@ -396,7 +398,7 @@ export default function MeLaunchPage() {
   );
 }
 
-function EmptyTab({ icon: Icon, title, body }: { icon: typeof Mic; title: string; body: string }) {
+function EmptyTab({ icon: Icon, title, body, cta, onCta }: { icon: typeof Mic; title: string; body: string; cta?: string; onCta?: () => void }) {
   return (
     <div className="flex flex-col items-center gap-3 py-10 text-center">
       <div className="h-11 w-11 rounded-xl bg-secondary flex items-center justify-center">
@@ -406,6 +408,14 @@ function EmptyTab({ icon: Icon, title, body }: { icon: typeof Mic; title: string
         <p className="text-sm font-semibold">{title}</p>
         <p className="text-xs text-muted-foreground mt-1">{body}</p>
       </div>
+      {cta && onCta && (
+        <button
+          onClick={onCta}
+          className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground neon-glow"
+        >
+          {cta}
+        </button>
+      )}
     </div>
   );
 }

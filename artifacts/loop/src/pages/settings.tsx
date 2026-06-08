@@ -10,7 +10,7 @@ import { authedSupabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/layout/app-shell";
 import {
   ChevronLeft, ChevronRight, Bell, Shield,
-  UserCircle, MapPin, Trash2, Sun, Moon, Monitor,
+  UserCircle, MapPin, Trash2, Download, Sun, Moon, Monitor,
   BellOff, BellRing, Volume2, Check, Loader2, Lock,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -426,6 +426,16 @@ function AccountSettings() {
       >
         Sign out of Loop
       </button>
+
+      <a
+        href="https://profiles.rald.cloud/settings/data"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="w-full h-11 rounded-xl border border-border text-sm font-medium flex items-center justify-center gap-2"
+      >
+        <Download className="h-4 w-4" />
+        Download my data
+      </a>
 
       {!delConfirm ? (
         <button

@@ -222,6 +222,12 @@ export default function NotificationsPage() {
             <Bell className="h-10 w-10 text-muted-foreground/30" />
             <p className="text-sm font-semibold">No notifications yet</p>
             <p className="text-xs text-muted-foreground max-w-[200px]">Start following people and join rooms to get notified.</p>
+            <button
+              onClick={() => navigate("/discover")}
+              className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-xs font-bold text-background"
+            >
+              Discover rooms
+            </button>
           </div>
         ) : (
           notifs.map(n => <NotifRow key={n.id} notif={n} onNavigate={navigate} />)
