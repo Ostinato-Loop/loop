@@ -68,8 +68,6 @@ const REGIONS = [
   { group: "Other", items: ["United Kingdom", "United States", "Canada", "Other"] },
 ];
 
-const ALL_REGIONS = REGIONS.flatMap((g) => g.items);
-
 /* ── Avatar helpers ─────────────────────────────────────────────────── */
 const AVATAR_COLORS = [
   "from-emerald-500 to-teal-500",
@@ -378,7 +376,6 @@ export default function DiscoverPage() {
   const [category, setCategory]         = useState<RoomCategory | "all">("all");
   const [error, setError]               = useState<string | null>(null);
   const [locationSkipped, setLocationSkipped] = useState(false);
-  const [savingLocation, setSavingLocation]   = useState(false);
 
   useEffect(() => {
     if (!loading && !user) navigate("/login");
@@ -399,7 +396,6 @@ export default function DiscoverPage() {
   /* ── Save location (Progressive Trust) ── */
   const saveLocation = async (stateId: string) => {
     if (!user) return;
-    setSavingLocation(true);
     try {
       const { error: err } = await authedSupabase()
         .from("profiles")
@@ -411,8 +407,6 @@ export default function DiscoverPage() {
       import("sonner").then(({ toast }) =>
         toast.error(e instanceof Error ? e.message : "Could not save location")
       );
-    } finally {
-      setSavingLocation(false);
     }
   };
 

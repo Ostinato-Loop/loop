@@ -65,7 +65,9 @@ export default function MeLaunchPage() {
     }
     setEditBusy(true);
     try {
-      const patch: Record<string, string> = { display_name: editName.trim() };
+      const patch: { display_name: string; bio?: string; username?: string } = {
+        display_name: editName.trim(),
+      };
       if (editBio.trim()) patch.bio = editBio.trim();
       const rawHandle = editHandle.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
       if (rawHandle.length >= 3) patch.username = rawHandle.slice(0, 20);
