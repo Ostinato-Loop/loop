@@ -216,6 +216,7 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           VITE_API_BASE_URL: https://loop-api.rald.cloud
+          VITE_LIVEKIT_URL: ${{ secrets.LIVEKIT_URL }}
 
       - name: Ensure Cloudflare Pages project exists (idempotent)
         env:

@@ -192,10 +192,11 @@ export default function MeLaunchPage() {
                 {initials(displayName)}
               </div>
             )}
-            <a href="https://profiles.rald.cloud/settings/profile" target="_blank" rel="noopener noreferrer"
-              className="mb-1 px-4 py-1.5 rounded-full bg-foreground text-background text-xs font-bold">
+            <button
+              onClick={() => navigate("/settings")}
+              className="mb-1 px-4 py-1.5 rounded-full bg-foreground text-background text-xs font-bold active:scale-95 transition-transform">
               Edit profile
-            </a>
+            </button>
           </div>
 
           {/* ── Identity header ── */}
