@@ -19,6 +19,7 @@ import {
   ArrowRight, UserPlus, ChevronLeft, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
 
@@ -84,6 +85,51 @@ type FollowerRow = {
   } | null;
 };
 
+/* ── fetch live rooms from people I follow ── */
+async function fetchFollowingLiveRooms(userId: string): Promise<Notif[]> {
+  try {
+    // Get people I follow
+    const { data: follows } = await supabase
+      .from("follows")
+      .select("following_id")
+      .eq("follower_id", userId)
+      .limit(100);
+    if (!follows || follows.length === 0) return [];
+
+    const followingIds = follows.map((f) => (f as { following_id: string }).following_id);
+
+    // Get their currently live rooms
+    const { data: rooms } = await supabase
+      .from("rooms")
+      .select("id, title, category, host_id, created_at, host:profiles!rooms_host_id_fkey(display_name, username, avatar_url)")
+      .eq("is_live", true)
+      .in("host_id", followingIds)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (!rooms || rooms.length === 0) return [];
+
+    return rooms.map((r) => {
+      const host = r.host as { display_name: string | null; username: string | null; avatar_url: string | null } | null;
+      const hostName = host?.display_name ?? host?.username ?? "Someone you follow";
+      const initials_ = hostName.split(" ").map((w: string) => w[0]).slice(0, 2).join("").toUpperCase();
+      return {
+        id: `live-${r.id as string}`,
+        kind:        "room_invite" as const,
+        title:       `${hostName} is live now`,
+        body:        r.title as string,
+        ts:          new Date(r.created_at as string).getTime(),
+        read:        false,
+        action:      `/rooms/${r.id as string}`,
+        actionLabel: "Join room",
+        initials:    initials_,
+        avatar:      host?.avatar_url ?? null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
 /* ── fetch followers as notifications ── */
 async function fetchFollowerNotifs(token: string | null): Promise<Notif[]> {
   if (!token) return [];
@@ -127,7 +173,7 @@ function buildNudges(profile: ReturnType<typeof useAuth>["profile"], score: numb
       title: "Add a profile photo",
       body:  "Members with a photo get 3× more connects.",
       ts: now - 3600_000, read: true,
-      action: "https://profiles.rald.cloud", actionLabel: "Add photo",
+      action: "/settings", actionLabel: "Add photo",
     });
   }
   if (!profile.bio) {
@@ -224,11 +270,23 @@ export default function NotificationsPage() {
     if (!user) return;
     setFetching(true);
     const token = localStorage.getItem("loop_token");
-    const [followerNotifs, nudges] = await Promise.all([
+    const [followerNotifs, liveRoomNotifs, nudges] = await Promise.all([
       fetchFollowerNotifs(token),
+      fetchFollowingLiveRooms(user.id),
       Promise.resolve(buildNudges(profile, trustScore)),
     ]);
-    const all = [...followerNotifs, ...nudges].sort((a, b) => b.ts - a.ts);
+    // Deduplicate live room notifs vs existing (show live rooms first — highest value for return)
+    const seenIds = new Set<string>();
+    const all = [...liveRoomNotifs, ...followerNotifs, ...nudges]
+      .filter((n) => { if (seenIds.has(n.id)) return false; seenIds.add(n.id); return true; })
+      .sort((a, b) => {
+        // Live room notifs always surface first, then sort by time
+        const aLive = a.id.startsWith("live-");
+        const bLive = b.id.startsWith("live-");
+        if (aLive && !bLive) return -1;
+        if (!aLive && bLive) return 1;
+        return b.ts - a.ts;
+      });
     setNotifs(all);
     setFetching(false);
   }, [user, profile, trustScore]);

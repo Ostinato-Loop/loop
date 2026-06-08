@@ -9,7 +9,7 @@
 // LILCKY STUDIO LIMITED
 
 import { useEffect, useState, useCallback } from "react";
-import { Search, Bell, Radio } from "lucide-react";
+import { Search, Bell, Radio, BadgeCheck } from "lucide-react";
 import { listRooms, type Room as ApiRoom, type RoomCategory } from "@/lib/api/rooms";
 import { useAuth } from "@/hooks/use-auth";
 import { useLoop } from "@/lib/loop-store";
@@ -232,6 +232,7 @@ function LiveStrip({ category, interests }: { category: string; interests: strin
 }
 
 function RoomCard({ room }: { room: ApiRoom }) {
+  const hostName = room.host?.display_name ?? room.host?.username ?? null;
   return (
     <Link
       to={`/rooms/${room.id}`}
@@ -246,10 +247,18 @@ function RoomCard({ room }: { room: ApiRoom }) {
             {room.category && <span className="text-[10px] text-muted-foreground capitalize">{room.category}</span>}
           </div>
           <h3 className="font-semibold text-sm leading-tight truncate">{room.title}</h3>
+          {hostName && (
+            <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground/80">{hostName}</span>
+              {room.host?.is_verified && <BadgeCheck className="h-3 w-3 shrink-0 text-primary" />}
+              <span>· hosting</span>
+            </p>
+          )}
           {room.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{room.description}</p>}
         </div>
-        <div className="text-right shrink-0">
-          <p className="text-xs text-muted-foreground">{room.audience_count} listening</p>
+        <div className="shrink-0 text-right">
+          <p className="text-xs font-semibold text-foreground/70">{room.audience_count}</p>
+          <p className="text-[10px] text-muted-foreground">listening</p>
         </div>
       </div>
     </Link>

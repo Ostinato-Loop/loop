@@ -157,7 +157,7 @@ function PersonCard({ userId, username, displayName, avatarUrl, isVerified, rald
       >
         {loading ? <Loader2 className="h-3 w-3 animate-spin" />
           : following ? <><UserCheck className="h-3 w-3" />Following</>
-          : <><UserPlus className="h-3 w-3" />Connect</>}
+          : <><UserPlus className="h-3 w-3" />Follow</>}
       </button>
 
       {/* More (⋮) — report */}
@@ -419,9 +419,42 @@ export default function DiscoverPage() {
           <section>
             <div className="flex items-center gap-1.5 mb-3">
               <Globe2 className="h-3.5 w-3.5 text-primary" />
-              <h2 className="font-display text-sm font-bold uppercase tracking-wider">Near {profile?.state_id ?? "you"}</h2>
+              <h2 className="font-display text-sm font-bold uppercase tracking-wider">
+                Near {profile?.state_id?.replace(/-/g, " ") ?? profile?.country ?? "you"}
+              </h2>
             </div>
-            {rooms === null ? <Skeleton /> : <div className="space-y-3">{allRooms.map((r) => <RoomCard key={r.id} room={r} />)}</div>}
+            {!profile?.country ? (
+              <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-7 text-center space-y-3">
+                <Globe2 className="h-8 w-8 text-primary/40 mx-auto" />
+                <div>
+                  <p className="text-sm font-semibold">Set your region to find nearby rooms</p>
+                  <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed max-w-xs mx-auto">
+                    Rooms from your city, state, and country will appear here. Your region is never shared publicly.
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigate("/settings")}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-4 py-2 text-xs font-semibold text-primary"
+                >
+                  Set region in settings →
+                </button>
+              </div>
+            ) : rooms === null ? <Skeleton /> : (() => {
+              const nearby = allRooms.filter((r) => !r.language || r.language === profile.language);
+              return nearby.length > 0 ? (
+                <div className="space-y-3">{nearby.map((r) => <RoomCard key={r.id} room={r} />)}</div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-2">
+                  <Globe2 className="h-8 w-8 text-muted-foreground/40 mx-auto" />
+                  <p className="text-sm font-semibold">No rooms from your area right now</p>
+                  <p className="text-xs text-muted-foreground">Be the first — start a room for your community.</p>
+                  <button onClick={() => navigate("/create/room")}
+                    className="mt-1 text-xs font-semibold text-primary underline underline-offset-2">
+                    Start a room →
+                  </button>
+                </div>
+              );
+            })()}
           </section>
         )}
 
