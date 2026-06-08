@@ -190,7 +190,7 @@ function mapApiNotifs(data: ApiNotif[]): Notif[] {
 }
 
 export default function NotificationsPage() {
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [loading, setLoading] = useState(true);

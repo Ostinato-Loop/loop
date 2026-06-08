@@ -12,6 +12,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { cn } from "@/lib/utils";
 import { Link, useNavigate } from "react-router-dom";
 import { formatLocation } from "@/lib/regions-data";
+import { fetchUnreadCount } from "@/lib/api/notifications";
 
 const CATEGORIES = [
   { label: "For you",    value: "" },
@@ -82,6 +83,8 @@ export default function FeedPage() {
 
 function FeedHeader({ location }: { location: string }) {
   const navigate = useNavigate();
+  const [unread, setUnread] = useState(0);
+  useEffect(() => { fetchUnreadCount().then(setUnread).catch(() => {}); }, []);
   return (
     <header className="sticky top-0 z-30 bg-background/85 backdrop-blur-xl border-b border-border pt-safe-top">
       <div className="px-4 pt-3 pb-2 flex items-center justify-between">
@@ -113,6 +116,9 @@ function FeedHeader({ location }: { location: string }) {
             aria-label="Notifications"
           >
             <Bell className="h-4 w-4" />
+            {unread > 0 && (
+              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary border border-background" />
+            )}
           </button>
         </div>
       </div>

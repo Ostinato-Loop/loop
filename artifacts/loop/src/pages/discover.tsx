@@ -10,7 +10,6 @@
  * LILCKY STUDIO LIMITED
  */
 
-import { useNavigate } from "react-router-dom";
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { authedSupabase } from "@/integrations/supabase/client";
@@ -383,7 +382,6 @@ function PeopleTab() {
 /* ── Main page ──────────────────────────────────────────────────────── */
 export default function DiscoverPage() {
   const { user, loading, profile, refreshProfile } = useAuth();
-  const navigate = useNavigate();
   const [rooms, setRooms]               = useState<Room[] | null>(null);
   const [feedTab, setFeedTab]           = useState<FeedTab>("all");
   const [category, setCategory]         = useState<RoomCategory | "all">("all");
