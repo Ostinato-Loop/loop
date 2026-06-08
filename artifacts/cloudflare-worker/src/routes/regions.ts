@@ -82,6 +82,18 @@ interface RegionResult {
 }
 
 
+
+// ── GET /api/regions ─────────────────────────────────────────────────
+regions.get('/', (c) => c.json({
+  api: 'rald-region-registry',
+  version: '1.0.0',
+  endpoints: [
+    'GET /api/regions/search?q=<name>&country=NG&limit=10',
+    'GET /api/regions/by-state/:stateId?country=NG',
+    'GET /api/regions/:id',
+  ],
+}));
+
 // ══════════════════════════════════════════════════════════════════════
 // GET /api/regions/search?q=Ikeja&country=NG&limit=10
 //
