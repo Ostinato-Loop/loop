@@ -1,15 +1,9 @@
-// Loop — Feed Page
-// P0-004 FIX: Feed no longer renders permanent empty state.
-//   LiveStrip hydrates from Supabase. Content area shows rooms when present,
-//   loading skeleton during fetch, error state on failure, empty state only
-//   when API returns zero results.
-// P0-006 FIX: Category chips are wired to state.
-// AT-LOP-007 FIX: Onboarding interests surfaced as "Picked for you".
-// V1-STAB: Bell → /notifications, Search → /search (no dead toast links).
+// Loop — Feed Page (Regional Edition)
+// Regional identity: location badge in header, regional rooms prioritised.
 // LILCKY STUDIO LIMITED
 
 import { useEffect, useState, useCallback } from "react";
-import { Search, Bell, Radio, BadgeCheck } from "lucide-react";
+import { Search, Bell, Radio, BadgeCheck, MapPin } from "lucide-react";
 import { listRooms, type Room as ApiRoom, type RoomCategory } from "@/lib/api/rooms";
 import { useAuth } from "@/hooks/use-auth";
 import { useLoop } from "@/lib/loop-store";
@@ -17,6 +11,7 @@ import { LoopMark } from "@/components/loop-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { cn } from "@/lib/utils";
 import { Link, useNavigate } from "react-router-dom";
+import { formatLocation } from "@/lib/regions-data";
 
 const CATEGORIES = [
   { label: "For you",    value: "" },
@@ -30,11 +25,10 @@ const CATEGORIES = [
 ];
 
 const INTEREST_TO_CATEGORY: Record<string, string> = {
-  music: "radio",         tech: "education",        civic: "commentary",
-  business: "business",   sports: "community",      education: "education",
-  community: "community", africa: "community",      campus: "education",
-  commentary: "commentary", news: "news",            radio: "radio",
-  "dj-session": "dj-session", general: "",
+  music:"radio", tech:"education", civic:"commentary", business:"business",
+  sports:"community", education:"education", community:"community",
+  africa:"community", campus:"education", commentary:"commentary",
+  news:"news", radio:"radio", "dj-session":"dj-session", general:"",
 };
 
 export default function FeedPage() {
@@ -46,30 +40,47 @@ export default function FeedPage() {
     if (profile?.interests && profile.interests.length > 0) {
       return [...new Set(
         profile.interests
-          .map((i) => INTEREST_TO_CATEGORY[i.toLowerCase()] ?? "")
+          .map(i => INTEREST_TO_CATEGORY[i.toLowerCase()] ?? "")
           .filter(Boolean),
       )];
     }
     return [...new Set(
       Object.keys(localInterests)
-        .filter((k) => localInterests[k])
-        .map((k) => INTEREST_TO_CATEGORY[k.toLowerCase()] ?? "")
+        .filter(k => localInterests[k])
+        .map(k => INTEREST_TO_CATEGORY[k.toLowerCase()] ?? "")
         .filter(Boolean),
     )];
   })();
 
+  const location = profile ? formatLocation(profile) : "";
+
   return (
     <AppShell>
-      <FeedHeader />
+      <FeedHeader location={location} />
       <div className="px-4 pt-3 pb-6 space-y-3">
-        <RegionScroller active={activeCategory} onChange={setActiveCategory} />
-        <LiveStrip category={activeCategory} interests={interests} />
+        {/* Regional context banner — shown when user has region */}
+        {location && (
+          <Link
+            to="/discover"
+            className="flex items-center gap-2 rounded-2xl border border-primary/20 bg-primary/6 px-3.5 py-2.5 hover:bg-primary/10 transition-colors"
+          >
+            <MapPin className="h-4 w-4 text-primary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-primary truncate">{location}</p>
+              <p className="text-[10px] text-primary/70">Tap to see nearby rooms & communities</p>
+            </div>
+            <span className="text-xs text-primary font-semibold shrink-0">Near me →</span>
+          </Link>
+        )}
+
+        <CategoryScroller active={activeCategory} onChange={setActiveCategory} />
+        <LiveStrip category={activeCategory} interests={interests} profile={profile} />
       </div>
     </AppShell>
   );
 }
 
-function FeedHeader() {
+function FeedHeader({ location }: { location: string }) {
   const navigate = useNavigate();
   return (
     <header className="sticky top-0 z-30 bg-background/85 backdrop-blur-xl border-b border-border">
@@ -78,7 +89,15 @@ function FeedHeader() {
           <div className="h-8 w-8 rounded-xl bg-neon flex items-center justify-center neon-glow">
             <LoopMark className="h-4 w-6 text-neon-foreground" />
           </div>
-          <div className="text-base font-extrabold leading-none">Loop</div>
+          <div>
+            <div className="text-base font-extrabold leading-none">Loop</div>
+            {location && (
+              <div className="flex items-center gap-0.5 mt-0.5">
+                <MapPin className="h-2.5 w-2.5 text-primary" />
+                <span className="text-[10px] text-primary font-semibold leading-none truncate max-w-[120px]">{location}</span>
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1.5">
           <button
@@ -101,12 +120,10 @@ function FeedHeader() {
   );
 }
 
-interface RegionScrollerProps { active: string; onChange: (category: string) => void; }
-
-function RegionScroller({ active, onChange }: RegionScrollerProps) {
+function CategoryScroller({ active, onChange }: { active: string; onChange: (v: string) => void }) {
   return (
     <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1">
-      {CATEGORIES.map((cat) => (
+      {CATEGORIES.map(cat => (
         <button
           key={cat.value}
           onClick={() => onChange(cat.value)}
@@ -126,7 +143,13 @@ function RegionScroller({ active, onChange }: RegionScrollerProps) {
 
 type FeedState = "loading" | "error" | "empty" | "ready";
 
-function LiveStrip({ category, interests }: { category: string; interests: string[] }) {
+function LiveStrip({
+  category, interests, profile,
+}: {
+  category: string;
+  interests: string[];
+  profile: ReturnType<typeof useAuth>["profile"];
+}) {
   const navigate = useNavigate();
   const [rooms, setRooms] = useState<ApiRoom[]>([]);
   const [state, setState] = useState<FeedState>("loading");
@@ -135,15 +158,14 @@ function LiveStrip({ category, interests }: { category: string; interests: strin
   const fetchRooms = useCallback(() => {
     setState("loading");
     listRooms({ limit: 20, category: (category as RoomCategory) || undefined })
-      .then((data) => { setRooms(data); setState(data.length === 0 ? "empty" : "ready"); })
+      .then(data => { setRooms(data); setState(data.length === 0 ? "empty" : "ready"); })
       .catch(() => setState("error"));
   }, [category]);
 
   useEffect(() => {
     if (category === "" && interests.length > 0) {
       listRooms({ category: interests[0] as RoomCategory, limit: 5 })
-        .then(setInterestRooms)
-        .catch(() => setInterestRooms([]));
+        .then(setInterestRooms).catch(() => setInterestRooms([]));
     } else {
       setInterestRooms([]);
     }
@@ -158,7 +180,7 @@ function LiveStrip({ category, interests }: { category: string; interests: strin
           <span className="h-2 w-2 rounded-full bg-muted animate-pulse" />
           <span className="text-xs font-bold text-muted-foreground">Loading rooms…</span>
         </div>
-        {[1, 2, 3].map((i) => <div key={i} className="h-24 rounded-2xl bg-secondary animate-pulse" />)}
+        {[1,2,3].map(i => <div key={i} className="h-24 rounded-2xl bg-secondary animate-pulse" />)}
       </div>
     );
   }
@@ -167,100 +189,98 @@ function LiveStrip({ category, interests }: { category: string; interests: strin
     return (
       <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6 text-center">
         <p className="text-sm font-medium text-destructive mb-2">Could not load rooms</p>
-        <button onClick={fetchRooms} className="text-xs text-muted-foreground underline underline-offset-2">
-          Try again
-        </button>
+        <button onClick={fetchRooms} className="text-xs text-destructive/70 underline">Retry</button>
       </div>
     );
   }
+
+  const hasRegion = !!(profile?.country);
 
   if (state === "empty") {
     return (
-      <div className="rounded-2xl border border-dashed border-border p-10 text-center">
-        <Radio className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
-        <p className="text-sm font-semibold text-foreground mb-1">
-          {category ? `No live ${category} rooms right now` : "No live rooms right now"}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {category ? "Try a different category or check back soon" : "Be the first — start a room"}
-        </p>
-        <button
-          onClick={() => navigate("/create/room")}
-          className="mt-3 text-xs font-semibold text-primary underline underline-offset-2"
-        >
-          Start a room →
-        </button>
+      <div className="space-y-3">
+        {/* No-region nudge */}
+        {!hasRegion && (
+          <button
+            type="button"
+            onClick={() => navigate("/settings")}
+            className="w-full flex items-start gap-3 rounded-2xl border border-primary/25 bg-primary/6 p-4 text-left hover:bg-primary/10 transition-colors"
+          >
+            <MapPin className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-primary">Complete your region</p>
+              <p className="text-xs text-primary/70 mt-0.5">Discover conversations happening near you.</p>
+            </div>
+          </button>
+        )}
+        <div className="rounded-2xl border border-dashed border-border bg-surface/50 p-8 text-center space-y-2">
+          <Radio className="h-8 w-8 text-muted-foreground/30 mx-auto" />
+          <p className="text-sm font-semibold">No live rooms right now</p>
+          <p className="text-xs text-muted-foreground">Be the first to start a conversation.</p>
+          <button
+            onClick={() => navigate("/create/room")}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground neon-glow"
+          >
+            Start a room
+          </button>
+        </div>
       </div>
     );
   }
 
-  const interestIds = new Set(interestRooms.map((r) => r.id));
-  const mainRooms = rooms.filter((r) => !interestIds.has(r.id));
-
   return (
-    <div className="space-y-3">
-      {interestRooms.length > 0 && category === "" && (
-        <>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-bold text-primary">Picked for you</span>
-            <span className="text-[10px] text-muted-foreground capitalize">· {interestRooms[0]?.category}</span>
-          </div>
-          {interestRooms.map((room) => <RoomCard key={`interest-${room.id}`} room={room} />)}
-          {mainRooms.length > 0 && (
-            <div className="flex items-center gap-1.5 pt-1">
-              <span className="h-2 w-2 rounded-full bg-live animate-pulse" />
-              <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">All live rooms</span>
-              <span className="ml-auto text-xs text-muted-foreground">{rooms.length} rooms</span>
-            </div>
-          )}
-        </>
-      )}
-
-      {!(interestRooms.length > 0 && category === "") && (
-        <div className="flex items-center gap-1.5 mb-2">
-          <span className="h-2 w-2 rounded-full bg-live animate-pulse" />
-          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            {category ? `${category} · Live` : "Live now"}
-          </span>
-          <span className="ml-auto text-xs text-muted-foreground">{rooms.length} rooms</span>
+    <div className="space-y-4">
+      {/* Interest rooms ("Picked for you") */}
+      {category === "" && interestRooms.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-0.5">Picked for you</h2>
+          {interestRooms.map(r => <RoomRow key={r.id} room={r} onClick={() => navigate(`/rooms/${r.id}`)} />)}
         </div>
       )}
 
-      {mainRooms.map((room) => <RoomCard key={room.id} room={room} />)}
+      {/* Main feed */}
+      <div className="space-y-2">
+        {category === "" && (
+          <div className="flex items-center gap-1.5 pb-0.5">
+            <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Live now</h2>
+          </div>
+        )}
+        {rooms.map(r => <RoomRow key={r.id} room={r} onClick={() => navigate(`/rooms/${r.id}`)} />)}
+      </div>
     </div>
   );
 }
 
-function RoomCard({ room }: { room: ApiRoom }) {
-  const hostName = room.host?.display_name ?? room.host?.username ?? null;
+function RoomRow({ room, onClick }: { room: ApiRoom; onClick: () => void }) {
+  const CATEGORY_EMOJI: Record<string, string> = {
+    community:"🏘️", news:"📡", commentary:"🎙️", radio:"📻",
+    "dj-session":"🎧", education:"📚", business:"💼", general:"🔊",
+  };
+  const emoji = CATEGORY_EMOJI[room.category] ?? "🔊";
+  const host  = (room as ApiRoom & { host?: { display_name?: string | null } }).host;
+
   return (
-    <Link
-      to={`/rooms/${room.id}`}
-      className="block rounded-2xl border border-border bg-surface p-4 hover:border-primary/30 transition-colors active:scale-[0.99]"
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-2xl border border-border bg-surface/60 px-4 py-3 text-left flex items-center gap-3 hover:border-primary/30 hover:bg-surface transition-all active:scale-[0.98]"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="inline-flex items-center gap-1 rounded-full bg-live/15 px-2 py-0.5 text-[10px] font-bold uppercase text-live">
-              <span className="h-1.5 w-1.5 rounded-full bg-live" />Live
-            </span>
-            {room.category && <span className="text-[10px] text-muted-foreground capitalize">{room.category}</span>}
-          </div>
-          <h3 className="font-semibold text-sm leading-tight truncate">{room.title}</h3>
-          {hostName && (
-            <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground/80">{hostName}</span>
-              {room.host?.is_verified && <BadgeCheck className="h-3 w-3 shrink-0 text-primary" />}
-              <span>· hosting</span>
-            </p>
+      <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 text-base">{emoji}</div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold truncate">{room.title}</p>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+          <span className="text-[11px] text-muted-foreground">{room.audience_count} listening</span>
+          {host?.display_name && (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              <span className="text-[11px] text-muted-foreground truncate">{host.display_name}</span>
+            </>
           )}
-          {room.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{room.description}</p>}
-        </div>
-        <div className="shrink-0 text-right">
-          <p className="text-xs font-semibold text-foreground/70">{room.audience_count}</p>
-          <p className="text-[10px] text-muted-foreground">listening</p>
         </div>
       </div>
-    </Link>
+      <BadgeCheck className="h-4 w-4 text-muted-foreground/30 shrink-0" />
+    </button>
   );
 }

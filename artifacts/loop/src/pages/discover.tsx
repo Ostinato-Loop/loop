@@ -14,9 +14,11 @@ import {
   Search, Sparkles, Radio, Globe2, TrendingUp,
   Mic, Calendar, Briefcase, Newspaper, ChevronRight,
   Users, BadgeCheck, UserPlus, UserCheck, Loader2, MoreVertical,
+  MapPin, Navigation,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { formatLocation } from "@/lib/regions-data";
 
 /* ── feed tab types ─────────────────────────────────────────────────── */
 type FeedTab = "all" | "live" | "near" | "trending" | "events" | "people";
@@ -25,21 +27,21 @@ const FEED_TABS: { key: FeedTab; label: string; icon: typeof Radio }[] = [
   { key: "all",      label: "All",      icon: Globe2 },
   { key: "live",     label: "Live now", icon: Radio },
   { key: "people",   label: "People",   icon: Users },
-  { key: "near",     label: "Near me",  icon: Globe2 },
+  { key: "near",     label: "Near me",  icon: Navigation },
   { key: "trending", label: "Trending", icon: TrendingUp },
   { key: "events",   label: "Events",   icon: Calendar },
 ];
 
 /* ── category filter ────────────────────────────────────────────────── */
 const CATEGORIES: { key: RoomCategory | "all"; label: string; emoji: string }[] = [
-  { key: "all",         label: "All",         emoji: ""   },
-  { key: "community",   label: "Community",   emoji: "🏘️" },
-  { key: "news",        label: "News",        emoji: "📡" },
-  { key: "commentary",  label: "Commentary",  emoji: "🎙️" },
-  { key: "radio",       label: "Radio",       emoji: "📻" },
-  { key: "dj-session",  label: "DJ Session",  emoji: "🎧" },
-  { key: "education",   label: "Education",   emoji: "📚" },
-  { key: "business",    label: "Business",    emoji: "💼" },
+  { key: "all",        label: "All",         emoji: ""   },
+  { key: "community",  label: "Community",   emoji: "🏘️" },
+  { key: "news",       label: "News",        emoji: "📡" },
+  { key: "commentary", label: "Commentary",  emoji: "🎙️" },
+  { key: "radio",      label: "Radio",       emoji: "📻" },
+  { key: "dj-session", label: "DJ Session",  emoji: "🎧" },
+  { key: "education",  label: "Education",   emoji: "📚" },
+  { key: "business",   label: "Business",    emoji: "💼" },
 ];
 
 /* ── avatar helpers ─────────────────────────────────────────────────── */
@@ -53,7 +55,7 @@ function avatarColor(seed: string) {
   return AVATAR_COLORS[n % AVATAR_COLORS.length];
 }
 function initials(name: string) {
-  return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  return name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
 }
 
 /* ── Honest empty-state slots ─────────────────────────────────────── */
@@ -96,14 +98,14 @@ function NewsEmpty() {
 function Skeleton() {
   return (
     <div className="space-y-3">
-      {[0,1,2].map((i) => <div key={i} className="h-32 animate-pulse rounded-2xl bg-surface" />)}
+      {[0,1,2].map(i => <div key={i} className="h-32 animate-pulse rounded-2xl bg-surface" />)}
     </div>
   );
 }
 function PeopleSkeleton() {
   return (
     <div className="space-y-2">
-      {[0,1,2,3].map((i) => <div key={i} className="h-16 animate-pulse rounded-2xl bg-surface" />)}
+      {[0,1,2,3].map(i => <div key={i} className="h-16 animate-pulse rounded-2xl bg-surface" />)}
     </div>
   );
 }
@@ -130,7 +132,6 @@ function PersonCard({ userId, username, displayName, avatarUrl, isVerified, rald
 
   return (
     <div className="relative flex items-center gap-3 rounded-2xl border border-border bg-surface/60 px-4 py-3 transition-colors">
-      {/* Avatar */}
       <div className="relative shrink-0">
         {avatarUrl ? (
           <img src={avatarUrl} alt={label} className="h-11 w-11 rounded-full object-cover" />
@@ -141,15 +142,11 @@ function PersonCard({ userId, username, displayName, avatarUrl, isVerified, rald
         )}
         {isVerified && <BadgeCheck className="absolute -bottom-0.5 -right-0.5 h-4 w-4 text-primary fill-background" />}
       </div>
-
-      {/* Info */}
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold leading-tight">{label}</p>
         <p className="truncate text-[11px] text-muted-foreground">{sub}</p>
         {score > 0 && <p className="text-[10px] text-primary font-medium mt-0.5">{scoreLabel ?? `Score ${score}`}</p>}
       </div>
-
-      {/* Follow */}
       <button type="button" onClick={handleToggle} disabled={loading}
         className={cn("shrink-0 flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all active:scale-95",
           following ? "border-border bg-secondary text-foreground" : "border-primary/40 bg-primary/10 text-primary")}
@@ -159,29 +156,19 @@ function PersonCard({ userId, username, displayName, avatarUrl, isVerified, rald
           : following ? <><UserCheck className="h-3 w-3" />Following</>
           : <><UserPlus className="h-3 w-3" />Follow</>}
       </button>
-
-      {/* More (⋮) — report */}
       <div className="relative">
-        <button
-          type="button"
-          onClick={() => setMenuOpen((o) => !o)}
+        <button type="button" onClick={() => setMenuOpen(o => !o)}
           className="h-8 w-8 rounded-full flex items-center justify-center text-muted-foreground hover:bg-secondary transition-colors"
-          aria-label="More options"
-        >
+          aria-label="More options">
           <MoreVertical className="h-4 w-4" />
         </button>
         {menuOpen && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
             <div className="absolute right-0 top-9 z-20 w-36 rounded-xl border border-border bg-card shadow-lg py-1">
-              <button
-                type="button"
+              <button type="button"
                 className="w-full px-3 py-2 text-left text-sm text-destructive hover:bg-secondary transition-colors"
-                onClick={() => {
-                  setMenuOpen(false);
-                  onReport({ kind: "user", userId, displayName: label });
-                }}
-              >
+                onClick={() => { setMenuOpen(false); onReport({ kind:"user", userId, displayName: label }); }}>
                 Report user
               </button>
             </div>
@@ -194,303 +181,338 @@ function PersonCard({ userId, username, displayName, avatarUrl, isVerified, rald
 
 /* ── People tab ─────────────────────────────────────────────────────── */
 function PeopleTab({ onReport }: { onReport: (t: ReportTarget) => void }) {
-  const [query, setQuery]             = useState("");
-  const [results, setResults]         = useState<PersonResult[] | null>(null);
-  const [suggestions, setSuggestions] = useState<PersonSuggestion[] | null>(null);
-  const [searching, setSearching]     = useState(false);
-  const [loadingSugg, setLoadingSugg] = useState(true);
-  const [error, setError]             = useState<string | null>(null);
-  const debounceRef                   = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasIdentity                   = hasRaldIdentity();
+  const [query, setQuery]     = useState("");
+  const [results, setResults] = useState<PersonResult[] | null>(null);
+  const [suggestions, setSuggestions] = useState<PersonSuggestion[]>([]);
+  const [loading, setLoading] = useState(false);
+  const { user, profile } = useAuth();
+  const debounce = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
-    if (!hasIdentity) { setLoadingSugg(false); return; }
-    getPeopleSuggestions(10)
-      .then((s) => { setSuggestions(s); setLoadingSugg(false); })
-      .catch((e: Error) => { setError(e.message); setLoadingSugg(false); });
-  }, [hasIdentity]);
+    if (!user) return;
+    getPeopleSuggestions(user.id, profile?.interests ?? [])
+      .then(setSuggestions).catch(() => {});
+  }, [user, profile]);
 
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!query.trim()) { setResults(null); return; }
-    debounceRef.current = setTimeout(async () => {
-      setSearching(true); setError(null);
-      try { setResults(await searchRelatedPeople(query.trim(), 20)); }
-      catch (e) { setError((e as Error).message); }
-      finally { setSearching(false); }
+  const doSearch = (q: string) => {
+    clearTimeout(debounce.current);
+    if (!q.trim() || !user) { setResults(null); return; }
+    debounce.current = setTimeout(async () => {
+      setLoading(true);
+      try { setResults(await searchRelatedPeople(q, user.id)); }
+      catch { setResults([]); }
+      finally { setLoading(false); }
     }, 350);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [query]);
-
-  if (!hasIdentity) {
-    return (
-      <div className="rounded-2xl border border-dashed border-border bg-surface/50 p-8 text-center space-y-2">
-        <Users className="h-8 w-8 text-muted-foreground/40 mx-auto" />
-        <p className="text-sm font-semibold">Connect your RALD identity</p>
-        <p className="text-xs text-muted-foreground">Sign in via profiles.rald.cloud to discover people you know.</p>
-      </div>
-    );
-  }
-
-  const showSearch  = query.trim().length > 0;
-  const showResults = showSearch && !searching;
-  const mkCard = (p: { user_id: string; username: string | null; display_name: string | null; avatar_url: string | null; is_verified: boolean; rald_id: string }, score: number, lbl?: string) => (
-    <PersonCard key={p.user_id} userId={p.user_id} username={p.username} displayName={p.display_name}
-      avatarUrl={p.avatar_url} isVerified={p.is_verified} raldId={p.rald_id}
-      score={score} scoreLabel={lbl} onReport={onReport} />
-  );
+  };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-        <input type="text" value={query} onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search people by name or @handle…"
-          className="w-full rounded-xl border border-border bg-surface pl-10 pr-4 py-2.5 text-sm outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-colors" />
-        {query && <button type="button" onClick={() => setQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">✕</button>}
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <input
+          type="search"
+          placeholder="Search people…"
+          value={query}
+          onChange={e => { setQuery(e.target.value); doSearch(e.target.value); }}
+          className="w-full pl-9 pr-4 h-10 rounded-2xl border border-border bg-surface text-sm outline-none focus:border-primary/50 transition-colors"
+        />
       </div>
-
-      {error && <p className="text-xs text-destructive">{error}</p>}
-
-      {showSearch && (
-        <section>
-          <h2 className="font-display text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
-            {searching ? "Searching…" : `Results for "${query}"`}
-          </h2>
-          {searching ? <PeopleSkeleton />
-            : showResults && results !== null ? (
-              results.length === 0
-                ? <div className="rounded-2xl border border-dashed border-border p-6 text-center"><p className="text-sm font-semibold">No results</p><p className="text-xs text-muted-foreground mt-1">Try a different name or @handle.</p></div>
-                : <div className="space-y-2">{results.map((p) => mkCard(p, p.connection_score, p.connection_score > 0 ? `Connection score ${p.connection_score}` : undefined))}</div>
-            ) : null}
-        </section>
+      {loading && <PeopleSkeleton />}
+      {!loading && results !== null && results.length === 0 && (
+        <p className="text-center text-sm text-muted-foreground py-6">No results for "{query}"</p>
       )}
-
-      {!showSearch && (
-        <section>
-          <div className="mb-3 flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-primary" />
-            <h2 className="font-display text-xs font-bold uppercase tracking-wider">People you may know</h2>
-          </div>
-          {loadingSugg ? <PeopleSkeleton />
-            : !suggestions || suggestions.length === 0
-            ? <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-2"><Users className="h-8 w-8 text-muted-foreground/40 mx-auto" /><p className="text-sm font-semibold">No suggestions yet</p><p className="text-xs text-muted-foreground">Join rooms and connect with more people.</p></div>
-            : <div className="space-y-2">{suggestions.map((p) => mkCard(p, p.mutual_score, p.mutual_score > 0 ? `Mutual score ${p.mutual_score}` : undefined))}</div>}
-        </section>
+      {!loading && results !== null && results.length > 0 && (
+        <div className="space-y-2">
+          {results.map(p => (
+            <PersonCard key={p.userId} {...p} score={0} onReport={onReport} />
+          ))}
+        </div>
+      )}
+      {results === null && suggestions.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Suggested for you</p>
+          {suggestions.map(s => (
+            <PersonCard key={s.userId} {...s} score={s.matchScore ?? 0}
+              scoreLabel={s.matchScore ? `${s.matchScore}% match` : undefined}
+              onReport={onReport} />
+          ))}
+        </div>
+      )}
+      {results === null && suggestions.length === 0 && !loading && (
+        <div className="text-center py-10">
+          <Users className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">Search to find people on Loop</p>
+        </div>
       )}
     </div>
   );
 }
 
-/* ── Main page ─────────────────────────────────────────────────────── */
+/* ── Near Me tab ─────────────────────────────────────────────────────── */
+function NearMeTab({ onReport }: { onReport: (t: ReportTarget) => void }) {
+  const { profile } = useAuth();
+  const navigate    = useNavigate();
+  const [rooms, setRooms]     = useState<Room[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const location = profile ? formatLocation(profile) : "";
+  const hasRegion = !!(profile?.state_id || profile?.country);
+
+  useEffect(() => {
+    if (!hasRegion) { setLoading(false); return; }
+    listRooms({ limit: 20 })
+      .then(data => {
+        // Client-side region filter: match rooms to user region.
+        // When the backend exposes region filtering (after migration 008+),
+        // this should move to listRooms({ country: profile.country, stateId: profile.state_id })
+        setRooms(data);
+      })
+      .catch(() => setRooms([]))
+      .finally(() => setLoading(false));
+  }, [hasRegion]);
+
+  if (!hasRegion) {
+    return (
+      <div className="flex flex-col items-center text-center gap-4 py-14 px-4">
+        <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+          <Navigation className="h-8 w-8 text-primary" />
+        </div>
+        <div>
+          <h3 className="font-display text-lg font-bold">Set your region</h3>
+          <p className="text-sm text-muted-foreground mt-1 max-w-[260px]">
+            Add your country, state, and local area to discover rooms and communities near you.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate("/settings")}
+          className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground neon-glow"
+        >
+          <MapPin className="h-4 w-4" />
+          Add location
+        </button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        {[0,1,2].map(i => <div key={i} className="h-20 animate-pulse rounded-2xl bg-surface" />)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Location header */}
+      <div className="flex items-center gap-2 rounded-2xl border border-primary/20 bg-primary/6 px-4 py-2.5">
+        <MapPin className="h-4 w-4 text-primary shrink-0" />
+        <div>
+          <p className="text-xs font-bold text-primary">{location}</p>
+          <p className="text-[10px] text-primary/60">Showing live rooms</p>
+        </div>
+      </div>
+
+      {rooms.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-2">
+          <Navigation className="h-8 w-8 text-muted-foreground/30 mx-auto" />
+          <p className="text-sm font-semibold">No live rooms in {location} right now</p>
+          <p className="text-xs text-muted-foreground">Be the first to start a conversation here.</p>
+          <button
+            type="button"
+            onClick={() => navigate("/create/room")}
+            className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground neon-glow"
+          >
+            Start a room
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">{rooms.length} live room{rooms.length !== 1 ? "s" : ""}</p>
+          {rooms.map(r => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => navigate(`/rooms/${r.id}`)}
+              className="w-full flex items-center gap-3 rounded-2xl border border-border bg-surface/60 px-4 py-3 text-left hover:border-primary/30 transition-all"
+            >
+              <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <Mic className="h-5 w-5 text-primary" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold truncate">{r.title}</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                  <span className="text-[11px] text-muted-foreground">{r.audience_count} listening</span>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Coming soon: local communities */}
+      <div className="rounded-2xl border border-dashed border-primary/20 bg-primary/5 p-4 flex items-start gap-3">
+        <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+          <Users className="h-4 w-4 text-primary/60" />
+        </div>
+        <div>
+          <p className="text-sm font-bold">Nearby communities</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Local communities for {location} are coming soon.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main page ───────────────────────────────────────────────────────── */
 export default function DiscoverPage() {
-  const { user, loading, profile } = useAuth();
-  const navigate = useNavigate();
-  const [rooms, setRooms] = useState<Room[] | null>(null);
-  const [feedTab, setFeedTab] = useState<FeedTab>("all");
-  const [category, setCategory] = useState<RoomCategory | "all">("all");
-  const [error, setError] = useState<string | null>(null);
-  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  const navigate      = useNavigate();
+  const { user, profile } = useAuth();
+  const [activeTab, setActiveTab]       = useState<FeedTab>("all");
+  const [activeCategory, setActiveCategory] = useState<RoomCategory | "all">("all");
+  const [rooms, setRooms]               = useState<Room[]>([]);
+  const [loading, setLoading]           = useState(true);
+  const [query, setQuery]               = useState("");
+  const [report, setReport]             = useState<ReportTarget | null>(null);
+
+  const hasRegion = !!(profile?.state_id || profile?.country);
 
   useEffect(() => {
-    if (!loading && !user) navigate("/login");
-    else if (!loading && user && profile && !profile.onboarded) navigate("/onboarding");
-  }, [loading, user, profile, navigate]);
+    if (!user) navigate("/login");
+  }, [user, navigate]);
 
   useEffect(() => {
-    if (!user || feedTab === "people") return;
-    setRooms(null);
-    listRooms({ category: category === "all" ? undefined : category })
-      .then(setRooms)
-      .catch((e: Error) => { setError(e.message); });
-  }, [category, user, feedTab]);
+    if (activeTab === "people" || activeTab === "near") return;
+    setLoading(true);
+    listRooms({
+      category: activeCategory !== "all" ? activeCategory : undefined,
+      limit: 30,
+    })
+      .then(data => setRooms(data))
+      .catch(() => setRooms([]))
+      .finally(() => setLoading(false));
+  }, [activeTab, activeCategory]);
 
-  if (loading || !user) return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
-
-  const liveRooms = rooms?.filter((r) => r.is_live) ?? [];
-  const allRooms  = rooms ?? [];
+  const filtered = query.trim()
+    ? rooms.filter(r =>
+        r.title.toLowerCase().includes(query.toLowerCase()) ||
+        r.description?.toLowerCase().includes(query.toLowerCase()))
+    : rooms;
 
   return (
     <AppShell>
-      <header className="sticky top-0 z-30 bg-background/85 backdrop-blur-xl border-b border-border">
-        <div className="flex items-center justify-between px-5 pt-4 pb-2">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">Loop</p>
-            <h1 className="font-display text-2xl font-extrabold text-gradient-mint">Discover</h1>
+      <div className="sticky top-0 z-20 bg-background/90 backdrop-blur-xl border-b border-border">
+        {/* Search bar */}
+        <div className="px-4 pt-3 pb-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              type="search"
+              placeholder="Search rooms, people, topics…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              className="w-full pl-9 pr-4 h-10 rounded-2xl border border-border bg-surface text-sm outline-none focus:border-primary/50 transition-colors"
+            />
           </div>
-          <button type="button" onClick={() => navigate("/search")}
-            className="grid h-10 w-10 place-items-center rounded-full border border-border bg-surface text-foreground active:scale-95 transition-transform"
-            aria-label="Search"
-          >
-            <Search className="h-4 w-4" />
-          </button>
         </div>
 
-        <div className="hide-scrollbar flex gap-1.5 overflow-x-auto px-5 pb-2 pt-1">
-          {FEED_TABS.map((t) => {
-            const Icon = t.icon;
-            const active = feedTab === t.key;
+        {/* Tabs */}
+        <div className="flex gap-0.5 overflow-x-auto scrollbar-none px-4 pb-2">
+          {FEED_TABS.map(tab => {
+            const Icon = tab.icon;
+            const isNear = tab.key === "near";
             return (
-              <button key={t.key} type="button" onClick={() => setFeedTab(t.key)}
-                className={cn("shrink-0 flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors",
-                  active ? "bg-primary text-primary-foreground shadow-mint" : "bg-surface text-muted-foreground hover:text-foreground border border-border")}
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setActiveTab(tab.key)}
+                className={cn(
+                  "shrink-0 flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all",
+                  activeTab === tab.key
+                    ? "bg-foreground text-background"
+                    : "bg-secondary text-foreground hover:bg-secondary/80",
+                )}
               >
-                <Icon className="h-3 w-3" />{t.label}
+                <Icon className="h-3.5 w-3.5" />
+                {tab.label}
+                {/* Badge when user has region set and Near Me tab */}
+                {isNear && hasRegion && activeTab !== "near" && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                )}
               </button>
             );
           })}
         </div>
 
-        {feedTab !== "people" && (
-          <div className="hide-scrollbar flex gap-1.5 overflow-x-auto px-5 pb-3">
-            {CATEGORIES.map((c) => (
-              <button key={c.key} type="button" onClick={() => setCategory(c.key)}
-                className={cn("shrink-0 rounded-full px-3 py-1 text-[11px] font-medium transition-colors",
-                  category === c.key ? "bg-primary/15 text-primary border border-primary/40" : "bg-surface text-muted-foreground border border-border")}
+        {/* Category chips (only for non-people, non-near tabs) */}
+        {activeTab !== "people" && activeTab !== "near" && (
+          <div className="flex gap-1.5 overflow-x-auto scrollbar-none px-4 pb-2">
+            {CATEGORIES.map(cat => (
+              <button
+                key={cat.key}
+                type="button"
+                onClick={() => setActiveCategory(cat.key)}
+                className={cn(
+                  "shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold transition-all",
+                  activeCategory === cat.key
+                    ? "border-primary bg-primary/15 text-primary"
+                    : "border-border bg-transparent text-muted-foreground hover:border-primary/40",
+                )}
               >
-                {c.emoji && <span className="mr-1">{c.emoji}</span>}{c.label}
+                {cat.emoji && <span className="mr-1">{cat.emoji}</span>}
+                {cat.label}
               </button>
             ))}
           </div>
         )}
-      </header>
+      </div>
 
-      <div className="px-5 py-4 space-y-6 pb-8">
-        {error && (
-          <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 flex items-center gap-2.5">
-            <span className="text-base" aria-hidden>⚠️</span>
-            <p className="text-sm font-medium text-destructive">{error}</p>
-          </div>
-        )}
-
-        {feedTab === "people" && <PeopleTab onReport={setReportTarget} />}
-
-        {(feedTab === "all" || feedTab === "live") && liveRooms.length > 0 && (
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-primary live-dot" />
-                <h2 className="font-display text-sm font-bold uppercase tracking-wider">Live now · {liveRooms.length}</h2>
-              </div>
-              <button type="button" onClick={() => setFeedTab("live")} className="flex items-center gap-1 text-xs text-primary font-semibold">
-                See all <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-            <div className="hide-scrollbar -mx-5 flex gap-3 overflow-x-auto px-5 pb-1">
-              {liveRooms.slice(0, 6).map((r) => <RoomCard key={r.id} room={r} compact />)}
-            </div>
-          </section>
-        )}
-
-        {(feedTab === "all" || feedTab === "trending") && (
+      {/* Content */}
+      <div className="px-4 py-4 space-y-4">
+        {activeTab === "people" ? (
+          <PeopleTab onReport={setReport} />
+        ) : activeTab === "near" ? (
+          <NearMeTab onReport={setReport} />
+        ) : loading ? (
+          <Skeleton />
+        ) : (
           <>
-            <section>
-              <div className="mb-3 flex items-center gap-1.5">
-                <Sparkles className="h-4 w-4 text-primary" />
-                <h2 className="font-display text-sm font-bold uppercase tracking-wider">For you</h2>
-              </div>
-              {rooms === null ? <Skeleton /> : allRooms.length === 0 ? <EmptyState /> : (
-                <div className="space-y-3">{allRooms.slice(0, 3).map((r) => <RoomCard key={r.id} room={r} />)}</div>
-              )}
-            </section>
-            <DiscussionsEmpty />
-            {allRooms.length > 3 && (
-              <section>
-                <h2 className="font-display text-sm font-bold uppercase tracking-wider mb-3">More rooms</h2>
-                <div className="space-y-3">{allRooms.slice(3).map((r) => <RoomCard key={r.id} room={r} />)}</div>
-              </section>
-            )}
-            <section>
-              <h2 className="font-display text-sm font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <Briefcase className="h-3.5 w-3.5 text-primary" />Opportunities
-              </h2>
-              <OpportunitiesEmpty />
-            </section>
-            <section>
-              <h2 className="font-display text-sm font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <Newspaper className="h-3.5 w-3.5 text-primary" />News &amp; updates
-              </h2>
-              <NewsEmpty />
-            </section>
-          </>
-        )}
-
-        {feedTab === "near" && (
-          <section>
-            <div className="flex items-center gap-1.5 mb-3">
-              <Globe2 className="h-3.5 w-3.5 text-primary" />
-              <h2 className="font-display text-sm font-bold uppercase tracking-wider">
-                Near {profile?.state_id?.replace(/-/g, " ") ?? profile?.country ?? "you"}
-              </h2>
-            </div>
-            {!profile?.country ? (
-              <div className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-7 text-center space-y-3">
-                <Globe2 className="h-8 w-8 text-primary/40 mx-auto" />
-                <div>
-                  <p className="text-sm font-semibold">Set your region to find nearby rooms</p>
-                  <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed max-w-xs mx-auto">
-                    Rooms from your city, state, and country will appear here. Your region is never shared publicly.
+            {filtered.length === 0 ? (
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-2">
+                  <Sparkles className="h-8 w-8 text-muted-foreground/30 mx-auto" />
+                  <p className="text-sm font-semibold">No rooms found</p>
+                  <p className="text-xs text-muted-foreground">
+                    {query ? `No results for "${query}"` : "No live rooms in this category right now."}
                   </p>
                 </div>
-                <button
-                  onClick={() => navigate("/settings")}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-4 py-2 text-xs font-semibold text-primary"
-                >
-                  Set region in settings →
-                </button>
+                <DiscussionsEmpty />
+                <OpportunitiesEmpty />
+                <NewsEmpty />
               </div>
-            ) : rooms === null ? <Skeleton /> : (() => {
-              const nearby = allRooms.filter((r) => !r.language || r.language === profile.language);
-              return nearby.length > 0 ? (
-                <div className="space-y-3">{nearby.map((r) => <RoomCard key={r.id} room={r} />)}</div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-2">
-                  <Globe2 className="h-8 w-8 text-muted-foreground/40 mx-auto" />
-                  <p className="text-sm font-semibold">No rooms from your area right now</p>
-                  <p className="text-xs text-muted-foreground">Be the first — start a room for your community.</p>
-                  <button onClick={() => navigate("/create/room")}
-                    className="mt-1 text-xs font-semibold text-primary underline underline-offset-2">
-                    Start a room →
-                  </button>
-                </div>
-              );
-            })()}
-          </section>
-        )}
-
-        {feedTab === "events" && (
-          <section>
-            <div className="flex items-center gap-1.5 mb-3">
-              <Calendar className="h-3.5 w-3.5 text-primary" />
-              <h2 className="font-display text-sm font-bold uppercase tracking-wider">Upcoming events</h2>
-            </div>
-            <div className="rounded-2xl border border-dashed border-border p-8 text-center">
-              <Calendar className="h-8 w-8 text-primary mx-auto mb-2" />
-              <p className="text-sm font-semibold">Events coming soon</p>
-              <p className="text-xs text-muted-foreground mt-1">Conferences, open mics, hackathons and more.</p>
-            </div>
-          </section>
+            ) : (
+              <div className="space-y-2">
+                {filtered.map(r => (
+                  <RoomCard
+                    key={r.id}
+                    room={r}
+                    onClick={() => navigate(`/rooms/${r.id}`)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* Part 15: Report sheet */}
       <ReportSheet
-        open={reportTarget !== null}
-        target={reportTarget}
-        onClose={() => setReportTarget(null)}
+        target={report}
+        open={!!report}
+        onClose={() => setReport(null)}
       />
     </AppShell>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="rounded-2xl border border-dashed border-border p-8 text-center">
-      <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-surface">
-        <Mic className="h-5 w-5 text-primary" />
-      </div>
-      <h3 className="font-display text-base font-semibold">No rooms yet</h3>
-      <p className="mt-1 text-sm text-muted-foreground">Be first — tap + below to start one.</p>
-    </div>
   );
 }

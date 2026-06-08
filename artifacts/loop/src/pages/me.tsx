@@ -6,33 +6,30 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import {
   BadgeCheck, Bell, ChevronRight, Globe2,
-  LogOut, Settings, Shield, Star,
+  LogOut, MapPin, Settings, Shield, Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatLocation } from "@/lib/regions-data";
 
 const AVATAR_COLORS = [
-  "from-emerald-500 to-teal-500",
-  "from-fuchsia-500 to-purple-500",
-  "from-amber-500 to-orange-500",
-  "from-sky-500 to-blue-500",
-  "from-rose-500 to-pink-500",
-  "from-mint to-mint-glow",
+  "from-emerald-500 to-teal-500","from-fuchsia-500 to-purple-500",
+  "from-amber-500 to-orange-500","from-sky-500 to-blue-500",
+  "from-rose-500 to-pink-500","from-mint to-mint-glow",
 ];
 function avatarColor(uid: string) {
-  let n = 0;
-  for (let i = 0; i < uid.length; i++) n += uid.charCodeAt(i);
+  let n = 0; for (let i = 0; i < uid.length; i++) n += uid.charCodeAt(i);
   return AVATAR_COLORS[n % AVATAR_COLORS.length];
 }
 function initials(name: string | null) {
   if (!name) return "?";
-  return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+  return name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
 }
 
-const SETTINGS = [
-  { icon: Bell, label: "Notifications", sub: "Manage alerts & sounds" },
-  { icon: Globe2, label: "Language & commentary", sub: "Preferred room language" },
-  { icon: Shield, label: "Privacy", sub: "Who can see & follow you" },
-  { icon: Settings, label: "Audio quality", sub: "Bandwidth & codec preferences" },
+const SETTINGS_ITEMS = [
+  { icon: Bell,     label: "Notifications",           sub: "Manage alerts & sounds" },
+  { icon: Globe2,   label: "Language & commentary",   sub: "Preferred room language" },
+  { icon: Shield,   label: "Privacy",                 sub: "Who can see & follow you" },
+  { icon: Settings, label: "Audio quality",           sub: "Bandwidth & codec preferences" },
 ];
 
 type ProfileCounts = { followers: number; following: number };
@@ -50,24 +47,21 @@ export default function MePage() {
   useEffect(() => {
     if (!user) return;
     authFetch("/api/follows/me/counts")
-      .then((r) => r.ok ? r.json() as Promise<ProfileCounts> : Promise.reject())
-      .then((data) => setCounts({ followers: data.followers ?? 0, following: data.following ?? 0 }))
+      .then(r => r.ok ? r.json() as Promise<ProfileCounts> : Promise.reject())
+      .then(data => setCounts({ followers: data.followers ?? 0, following: data.following ?? 0 }))
       .catch(() => {});
   }, [user]);
 
   if (!profile || !user) return null;
 
-  const color = avatarColor(user.id);
-  const name = profile.display_name ?? "You";
+  const color    = avatarColor(user.id);
+  const name     = profile.display_name ?? "You";
+  const location = formatLocation(profile);
 
   const handleSignOut = async () => {
     setSigningOut(true);
-    try {
-      await signOut();
-      navigate("/login");
-    } finally {
-      setSigningOut(false);
-    }
+    try { await signOut(); navigate("/login"); }
+    finally { setSigningOut(false); }
   };
 
   return (
@@ -90,11 +84,35 @@ export default function MePage() {
             <h1 className="flex items-center gap-1.5 font-display text-xl font-bold">
               <span className="truncate">{name}</span>
               {profile.is_verified && <BadgeCheck className="h-4 w-4 shrink-0 text-primary" />}
-              {profile.is_creator && <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />}
+              {profile.is_creator  && <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />}
             </h1>
             <p className="text-xs text-muted-foreground">@{profile.username ?? "set-a-handle"}</p>
+
+            {/* ── Location badge ─────────────────────────────────── */}
+            {location ? (
+              <button
+                type="button"
+                onClick={() => navigate("/settings")}
+                className="mt-1.5 flex items-center gap-1 rounded-full border border-primary/25 bg-primary/8 px-2.5 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/15 transition-colors"
+                aria-label="Edit location"
+              >
+                <MapPin className="h-3 w-3 shrink-0" />
+                {location}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => navigate("/settings")}
+                className="mt-1.5 flex items-center gap-1 rounded-full border border-dashed border-muted-foreground/30 px-2.5 py-0.5 text-[11px] text-muted-foreground hover:border-primary/40 hover:text-primary transition-colors"
+                aria-label="Add location"
+              >
+                <MapPin className="h-3 w-3 shrink-0" />
+                Add your location
+              </button>
+            )}
+
             {profile.bio && (
-              <p className="mt-1 max-w-[200px] text-xs leading-snug text-muted-foreground line-clamp-2">{profile.bio}</p>
+              <p className="mt-1.5 max-w-[200px] text-xs leading-snug text-muted-foreground line-clamp-2">{profile.bio}</p>
             )}
           </div>
         </div>
@@ -117,11 +135,8 @@ export default function MePage() {
           <div className="mt-5">
             <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Interests</h2>
             <div className="flex flex-wrap gap-2">
-              {profile.interests.map((i) => (
-                <span
-                  key={i}
-                  className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
-                >
+              {profile.interests.map(i => (
+                <span key={i} className="rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
                   {i}
                 </span>
               ))}
@@ -131,38 +146,38 @@ export default function MePage() {
 
         {/* Settings list */}
         <h2 className="mt-6 mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Settings</h2>
-        <ul className="overflow-hidden rounded-2xl border border-border bg-surface">
-          {SETTINGS.map(({ icon: Icon, label, sub }, idx) => (
-            <li
+        <div className="rounded-2xl border border-border overflow-hidden divide-y divide-border">
+          {SETTINGS_ITEMS.map(({ icon: Icon, label, sub }) => (
+            <button
               key={label}
+              type="button"
               onClick={() => navigate("/settings")}
-              className={cn(
-                "flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors active:bg-surface-elev",
-                idx < SETTINGS.length - 1 && "border-b border-border",
-              )}
+              className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/60 transition-colors"
             >
-              <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-surface-elev">
+              <div className="h-9 w-9 rounded-xl bg-secondary flex items-center justify-center shrink-0">
                 <Icon className="h-4 w-4 text-muted-foreground" />
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{label}</p>
-                <p className="text-[11px] text-muted-foreground">{sub}</p>
+              <div className="min-w-0 flex-1 text-left">
+                <p className="text-sm font-semibold">{label}</p>
+                <p className="text-xs text-muted-foreground truncate">{sub}</p>
               </div>
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
-            </li>
+              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+            </button>
           ))}
-        </ul>
+        </div>
 
         {/* Sign out */}
-        <Button
-          onClick={handleSignOut}
-          disabled={signingOut}
-          variant="secondary"
-          className="mb-8 mt-5 h-12 w-full rounded-xl"
-        >
-          <LogOut className="mr-2 h-4 w-4" />
-          {signingOut ? "Signing out…" : "Sign out"}
-        </Button>
+        <div className="mt-6 mb-8">
+          <Button
+            variant="outline"
+            className="w-full border-destructive/30 text-destructive hover:bg-destructive/10"
+            onClick={handleSignOut}
+            disabled={signingOut}
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            {signingOut ? "Signing out…" : "Sign out"}
+          </Button>
+        </div>
       </div>
     </AppShell>
   );
