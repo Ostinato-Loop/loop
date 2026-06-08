@@ -276,7 +276,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(RALD_TOKEN_KEY);
     setSession(null);
     setProfile(null);
-    window.location.href = `${RALD_AUTH_UI}/logout?app_id=loop&redirect_to=${encodeURIComponent(window.location.origin + "/")}`;
+    window.location.href = window.location.origin + "/";
   }, []);
 
   return (

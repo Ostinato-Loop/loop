@@ -1,29 +1,22 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { useAuth } from "@/hooks/use-auth";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoomCard } from "@/components/rooms/room-card";
 import { listRooms, type Room } from "@/lib/api/rooms";
 import { Radio, Users, TrendingUp } from "lucide-react";
 
 export default function LivePage() {
-  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [rooms, setRooms] = useState<Room[] | null>(null);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
-    if (!loading && !user) navigate("/login");
-  }, [user, loading, navigate]);
-
-  useEffect(() => {
-    if (!user) return;
     const load = () => listRooms().then(setRooms).catch(() => setRooms([]));
     load();
     /* auto-refresh every 30 s to feel alive */
     const t = setInterval(load, 30_000);
     return () => clearInterval(t);
-  }, [user]);
+  }, []);
 
   /* pulsing elapsed timer to give "live" feel */
   useEffect(() => {

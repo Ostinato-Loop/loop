@@ -185,21 +185,19 @@ function PeopleTab({ onReport }: { onReport: (t: ReportTarget) => void }) {
   const [results, setResults] = useState<PersonResult[] | null>(null);
   const [suggestions, setSuggestions] = useState<PersonSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
-  const { user, profile } = useAuth();
   const debounce = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
-    if (!user) return;
-    getPeopleSuggestions(user.id, profile?.interests ?? [])
+    getPeopleSuggestions(10)
       .then(setSuggestions).catch(() => {});
-  }, [user, profile]);
+  }, []);
 
   const doSearch = (q: string) => {
     clearTimeout(debounce.current);
-    if (!q.trim() || !user) { setResults(null); return; }
+    if (!q.trim()) { setResults(null); return; }
     debounce.current = setTimeout(async () => {
       setLoading(true);
-      try { setResults(await searchRelatedPeople(q, user.id)); }
+      try { setResults(await searchRelatedPeople(q, 20)); }
       catch { setResults([]); }
       finally { setLoading(false); }
     }, 350);
@@ -224,7 +222,9 @@ function PeopleTab({ onReport }: { onReport: (t: ReportTarget) => void }) {
       {!loading && results !== null && results.length > 0 && (
         <div className="space-y-2">
           {results.map(p => (
-            <PersonCard key={p.userId} {...p} score={0} onReport={onReport} />
+            <PersonCard key={p.user_id} userId={p.user_id} username={p.username}
+              displayName={p.display_name} avatarUrl={p.avatar_url} isVerified={p.is_verified}
+              raldId={p.rald_id} score={p.connection_score} onReport={onReport} />
           ))}
         </div>
       )}
@@ -232,8 +232,10 @@ function PeopleTab({ onReport }: { onReport: (t: ReportTarget) => void }) {
         <div className="space-y-2">
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Suggested for you</p>
           {suggestions.map(s => (
-            <PersonCard key={s.userId} {...s} score={s.matchScore ?? 0}
-              scoreLabel={s.matchScore ? `${s.matchScore}% match` : undefined}
+            <PersonCard key={s.user_id} userId={s.user_id} username={s.username}
+              displayName={s.display_name} avatarUrl={s.avatar_url} isVerified={s.is_verified}
+              raldId={s.rald_id} score={s.mutual_score}
+              scoreLabel={s.mutual_score ? `${s.mutual_score}% match` : undefined}
               onReport={onReport} />
           ))}
         </div>
@@ -370,7 +372,7 @@ function NearMeTab({ onReport }: { onReport: (t: ReportTarget) => void }) {
 /* ── Main page ───────────────────────────────────────────────────────── */
 export default function DiscoverPage() {
   const navigate      = useNavigate();
-  const { user, profile } = useAuth();
+  const { profile } = useAuth();
   const [activeTab, setActiveTab]       = useState<FeedTab>("all");
   const [activeCategory, setActiveCategory] = useState<RoomCategory | "all">("all");
   const [rooms, setRooms]               = useState<Room[]>([]);
@@ -379,10 +381,6 @@ export default function DiscoverPage() {
   const [report, setReport]             = useState<ReportTarget | null>(null);
 
   const hasRegion = !!(profile?.state_id || profile?.country);
-
-  useEffect(() => {
-    if (!user) navigate("/login");
-  }, [user, navigate]);
 
   useEffect(() => {
     if (activeTab === "people" || activeTab === "near") return;

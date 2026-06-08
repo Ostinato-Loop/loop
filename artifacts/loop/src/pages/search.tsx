@@ -140,7 +140,7 @@ function Empty({ tab, query }: { tab: SearchTab; query: string }) {
 
 /* ── Page ── */
 export default function SearchPage() {
-  const { user, loading } = useAuth();
+  const { loading } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<SearchTab>("rooms");
   const [query, setQuery] = useState("");
@@ -151,15 +151,10 @@ export default function SearchPage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!loading && !user) navigate("/login");
-  }, [loading, user, navigate]);
-
   /* preload trending rooms */
   useEffect(() => {
-    if (!user) return;
     listRooms({ limit: 8 }).then(setTrendingRooms).catch(() => {});
-  }, [user]);
+  }, []);
 
   /* focus input on mount */
   useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100); }, []);
@@ -192,7 +187,7 @@ export default function SearchPage() {
   /* reset results on tab switch */
   useEffect(() => { setRooms(null); setPeople(null); }, [tab]);
 
-  if (loading || !user) return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
+  if (loading) return <div className="flex min-h-screen items-center justify-center text-muted-foreground">Loading…</div>;
 
   const hasQuery = query.trim().length > 0;
   const showSkeleton = hasQuery && searching;
