@@ -6,18 +6,17 @@
  * LILCKY STUDIO LIMITED
  */
 
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
-import { useAuth, computeTrustScore, getTrustLevel } from "@/hooks/use-auth";
+import { useAuth, computeTrustScore } from "@/hooks/use-auth";
 import { AppShell } from "@/components/layout/app-shell";
 import {
-  Bell, Users, Shield, CheckCircle2, Mic,
-  ArrowRight, UserPlus, ChevronLeft, Sparkles, MapPin,
+  Bell, Shield, CheckCircle2, Mic,
+  ArrowRight, UserPlus, ChevronLeft, MapPin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
 
 type NotifKind = "follow" | "trust" | "profile" | "room_invite" | "regional" | "system";
 

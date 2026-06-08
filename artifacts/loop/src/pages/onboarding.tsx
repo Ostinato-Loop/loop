@@ -94,7 +94,8 @@ export default function OnboardingPage() {
 
   const persist = async (patch: Record<string, unknown>) => {
     if (!user) return;
-    const { error } = await authedSupabase().from("profiles").update(patch).eq("id", user.id);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await authedSupabase().from("profiles").update(patch as any).eq("id", user.id);
     if (error) throw error;
   };
 
@@ -125,7 +126,7 @@ export default function OnboardingPage() {
     setBusy(true);
     try {
       await persist({ onboarded: true });
-      if (interests.length > 0) setStoreInterests(Object.fromEntries(interests.map(i => [i.toLowerCase(), true])));
+      if (interests.length > 0) setStoreInterests(interests);
       await refreshProfile();
       navigate("/");
     } catch (err) {

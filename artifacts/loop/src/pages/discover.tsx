@@ -185,7 +185,7 @@ function PeopleTab({ onReport }: { onReport: (t: ReportTarget) => void }) {
   const [results, setResults] = useState<PersonResult[] | null>(null);
   const [suggestions, setSuggestions] = useState<PersonSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
-  const debounce = useRef<ReturnType<typeof setTimeout>>();
+  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     getPeopleSuggestions(10)
@@ -371,7 +371,6 @@ function NearMeTab({ onReport: _onReport }: { onReport: (t: ReportTarget) => voi
 
 /* ── Main page ───────────────────────────────────────────────────────── */
 export default function DiscoverPage() {
-  const navigate      = useNavigate();
   const { profile } = useAuth();
   const [activeTab, setActiveTab]       = useState<FeedTab>("all");
   const [activeCategory, setActiveCategory] = useState<RoomCategory | "all">("all");
@@ -497,7 +496,6 @@ export default function DiscoverPage() {
                   <RoomCard
                     key={r.id}
                     room={r}
-                    onClick={() => navigate(`/rooms/${r.id}`)}
                   />
                 ))}
               </div>
