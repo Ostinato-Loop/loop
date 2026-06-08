@@ -3,11 +3,19 @@
  * Phase H: Identity Axiom. Loop does NOT own authentication.
  *
  * P1-FIX-001: Show a 2-second interstitial explaining RALD sign-in before
- * redirect. Household users no longer see an unexpected domain change with
- * no explanation.
+ * redirect. Users no longer see an unexpected domain change with no explanation.
+ *
+ * Auth flow:
+ *   /login?next=/rooms/abc
+ *     → profiles.rald.cloud/login?app_id=loop&redirect_to=.../auth/callback?next=/rooms/abc
+ *     → /auth/callback?next=/rooms/abc   (rald_token exchanged by AuthProvider)
+ *     → /rooms/abc
+ *
+ * Visual design is unchanged. Do NOT redesign.
+ * LILCKY STUDIO LIMITED
  */
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2, Shield } from "lucide-react";
 
@@ -17,24 +25,34 @@ const INTERSTITIAL_MS = 2200;
 export default function LoginPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [redirecting, setRedirecting] = useState(false);
+
+  // The path the user was trying to reach before being redirected here
+  const next = params.get("next") ?? "/";
 
   useEffect(() => {
     if (!loading && user) {
-      navigate("/", { replace: true });
+      // Already signed in — go directly to the intended destination
+      navigate(next, { replace: true });
       return undefined;
     }
     if (!loading) {
-      // Show interstitial briefly, then redirect
       setRedirecting(true);
       const t = setTimeout(() => {
-        const redirectTo = encodeURIComponent(window.location.origin + "/");
-        window.location.href = `${PROFILES_URL}/login?app_id=loop&redirect_to=${redirectTo}`;
+        // Build callback URL — profiles.rald.cloud will redirect here after auth
+        // The `next` param is threaded through so /auth/callback can land the user correctly
+        const callbackBase = `${window.location.origin}/auth/callback`;
+        const callbackUrl  = next && next !== "/"
+          ? `${callbackBase}?next=${encodeURIComponent(next)}`
+          : callbackBase;
+        window.location.href =
+          `${PROFILES_URL}/login?app_id=loop&redirect_to=${encodeURIComponent(callbackUrl)}`;
       }, INTERSTITIAL_MS);
       return () => clearTimeout(t);
     }
     return undefined;
-  }, [user, loading, navigate]);
+  }, [user, loading, navigate, next]);
 
   if (loading) {
     return (
@@ -47,7 +65,7 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-6">
       <div className="text-center space-y-6 max-w-xs w-full">
-        {/* Logo mark */}
+        {/* Logo mark — unchanged from original design */}
         <div className="mx-auto h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
           <Shield className="h-8 w-8 text-primary" />
         </div>

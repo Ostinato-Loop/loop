@@ -2,20 +2,44 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <!-- viewport-fit=cover enables content behind iOS safe area notch/home bar -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
+
+    <!-- App identity -->
     <title>Loop</title>
-    <meta name="description" content="Loop — built on Replit. Update this description to reflect the app." />
+    <meta name="description" content="Loop — live audio rooms for African communities. Find your people, join the conversation." />
     <meta name="robots" content="index, follow" />
-    <meta property="og:title" content="Loop" />
-    <meta property="og:description" content="Loop — built on Replit. Update this description to reflect the app." />
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Loop — Live Audio Rooms" />
+    <meta property="og:description" content="Live audio rooms for African communities. Find your people, join the conversation." />
     <meta property="og:type" content="website" />
+    <meta property="og:image" content="/opengraph.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <!-- Twitter / X card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Loop" />
-    <meta name="twitter:description" content="Loop — built on Replit. Update this description to reflect the app." />
+    <meta name="twitter:title" content="Loop — Live Audio Rooms" />
+    <meta name="twitter:description" content="Live audio rooms for African communities." />
+    <meta name="twitter:image" content="/opengraph.jpg" />
+
+    <!-- PWA / mobile chrome -->
+    <meta name="theme-color" content="#0d0d0d" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Loop" />
+
+    <!-- Icons -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+
+    <!-- Preconnect for faster loads on African networks -->
+    <link rel="preconnect" href="https://auth.rald.cloud" />
+    <link rel="preconnect" href="https://profiles.rald.cloud" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Sans:wght@400;500;600&family=Bricolage+Grotesque:wght@600;700;800&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>

@@ -8,11 +8,12 @@
  *   4. We store access_token in localStorage as "loop_token"
  *
  * Flow (RALD SSO):
- *   1. User redirected to profiles.rald.cloud?redirect_to=loop.rald.cloud/login&app_id=loop
- *   2. RALD Auth sends back to loop.rald.cloud/login?rald_token=TOKEN&app_id=loop
- *   3. AuthProvider detects rald_token → stores it for cross-app use →
+ *   1. ProtectedRoute / user hits /login?next=/rooms/abc
+ *   2. /login redirects to profiles.rald.cloud?redirect_to=.../auth/callback?next=/rooms/abc&app_id=loop
+ *   3. profiles.rald.cloud sends back to /auth/callback?next=/rooms/abc&rald_token=TOKEN
+ *   4. AuthProvider detects rald_token → stores RALD master token →
  *      calls /api/auth/rald-sso → gets loop JWT
- *   4. Stores loop JWT, removes URL param, continues normally
+ *   5. /auth/callback detects user → navigates to /rooms/abc
  *
  * Cross-app SSO:
  *   - rald_master_token in localStorage is the original RALD JWT from auth.rald.cloud
@@ -245,8 +246,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error("[rald-sso] exchange failed:", e);
           setSsoError("Sign-in failed. Please try again.");
         }
-        const clean = window.location.pathname;
-        window.history.replaceState({}, "", clean);
+
+        // Strip rald_token and app_id from the URL while preserving other params (e.g. ?next=)
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.searchParams.delete("rald_token");
+        cleanUrl.searchParams.delete("app_id");
+        const cleanSearch = cleanUrl.search !== "?" ? cleanUrl.search : "";
+        window.history.replaceState({}, "", cleanUrl.pathname + cleanSearch);
       }
 
       await loadSession();

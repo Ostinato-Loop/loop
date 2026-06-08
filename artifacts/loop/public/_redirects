@@ -1,5 +1,9 @@
 # Cloudflare Pages _redirects
-  # Proxy /api/* to the Loop API Cloudflare Worker
-  # Without this, /api/* requests hit Pages (which returns the SPA HTML instead of Worker JSON)
-  /api/*  https://loop-api.rald.cloud/api/:splat  200
-  
+# Proxy /api/* to the Loop API Cloudflare Worker
+# Without this, /api/* requests hit Pages (which returns the SPA HTML instead of Worker JSON)
+/api/*  https://loop-api.rald.cloud/api/:splat  200
+
+# SPA catch-all — serves index.html for all non-asset routes so React Router handles them.
+# Required for deep links: /rooms/:id, /auth/callback, /communities, etc.
+# Must be last — Cloudflare Pages matches rules top-to-bottom.
+/*  /index.html  200
