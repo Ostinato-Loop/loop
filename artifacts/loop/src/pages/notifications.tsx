@@ -139,7 +139,7 @@ async function fetchFollowingLiveRooms(userId: string): Promise<Notif[]> {
 
 /** Map API DB notifications → local Notif shape for unified rendering. */
 function mapApiNotifs(data: ApiNotif[]): Notif[] {
-  return data.flatMap(n => {
+  return data.flatMap<Notif>(n => {
     const actor = n.actor;
     const name  = actor?.display_name ?? actor?.username ?? "Someone";
     const ini   = name.split(" ").map((w: string) => w[0]).slice(0, 2).join("").toUpperCase();
