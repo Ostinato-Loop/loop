@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { createRoom, type RoomCategory, type RoomVisibility } from "@/lib/api/rooms";
 import { toast } from "sonner";
+import { track } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 import { Clock } from "lucide-react";
 
@@ -95,6 +96,7 @@ export default function CreatePage() {
     try {
       if (!user) throw new Error("Not signed in");
       const room = await createRoom(user.id, { title: title.trim(), description, category, visibility });
+      track("room_create", { room_id: room.id, category, visibility });
       toast.success("Room started");
       navigate(`/rooms/${room.id}`);
     } catch (err) {

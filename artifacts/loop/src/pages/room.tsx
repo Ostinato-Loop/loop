@@ -16,6 +16,7 @@ import {
   sendMessage, sendReaction,
   type Room,
 } from "@/lib/api/rooms";
+import { track } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, BadgeCheck, Hand, Mic, MicOff,
@@ -348,6 +349,7 @@ export default function RoomPage() {
         prevParticipants.current = p as ParticipantRow[];
         setMessages(m as MessageRow[]);
         await joinRoom(roomId, user.id);
+        track("room_join", { room_id: roomId, category: r?.category ?? null, is_live: r?.is_live ?? false });
         setTimeout(() => setEntered(true), 80);
       } catch (e) { toast.error(e instanceof Error ? e.message : "Could not load room"); }
     })();
@@ -447,6 +449,7 @@ export default function RoomPage() {
 
   const leaveRoom_ = async () => {
     if (!roomId || !user) return;
+    track("room_leave", { room_id: roomId });
     try { await leaveRoom(roomId, user.id); } catch { /* ignore */ }
     navigate("/");
   };

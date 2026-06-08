@@ -22,6 +22,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from "react";
 import { toast } from "sonner";
 import { authFetch, AUTH_EXPIRED_EVENT } from "@/lib/api-fetch";
+import { track, trackSessionStart } from "@/lib/analytics";
 
 export type Profile = {
   id: string;
@@ -203,6 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role:  (payload.role ?? "user") as string | undefined,
     };
     setSession({ access_token: raw, user });
+    trackSessionStart();
     try {
       const res = await authFetch(`${API_BASE}/api/auth/me`);
       if (res.ok) {
@@ -231,6 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const data = await res.json() as { access_token: string };
             localStorage.setItem(TOKEN_KEY, data.access_token);
             setSsoError(null);
+            track("login", { method: "rald_sso" });
           } else {
             const err = await res.json().catch(() => ({})) as { error?: string };
             const msg = err.error ?? `RALD SSO failed (${res.status})`;

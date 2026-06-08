@@ -17,6 +17,7 @@ import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { authedSupabase } from "@/integrations/supabase/client";
+import { track } from "@/lib/analytics";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -75,6 +76,7 @@ export default function OnboardingPage() {
         .from("profiles")
         .update({ display_name: displayName.trim(), username })
         .eq("id", user.id);
+      track("signup", { display_name: displayName.trim() });
       setStepIdx(1);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save — try again");
@@ -91,6 +93,7 @@ export default function OnboardingPage() {
         .from("profiles")
         .update({ onboarded: true })
         .eq("id", user!.id);
+      track("onboarding_complete", { entered_room: !!roomId, room_id: roomId ?? null });
       await refreshProfile();
       navigate(roomId ? `/rooms/${roomId}` : "/");
     } catch (err) {
