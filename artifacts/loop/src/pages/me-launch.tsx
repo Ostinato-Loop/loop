@@ -13,6 +13,7 @@ import { useLoop } from "@/lib/loop-store";
 import { useAuth } from "@/hooks/use-auth";
 import { authedSupabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/layout/app-shell";
+import { NotificationPrompt } from "@/components/notification-prompt";
 
 type Tab = "activity" | "followers" | "following" | "saved";
 
@@ -217,6 +218,9 @@ export default function MeLaunchPage() {
             </div>
           </div>
         )}
+
+        {/* Push notification prompt — shown once when permission is 'default' */}
+        <NotificationPrompt />
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-2 mt-4">

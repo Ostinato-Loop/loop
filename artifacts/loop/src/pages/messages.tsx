@@ -7,7 +7,7 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, authedSupabase, getLoopToken } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/layout/app-shell";
 import { MessageCircle, Mic, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -48,7 +48,7 @@ export default function MessagesPage() {
     setFetching(true);
     try {
       // 1. Rooms this user has participated in
-      const { data: parts } = await supabase
+      const { data: parts } = await authedSupabase()
         .from("room_participants")
         .select("room_id, rooms:rooms!room_participants_room_id_fkey(id, title, is_live, category)")
         .eq("user_id", user.id)
@@ -63,7 +63,7 @@ export default function MessagesPage() {
       const roomIds = parts.map((p) => p.room_id as string);
 
       // 2. Most recent message per room
-      const { data: msgs } = await supabase
+      const { data: msgs } = await authedSupabase()
         .from("room_messages")
         .select("room_id, content, created_at")
         .in("room_id", roomIds)
@@ -116,6 +116,7 @@ export default function MessagesPage() {
   // Live subscription: refresh on new room messages
   useEffect(() => {
     if (!user) return;
+    supabase.realtime.setAuth(getLoopToken() ?? "");
     const ch = supabase
       .channel("inbox:room_messages")
       .on("postgres_changes",

@@ -9,7 +9,7 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, authedSupabase, getLoopToken } from "@/integrations/supabase/client";
 import {
   getRoom, joinRoom, leaveRoom, setRoomLive,
   listMessages, listParticipants,
@@ -235,8 +235,8 @@ function ParticipantSheet({ p, onClose }: { p: ParticipantRow; onClose: () => vo
     let active = true;
     (async () => {
       const [profRes, countRes] = await Promise.all([
-        supabase.from("profiles").select("country, state_id").eq("id", p.user_id).maybeSingle(),
-        supabase.from("rooms").select("id", { count: "exact", head: true }).eq("host_id", p.user_id),
+        authedSupabase().from("profiles").select("country, state_id").eq("id", p.user_id).maybeSingle(),
+        authedSupabase().from("rooms").select("id", { count: "exact", head: true }).eq("host_id", p.user_id),
       ]);
       if (!active) return;
       const prof = profRes.data;
@@ -328,7 +328,7 @@ export default function RoomPage() {
   const prevParticipants = useRef<ParticipantRow[]>([]);
   const eventChannel    = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
-  useEffect(() => { if (!loading && !user) navigate("/login"); }, [user, loading, navigate]);
+  // Auth gate now handled by ProtectedRoute in App.tsx
 
   const pushActivity = useCallback((text: string) => {
     const id = ++actId.current;
@@ -354,12 +354,13 @@ export default function RoomPage() {
       } catch (e) { toast.error(e instanceof Error ? e.message : "Could not load room"); }
     })();
 
+    supabase.realtime.setAuth(getLoopToken() ?? "");
     const dbChannel = supabase.channel(`room:${roomId}`)
       .on("postgres_changes",
         { event: "INSERT", schema: "public", table: "room_messages", filter: `room_id=eq.${roomId}` },
         async (payload) => {
           const m = payload.new as { id: string; user_id: string; content: string; created_at: string };
-          const { data: prof } = await supabase.from("profiles").select("username, display_name, avatar_url").eq("id", m.user_id).maybeSingle();
+          const { data: prof } = await authedSupabase().from("profiles").select("username, display_name, avatar_url").eq("id", m.user_id).maybeSingle();
           setMessages((s) => [...s, { ...m, profiles: prof ?? null } as MessageRow]);
         })
       .on("postgres_changes",
