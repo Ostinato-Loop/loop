@@ -486,7 +486,7 @@ export default function RoomPage() {
       <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent" />
 
       {/* ── Header ─────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 border-b border-border bg-background/80 px-4 py-3 backdrop-blur-xl">
+      <header className="sticky top-0 z-30 border-b border-border bg-background/80 px-4 pb-3 pt-safe-top backdrop-blur-xl">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate("/")}
             className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-surface transition-colors active:bg-surface-elev">

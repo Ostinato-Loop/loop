@@ -15,7 +15,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const inRoom = pathname.startsWith("/rooms/");
 
   return (
-    <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col bg-background pt-[env(safe-area-inset-top)]">
+    <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col bg-background">
       <OfflineBanner />
       <main className={inRoom ? "flex-1" : "flex-1 pb-24"}>{children}</main>
       {!inRoom && <BottomNav />}

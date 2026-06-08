@@ -262,6 +262,7 @@
 
   .hide-scrollbar::-webkit-scrollbar { display: none; }
   .hide-scrollbar { scrollbar-width: none; }
+  .pt-safe-top { padding-top: env(safe-area-inset-top); }
   .safe-pb { padding-bottom: max(env(safe-area-inset-bottom), 0.5rem); }
 
   /* ── loop-audio-ui-ux utility classes ───────────────── */

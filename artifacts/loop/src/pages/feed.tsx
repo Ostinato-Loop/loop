@@ -83,7 +83,7 @@ export default function FeedPage() {
 function FeedHeader({ location }: { location: string }) {
   const navigate = useNavigate();
   return (
-    <header className="sticky top-0 z-30 bg-background/85 backdrop-blur-xl border-b border-border">
+    <header className="sticky top-0 z-30 bg-background/85 backdrop-blur-xl border-b border-border pt-safe-top">
       <div className="px-4 pt-3 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-xl bg-neon flex items-center justify-center neon-glow">
