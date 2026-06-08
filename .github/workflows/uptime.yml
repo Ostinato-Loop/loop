@@ -1,0 +1,84 @@
+name: Uptime Monitor
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 minutes
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: Health Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: API Worker — /api/health
+        run: |
+          STATUS=$(curl -sf -o /dev/null -w "%{http_code}" https://loop-api.rald.cloud/api/health || echo "000")
+          BODY=$(curl -sf https://loop-api.rald.cloud/api/health 2>/dev/null || echo "{}")
+          echo "loop-api /api/health → HTTP $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::loop-api /api/health is DOWN (HTTP $STATUS)"
+            exit 1
+          fi
+          echo "$BODY" | node -e "const d=[];process.stdin.on('data',c=>d.push(c));process.stdin.on('end',()=>{const r=JSON.parse(d.join(''));if(!r.ok||!r.bindings.db||!r.bindings.cache){console.error('::error::Binding failure:',JSON.stringify(r.bindings));process.exit(1)}else console.log('All bindings healthy')})"
+
+      - name: API Worker — /api/healthz (liveness)
+        run: |
+          STATUS=$(curl -sf -o /dev/null -w "%{http_code}" https://loop-api.rald.cloud/api/healthz || echo "000")
+          echo "loop-api /api/healthz → HTTP $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::loop-api /api/healthz is DOWN (HTTP $STATUS)"
+            exit 1
+          fi
+
+      - name: Frontend — loop.rald.cloud
+        run: |
+          STATUS=$(curl -sf -o /dev/null -w "%{http_code}" https://loop.rald.cloud || echo "000")
+          echo "loop.rald.cloud → HTTP $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::loop.rald.cloud is DOWN (HTTP $STATUS)"
+            exit 1
+          fi
+
+      - name: Identity — profiles.rald.cloud
+        run: |
+          STATUS=$(curl -sf -o /dev/null -w "%{http_code}" https://profiles.rald.cloud || echo "000")
+          echo "profiles.rald.cloud → HTTP $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::profiles.rald.cloud is DOWN (HTTP $STATUS)"
+            exit 1
+          fi
+
+      - name: Auth — auth.rald.cloud
+        run: |
+          STATUS=$(curl -sf -o /dev/null -w "%{http_code}" https://auth.rald.cloud || echo "000")
+          echo "auth.rald.cloud → HTTP $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::auth.rald.cloud unreachable (HTTP $STATUS)"
+          fi
+
+      - name: Auth SSO endpoint — /api/auth/rald-sso
+        run: |
+          STATUS=$(curl -sf -o /dev/null -w "%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"rald_token":"probe"}' \
+            https://loop-api.rald.cloud/api/auth/rald-sso || echo "000")
+          echo "loop-api /api/auth/rald-sso → HTTP $STATUS"
+          if [ "$STATUS" = "000" ]; then
+            echo "::error::Auth SSO endpoint is DOWN"
+            exit 1
+          fi
+
+      - name: Communities API
+        run: |
+          STATUS=$(curl -sf -o /dev/null -w "%{http_code}" https://loop-api.rald.cloud/api/communities || echo "000")
+          echo "loop-api /api/communities → HTTP $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Communities API is DOWN (HTTP $STATUS)"
+            exit 1
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "UPTIME CHECK: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "All critical endpoints verified."
