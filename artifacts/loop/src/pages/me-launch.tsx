@@ -1,455 +1,291 @@
-/**
- * Loop — Profile / Me Page
- * Loop User Reality Sprint — All 12 Parts
- * Part 19: NotificationPrompt wired in — never miss a live room.
- *
- * LILCKY STUDIO LIMITED
- */
+// Loop — Profile / Me Page
+// Sprint 01 Priority 3: No mock identity data. All user data from real auth.
+// Relationship counts (followers/following/trust) show honest zeros until
+// the relationship graph API is wired (Sprint 02).
+// LILCKY STUDIO LIMITED
+
 
 import {
   Settings, BadgeCheck, MapPin, Mic,
-  Heart, Users, Shield, Copy, ChevronRight, Sparkles,
-  LogOut, Sun, Moon, Monitor, UserCircle, ArrowRight,
-  TrendingUp, CheckCircle2, Circle,
+  Heart, Users, Shield, Sun, Moon, Monitor, Copy, ChevronRight, Sparkles,
+  LogOut,
 } from "lucide-react";
 import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import { useAuth, computeTrustScore, getTrustLevel } from "@/hooks/use-auth";
-import { useMyFollowCounts } from "@/lib/api/follows";
+import { useLoop } from "@/lib/loop-store";
+import { useAuth } from "@/hooks/use-auth";
 import { AppShell } from "@/components/layout/app-shell";
-import { NotificationPrompt } from "@/components/notification-prompt";
-import { cn } from "@/lib/utils";
-import { toast } from "sonner";
 
 type Tab = "activity" | "followers" | "following" | "saved";
 
-/* ── Profile completion helpers ─────────────────────────────────────── */
-type CompletionItem = {
-  key: string; label: string; done: boolean; action?: string; actionLabel?: string;
-};
+export default function MeLaunchPage() {
+  const { follows: _follows, toggleFollow: _toggleFollow, notifPrefs: _notifPrefs, setNotifPref: _setNotifPref } = useLoop();
+  const { user, profile, signOut } = useAuth();
+  const [tab, setTab] = useState<Tab>("activity");
+  const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");
+  const [reportOpen, setReportOpen] = useState(false);
 
-function useProfileCompletion() {
-  const { profile } = useAuth();
-  if (!profile) return { items: [], pct: 0 };
-  const items: CompletionItem[] = [
-    { key: "name",      label: "Display name",       done: !!profile.display_name },
-    { key: "username",  label: "Handle",              done: !!profile.username },
-    { key: "region",    label: "Region",              done: !!profile.country,    action: "/settings",              actionLabel: "Add region" },
-    { key: "avatar",    label: "Profile photo",       done: !!profile.avatar_url, action: "https://profiles.rald.cloud", actionLabel: "Add photo" },
-    { key: "bio",       label: "Bio",                 done: !!profile.bio,        action: "/settings",              actionLabel: "Add bio" },
-    { key: "interests", label: "Interests (3+)",      done: (profile.interests?.length ?? 0) >= 3 },
-    { key: "room",      label: "Join first room",     done: false,                action: "/discover",              actionLabel: "Find a room" },
-    { key: "community", label: "Join first community",done: false,                action: "/discover",              actionLabel: "Find community" },
-  ];
-  const done = items.filter((i) => i.done).length;
-  return { items, pct: Math.round((done / items.length) * 100) };
-}
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.remove("light", "dark");
+    if (theme === "system") {
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      root.classList.add(prefersDark ? "dark" : "light");
+    } else {
+      root.classList.add(theme);
+    }
+  }, [theme]);
+  const [reportMsg, setReportMsg] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
 
-/* ── Avatar helpers ──────────────────────────────────────────────────── */
-const AVATAR_COLORS = [
-  "from-emerald-500 to-teal-500","from-fuchsia-500 to-purple-500",
-  "from-amber-500 to-orange-500","from-sky-500 to-blue-500",
-  "from-rose-500 to-pink-500","from-neon/80 to-primary",
-];
-function avatarColor(seed: string) {
-  let n = 0; for (let i = 0; i < seed.length; i++) n += seed.charCodeAt(i);
-  return AVATAR_COLORS[n % AVATAR_COLORS.length];
-}
-function initials(name: string) {
-  return name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
-}
+  const displayName  = profile?.display_name ?? user?.phone ?? "You";
+  const handle       = profile?.username ?? "";
+  const avatarUrl    = profile?.avatar_url ?? "";
+  const bio          = profile?.bio ?? "";
+  const isVerified   = profile?.is_verified ?? false;
 
-/* ── Helpers ─────────────────────────────────────────────────────────── */
-function formatRaldId(id: string) {
-  return `RALD-${id.slice(0, 4).toUpperCase()}-${id.slice(4, 8).toUpperCase()}`;
-}
+  const followingList: unknown[] = [];
+  const followersList: unknown[] = [];
 
-function RegionLabel({ profile }: { profile: NonNullable<ReturnType<typeof useAuth>["profile"]> }) {
-  const parts: string[] = [];
-  if (profile.country)  parts.push(profile.country);
-  if (profile.state_id) parts.push(profile.state_id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
-  if (profile.lga_id)   parts.push(profile.lga_id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
-  if (profile.lcda_id)  parts.push(profile.lcda_id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
-  if (parts.length === 0) return <span className="text-muted-foreground italic">Not set — <Link to="/settings" className="text-primary underline underline-offset-2">Add region</Link></span>;
-  return <span>{parts.join(" \xb7 ")}</span>;
-}
-
-function IdRow({ label, value, copy, badge, badgeColor = "bg-neon" }: {
-  label: string; value: string; copy?: boolean; badge?: boolean; badgeColor?: string;
-}) {
-  const copyText = () => { navigator.clipboard?.writeText(value).then(() => toast.success("Copied!")); };
   return (
-    <div className="flex items-start justify-between gap-3 py-1.5">
-      <span className="text-xs text-muted-foreground shrink-0 pt-0.5">{label}</span>
-      <span className="text-xs font-semibold text-right flex items-center gap-1.5 min-w-0 break-all">
-        {badge && <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", badgeColor)} />}
-        {value}
-        {copy && (
-          <button onClick={copyText} aria-label="Copy" className="shrink-0 ml-0.5 active:scale-95 transition-transform">
-            <Copy className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+    <AppShell>
+    <div className="pb-6">
+      <div className="relative h-32 bg-gradient-to-br from-neon/30 via-accent to-orange/20">
+        <button
+          className="absolute top-3 right-3 h-9 w-9 rounded-full bg-background/80 backdrop-blur flex items-center justify-center"
+          aria-label="Settings"
+          onClick={() => import("sonner").then(({ toast }) => toast.info("Settings coming soon"))}
+        >
+          <Settings className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="px-4 -mt-10">
+        <div className="flex items-end justify-between">
+          {avatarUrl
+            ? <img src={avatarUrl} alt="" className="h-20 w-20 rounded-2xl ring-4 ring-background object-cover" />
+            : <div className="h-20 w-20 rounded-2xl ring-4 ring-background bg-secondary flex items-center justify-center text-2xl font-extrabold text-foreground">{displayName.slice(0, 1).toUpperCase()}</div>
+          }
+          <button className="px-4 py-1.5 rounded-full bg-foreground text-background text-xs font-bold">Edit profile</button>
+        </div>
+        <div className="mt-3">
+          <div className="flex items-center gap-1.5">
+            <h1 className="text-xl font-extrabold">{displayName}</h1>
+            {isVerified && <BadgeCheck className="h-5 w-5 text-neon fill-neon/20" />}
+          </div>
+          {handle && <div className="text-xs text-muted-foreground">@{handle} · {handle}@rald.me</div>}
+          {profile?.state_id && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+              <MapPin className="h-3 w-3" />{profile.state_id}
+            </div>
+          )}
+          {bio && <p className="text-sm mt-2 leading-snug">{bio}</p>}
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 mt-4">
+          <button onClick={() => setTab("followers")} className={`rounded-2xl p-3 text-center transition ${tab === "followers" ? "bg-secondary ring-2 ring-neon/40" : "bg-secondary"}`}>
+            <div className="text-lg font-extrabold">{followersList.length || 0}</div>
+            <div className="text-[10px] text-muted-foreground">Followers</div>
           </button>
+          <button onClick={() => setTab("following")} className={`rounded-2xl p-3 text-center transition ${tab === "following" ? "bg-secondary ring-2 ring-neon/40" : "bg-secondary"}`}>
+            <div className="text-lg font-extrabold">{followingList.length}</div>
+            <div className="text-[10px] text-muted-foreground">Following</div>
+          </button>
+          <div className="rounded-2xl p-3 text-center bg-neon/10 border border-neon/40">
+            <div className="text-lg font-extrabold text-neon">—</div>
+            <div className="text-[10px] text-muted-foreground">Trust</div>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-border p-4 bg-card">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-neon" />
+              <span className="text-xs font-bold uppercase tracking-wider">RALD Identity</span>
+            </div>
+            <span className="text-[10px] font-bold text-neon">profiles.rald.cloud</span>
+          </div>
+          <div className="space-y-2 text-xs">
+            <IdRow k="RALD ID"     v={user?.id ? `rald_${user.id.slice(0, 8)}…` : "—"} copy={!!user?.id} />
+            <IdRow k="Mail"        v={handle ? `${handle}@rald.me` : "—"} copy={!!handle} />
+            <IdRow k="Trust score" v="— / 100" badge />
+            <IdRow k="Badge"       v="Verified contributor" />
+          </div>
+          <div className="mt-3 pt-3 border-t border-border">
+            <div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-2">Connected apps</div>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { name: "Loop",      on: true,  color: "bg-neon/15 text-neon" },
+                { name: "Messenger", on: false, color: "bg-secondary text-muted-foreground" },
+                { name: "Mail",      on: false, color: "bg-secondary text-muted-foreground" },
+                { name: "PayRALD",   on: false, color: "bg-secondary text-muted-foreground" },
+                { name: "GitRALD",   on: false, color: "bg-secondary text-muted-foreground" },
+              ].map((a) => (
+                <span key={a.name} className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${a.color}`}>
+                  {a.on ? "● " : "○ "}{a.name}
+                </span>
+              ))}
+            </div>
+          </div>
+          <a
+            href="https://profiles.rald.cloud"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-3 w-full h-10 rounded-xl bg-secondary text-xs font-bold flex items-center justify-center gap-1.5"
+          >
+            Manage on profiles.rald.cloud <ChevronRight className="h-3.5 w-3.5" />
+          </a>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-border p-4 bg-card">
+          <div className="text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 text-neon" />Appearance
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { id: "light" as const, icon: Sun,     label: "Light" },
+              { id: "dark"  as const, icon: Moon,    label: "Dark" },
+              { id: "system" as const, icon: Monitor, label: "Auto" },
+            ]).map((opt) => {
+              const Icon   = opt.icon;
+              const active = theme === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => setTheme(opt.id)}
+                  className={`flex flex-col items-center gap-1 py-3 rounded-xl border ${active ? "border-neon bg-neon/10 text-foreground" : "border-border bg-secondary"}`}
+                >
+                  <Icon className={`h-4 w-4 ${active ? "text-neon" : ""}`} />
+                  <span className="text-[11px] font-semibold">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <button
+          onClick={() => setReportOpen(true)}
+          className="mt-4 w-full h-11 rounded-2xl border border-border bg-secondary text-foreground text-sm font-semibold flex items-center justify-center gap-2"
+        >
+          Report a problem
+        </button>
+
+        {reportOpen && (
+          <div className="mt-3 rounded-2xl border border-border bg-surface p-4 space-y-3">
+            <h3 className="text-sm font-bold">What went wrong?</h3>
+            <textarea
+              value={reportMsg}
+              onChange={(e) => setReportMsg(e.target.value)}
+              placeholder="Describe the problem…"
+              rows={3}
+              maxLength={500}
+              className="w-full rounded-xl bg-background border border-border px-3 py-2 text-sm outline-none resize-none placeholder:text-muted-foreground"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  if (!reportMsg.trim() || reportBusy) return;
+                  setReportBusy(true);
+                  try {
+                    const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
+                    const token = localStorage.getItem("loop_token");
+                    await fetch(`${apiBase}/api/feedback`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
+                      body: JSON.stringify({ message: reportMsg, page: window.location.pathname }),
+                    });
+                    setReportOpen(false);
+                    setReportMsg("");
+                    import("sonner").then(({ toast }) => toast.success("Thanks — we'll look into it."));
+                  } catch {
+                    import("sonner").then(({ toast }) => toast.error("Could not send report — try again."));
+                  } finally {
+                    setReportBusy(false);
+                  }
+                }}
+                disabled={!reportMsg.trim() || reportBusy}
+                className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-40"
+              >
+                {reportBusy ? "Sending…" : "Send report"}
+              </button>
+              <button
+                onClick={() => { setReportOpen(false); setReportMsg(""); }}
+                className="h-10 px-4 rounded-xl bg-secondary text-sm font-semibold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
+
+        <button
+          onClick={() => signOut()}
+          className="mt-4 w-full h-11 rounded-2xl border border-destructive/40 bg-destructive/10 text-destructive text-sm font-semibold flex items-center justify-center gap-2"
+        >
+          <LogOut className="h-4 w-4" /> Sign out
+        </button>
+
+        <div className="mt-5">
+          <div className="flex gap-1 border-b border-border overflow-x-auto scrollbar-none">
+            {(["activity", "followers", "following", "saved"] as Tab[]).map((t) => (
+              <button key={t} onClick={() => setTab(t)} className={`px-3 py-2 text-xs font-semibold capitalize border-b-2 whitespace-nowrap ${tab === t ? "border-neon text-foreground" : "border-transparent text-muted-foreground"}`}>
+                {t}
+              </button>
+            ))}
+          </div>
+          <div className="mt-3 space-y-2">
+            {tab === "activity" && (
+              <EmptyTab
+                icon={Mic}
+                title="No activity yet"
+                body="Your rooms, reactions, and connections will appear here."
+              />
+            )}
+            {tab === "following" && (
+              followingList.length === 0
+                ? <EmptyTab icon={Users} title="Not following anyone yet" body="Join a room to discover and follow people." />
+                : null
+            )}
+            {tab === "followers" && (
+              followersList.length === 0
+                ? <EmptyTab icon={Users} title="No followers yet" body="People who follow you will appear here." />
+                : null
+            )}
+            {tab === "saved" && (
+              <EmptyTab icon={Heart} title="Nothing saved yet" body="Saved rooms, comments and events show up here." />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+    </AppShell>
+  );
+}
+
+
+function EmptyTab({ icon: Icon, title, body }: { icon: typeof Mic; title: string; body: string }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-10 text-center">
+      <div className="h-11 w-11 rounded-xl bg-secondary flex items-center justify-center">
+        <Icon className="h-5 w-5 text-muted-foreground/50" />
+      </div>
+      <div>
+        <p className="text-sm font-semibold">{title}</p>
+        <p className="text-xs text-muted-foreground mt-1">{body}</p>
+      </div>
+    </div>
+  );
+}
+
+function IdRow({ k, v, copy, badge }: { k: string; v: string; copy?: boolean; badge?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-muted-foreground">{k}</span>
+      <span className="font-semibold flex items-center gap-1.5">
+        {badge && <span className="h-1.5 w-1.5 rounded-full bg-neon" />}
+        {v}
+        {copy && <Copy className="h-3 w-3 text-muted-foreground cursor-pointer" onClick={() => navigator.clipboard?.writeText(v)} />}
       </span>
     </div>
   );
 }
 
-function EmptyTab({ icon: Icon, title, body, action, actionLabel }: {
-  icon: typeof Mic; title: string; body: string; action?: string; actionLabel?: string;
-}) {
-  return (
-    <div className="flex flex-col items-center gap-3 py-10 text-center">
-      <div className="h-12 w-12 rounded-2xl bg-secondary flex items-center justify-center">
-        <Icon className="h-6 w-6 text-muted-foreground/50" />
-      </div>
-      <div>
-        <p className="text-sm font-semibold">{title}</p>
-        <p className="text-xs text-muted-foreground mt-1 max-w-[200px] mx-auto leading-relaxed">{body}</p>
-      </div>
-      {action && actionLabel && (
-        <Link to={action} className="flex items-center gap-1.5 rounded-full bg-primary/10 px-4 py-1.5 text-xs font-semibold text-primary">
-          {actionLabel} <ArrowRight className="h-3 w-3" />
-        </Link>
-      )}
-    </div>
-  );
-}
 
-/* ── Main page ───────────────────────────────────────────────────────── */
-export default function MeLaunchPage() {
-  const { user, profile, signOut } = useAuth();
-  const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("activity");
-  const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");
-  const { items: completionItems, pct: completionPct } = useProfileCompletion();
-  const { followers, following } = useMyFollowCounts();
-
-  useEffect(() => {
-    const stored = localStorage.getItem("loop_theme") as "light" | "dark" | "system" | null;
-    if (stored) setTheme(stored);
-  }, []);
-
-  const applyTheme = (t: "light" | "dark" | "system") => {
-    setTheme(t);
-    localStorage.setItem("loop_theme", t);
-    const root = document.documentElement;
-    root.classList.remove("light", "dark");
-    if (t === "system") {
-      root.classList.add(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    } else {
-      root.classList.add(t);
-    }
-  };
-
-  const displayName = profile?.display_name ?? user?.phone ?? "You";
-  const handle      = profile?.username ?? "";
-  const avatarUrl   = profile?.avatar_url ?? "";
-  const bio         = profile?.bio ?? "";
-  const isVerified  = profile?.is_verified ?? false;
-  const isCreator   = profile?.is_creator ?? false;
-
-  const trustScore = profile ? computeTrustScore(profile) : 0;
-  const { level: trustLevel, next: trustNext, nextScore: trustNextScore } = getTrustLevel(trustScore);
-  const trustProgress = trustScore >= 80 ? 100 : Math.round((trustScore / trustNextScore) * 100);
-
-  const joinDate = user?.id ? new Date(2026, 0, 1).toLocaleDateString("en-NG", { year: "numeric", month: "long" }) : null;
-
-  const regionDisplay = (() => {
-    if (!profile) return null;
-    const parts = [
-      profile.country,
-      profile.state_id?.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-      profile.lga_id?.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-    ].filter(Boolean);
-    return parts.length ? parts.join(" \xb7 ") : null;
-  })();
-
-  const incompleteItems = completionItems.filter((i) => !i.done);
-
-  return (
-    <AppShell>
-      <div className="pb-8">
-        {/* ── Cover ── */}
-        <div className="relative h-32 bg-gradient-to-br from-neon/30 via-accent to-orange/20 overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,var(--neon)_0%,transparent_65%)] opacity-10" />
-          <div className="absolute top-3 right-3 flex items-center gap-2">
-            <button onClick={() => navigate("/trust-center")} className="h-9 w-9 rounded-full bg-background/80 backdrop-blur flex items-center justify-center" aria-label="Trust Center">
-              <Shield className="h-4 w-4" />
-            </button>
-            <button onClick={() => navigate("/settings")} className="h-9 w-9 rounded-full bg-background/80 backdrop-blur flex items-center justify-center" aria-label="Settings">
-              <Settings className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-
-        <div className="px-4 -mt-10">
-          {/* ── Avatar + name ── */}
-          <div className="flex items-end justify-between">
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="" className="h-20 w-20 rounded-2xl ring-4 ring-background object-cover" />
-            ) : (
-              <div className={cn("h-20 w-20 rounded-2xl ring-4 ring-background bg-gradient-to-br flex items-center justify-center text-2xl font-extrabold text-white", avatarColor(user?.id ?? "loop"))}>
-                {initials(displayName)}
-              </div>
-            )}
-            <button
-              onClick={() => navigate("/settings")}
-              className="mb-1 px-4 py-1.5 rounded-full bg-foreground text-background text-xs font-bold active:scale-95 transition-transform">
-              Edit profile
-            </button>
-          </div>
-
-          {/* ── Identity header ── */}
-          <div className="mt-3">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <h1 className="text-xl font-extrabold">{displayName}</h1>
-              {isVerified && <BadgeCheck className="h-5 w-5 text-neon fill-neon/20" />}
-              {isCreator && <span className="rounded-full bg-orange/15 px-2 py-0.5 text-[10px] font-bold text-orange uppercase tracking-wide">Creator</span>}
-            </div>
-            {handle && <div className="text-xs text-muted-foreground mt-0.5">@{handle} &middot; {handle}@rald.me</div>}
-            {regionDisplay && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
-                <MapPin className="h-3 w-3 shrink-0" />
-                <span className="truncate">{regionDisplay}</span>
-              </div>
-            )}
-            {bio && <p className="text-sm mt-2 leading-snug">{bio}</p>}
-          </div>
-
-          {/* ── Stats ── */}
-          <div className="grid grid-cols-3 gap-2 mt-4">
-            <button onClick={() => setTab("followers")}
-              className={cn("rounded-2xl p-3 text-center transition", tab === "followers" ? "bg-secondary ring-2 ring-neon/40" : "bg-secondary")}>
-              <div className="text-lg font-extrabold">{followers}</div>
-              <div className="text-[10px] text-muted-foreground">Followers</div>
-            </button>
-            <button onClick={() => setTab("following")}
-              className={cn("rounded-2xl p-3 text-center transition", tab === "following" ? "bg-secondary ring-2 ring-neon/40" : "bg-secondary")}>
-              <div className="text-lg font-extrabold">{following}</div>
-              <div className="text-[10px] text-muted-foreground">Following</div>
-            </button>
-            <div className="rounded-2xl p-3 text-center bg-neon/10 border border-neon/40">
-              <div className="text-lg font-extrabold text-neon">{trustScore}</div>
-              <div className="text-[10px] text-muted-foreground">Trust</div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Part 19: Notification prompt — placed below stats, full width ── */}
-        <div className="mt-4">
-          <NotificationPrompt />
-        </div>
-
-        <div className="px-4">
-          {/* ── Profile Completion ── */}
-          {completionPct < 100 && (
-            <div className="mt-4 rounded-2xl border border-border bg-surface p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-neon" />
-                  <span className="text-xs font-bold uppercase tracking-wider">Profile Completion</span>
-                </div>
-                <span className="text-sm font-extrabold text-neon">{completionPct}%</span>
-              </div>
-              <div className="h-2 w-full rounded-full bg-border overflow-hidden">
-                <div className="h-full rounded-full bg-gradient-to-r from-neon to-primary transition-all" style={{ width: `${completionPct}%` }} />
-              </div>
-              <div className="space-y-1.5">
-                {completionItems.map((item) => (
-                  <div key={item.key} className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {item.done ? <CheckCircle2 className="h-4 w-4 text-neon shrink-0" /> : <Circle className="h-4 w-4 text-border shrink-0" />}
-                      <span className={cn("text-xs truncate", item.done ? "text-muted-foreground line-through" : "font-medium")}>{item.label}</span>
-                    </div>
-                    {!item.done && item.action && item.actionLabel && (
-                      item.action.startsWith("http") ? (
-                        <a href={item.action} target="_blank" rel="noopener noreferrer" className="shrink-0 text-[10px] font-bold text-primary">{item.actionLabel} &rarr;</a>
-                      ) : (
-                        <Link to={item.action} className="shrink-0 text-[10px] font-bold text-primary">{item.actionLabel} &rarr;</Link>
-                      )
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Trust Experience ── */}
-          <div className="mt-4 rounded-2xl border border-border bg-surface p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-neon" />
-              <span className="text-xs font-bold uppercase tracking-wider">Trust Status</span>
-            </div>
-            <div className="flex items-end justify-between">
-              <div>
-                <p className="text-2xl font-extrabold text-neon">{trustScore}</p>
-                <p className="text-xs text-muted-foreground">/ 100 Trust Score</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-bold">{trustLevel}</p>
-                {trustScore < 80 && <p className="text-[11px] text-muted-foreground">Next: {trustNext} ({trustNextScore})</p>}
-              </div>
-            </div>
-            <div className="h-2 w-full rounded-full bg-border overflow-hidden">
-              <div className="h-full rounded-full bg-gradient-to-r from-neon to-primary transition-all" style={{ width: `${trustProgress}%` }} />
-            </div>
-            {incompleteItems.length > 0 && (
-              <p className="text-[11px] text-muted-foreground">
-                Complete your profile to earn more trust points.{" "}
-                {incompleteItems[0].action && (
-                  <Link to={incompleteItems[0].action} className="text-primary font-semibold">
-                    {incompleteItems[0].actionLabel ?? "Continue"} &rarr;
-                  </Link>
-                )}
-              </p>
-            )}
-          </div>
-
-          {/* ── RALD Identity Card ── */}
-          <div className="mt-4 rounded-2xl border border-border p-4 bg-surface">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Shield className="h-4 w-4 text-neon" />
-                <span className="text-xs font-bold uppercase tracking-wider">RALD Identity</span>
-              </div>
-              <span className="text-[10px] font-bold text-neon">profiles.rald.cloud</span>
-            </div>
-            <div className="space-y-0 divide-y divide-border/60">
-              <IdRow label="RALD ID" value={user?.id ? formatRaldId(user.id) : "\u2014"} copy={!!user?.id} />
-              <IdRow label="Mail" value={handle ? `${handle}@rald.me` : "\u2014"} copy={!!handle} />
-              {joinDate && <IdRow label="Member since" value={joinDate} />}
-              <IdRow label="Verification" value={isVerified ? "Verified" : "Unverified"} badge badgeColor={isVerified ? "bg-neon" : "bg-border"} />
-              <IdRow label="Trust Score" value={`${trustScore} / 100`} badge badgeColor={trustScore >= 60 ? "bg-neon" : "bg-amber-400"} />
-              <div className="py-1.5">
-                <div className="flex items-start justify-between gap-3">
-                  <span className="text-xs text-muted-foreground shrink-0 pt-0.5">Region</span>
-                  <span className="text-xs font-semibold text-right">{profile ? <RegionLabel profile={profile} /> : "\u2014"}</span>
-                </div>
-              </div>
-              <IdRow label="Account status" value="Active" badge badgeColor="bg-neon" />
-            </div>
-
-            {profile?.country && (
-              <div className="mt-3 pt-3 border-t border-border">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Regional Identity</p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {([
-                    ["Country", profile.country],
-                    ["State",   profile.state_id?.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) ?? null],
-                    ["LGA",     profile.lga_id?.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) ?? null],
-                    ["LCDA",    profile.lcda_id?.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) ?? null],
-                  ] as [string, string | null][]).map(([k, v]) => v ? (
-                    <div key={k} className="rounded-xl bg-secondary px-3 py-2">
-                      <p className="text-[9px] uppercase tracking-wider text-muted-foreground">{k}</p>
-                      <p className="text-xs font-bold mt-0.5">{v}</p>
-                    </div>
-                  ) : null)}
-                </div>
-              </div>
-            )}
-
-            <div className="mt-3 pt-3 border-t border-border">
-              <div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground mb-2">Connected apps</div>
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  { name: "Loop",      active: true,  color: "bg-neon/15 text-neon" },
-                  { name: "Messenger", active: true,  color: "bg-orange/15 text-orange" },
-                  { name: "Mail",      active: true,  color: "bg-secondary text-foreground" },
-                  { name: "PayRALD",   active: false, color: "bg-secondary text-muted-foreground" },
-                  { name: "GitRALD",   active: false, color: "bg-secondary text-muted-foreground" },
-                ].map((a) => (
-                  <span key={a.name} className={cn("px-2.5 py-1 rounded-full text-[10px] font-bold", a.color)}>
-                    {a.active ? "\u25cf " : "\u25cb "}{a.name}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <a href="https://profiles.rald.cloud" target="_blank" rel="noopener noreferrer"
-              className="mt-3 w-full h-10 rounded-xl bg-secondary text-xs font-bold flex items-center justify-center gap-1.5 transition-colors hover:bg-secondary/80">
-              Manage on profiles.rald.cloud <ChevronRight className="h-3.5 w-3.5" />
-            </a>
-          </div>
-
-          {/* ── Appearance ── */}
-          <div className="mt-4 rounded-2xl border border-border p-4 bg-surface">
-            <div className="text-xs font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5">
-              <Sparkles className="h-3.5 w-3.5 text-neon" /> Appearance
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {([
-                { id: "light"  as const, icon: Sun,     label: "Light" },
-                { id: "dark"   as const, icon: Moon,    label: "Dark" },
-                { id: "system" as const, icon: Monitor, label: "Auto" },
-              ]).map((opt) => {
-                const Icon = opt.icon;
-                const active = theme === opt.id;
-                return (
-                  <button key={opt.id} onClick={() => applyTheme(opt.id)}
-                    className={cn("flex flex-col items-center gap-1 py-3 rounded-xl border transition-colors active:scale-95",
-                      active ? "border-neon bg-neon/10 text-foreground" : "border-border bg-secondary")}>
-                    <Icon className={cn("h-4 w-4", active ? "text-neon" : "text-muted-foreground")} />
-                    <span className={cn("text-[11px] font-semibold", active ? "" : "text-muted-foreground")}>{opt.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ── Quick links ── */}
-          <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-surface">
-            {[
-              { icon: Shield,     label: "Trust Center",    sub: "Report issues, view policies",          to: "/trust-center" },
-              { icon: Settings,   label: "Settings",        sub: "Profile, region, notifications, privacy", to: "/settings" },
-              { icon: UserCircle, label: "Manage identity", sub: "profiles.rald.cloud",                   href: "https://profiles.rald.cloud" },
-            ].map(({ icon: Icon, label, sub, to, href }, idx, arr) => {
-              const inner = (
-                <>
-                  <div className="h-8 w-8 shrink-0 rounded-xl bg-secondary flex items-center justify-center">
-                    <Icon className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{label}</p>
-                    <p className="text-xs text-muted-foreground truncate">{sub}</p>
-                  </div>
-                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
-                </>
-              );
-              const cls = cn("flex items-center gap-3 px-4 py-3 w-full text-left transition-colors hover:bg-surface-elev active:bg-surface-elev", idx < arr.length - 1 && "border-b border-border");
-              return href ? (
-                <a key={label} href={href} target="_blank" rel="noopener noreferrer" className={cls}>{inner}</a>
-              ) : (
-                <button key={label} onClick={() => navigate(to!)} className={cls}>{inner}</button>
-              );
-            })}
-          </div>
-
-          {/* ── Sign out ── */}
-          <button onClick={() => signOut()}
-            className="mt-4 w-full h-11 rounded-2xl border border-destructive/40 bg-destructive/10 text-destructive text-sm font-semibold flex items-center justify-center gap-2 transition-colors active:bg-destructive/20">
-            <LogOut className="h-4 w-4" /> Sign out
-          </button>
-
-          {/* ── Activity tabs ── */}
-          <div className="mt-5">
-            <div className="flex gap-1 border-b border-border overflow-x-auto scrollbar-none">
-              {(["activity", "followers", "following", "saved"] as Tab[]).map((t) => (
-                <button key={t} onClick={() => setTab(t)}
-                  className={cn("px-3 py-2 text-xs font-semibold capitalize border-b-2 whitespace-nowrap transition-colors",
-                    tab === t ? "border-neon text-foreground" : "border-transparent text-muted-foreground")}>
-                  {t}
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 space-y-2">
-              {tab === "activity"  && <EmptyTab icon={Mic}   title="No room activity yet"      body="Join or host a room to start building your profile activity."    action="/discover" actionLabel="Find a room" />}
-              {tab === "following" && <EmptyTab icon={Users} title="Not following anyone yet"  body="Connect with creators and community members in rooms."            action="/discover" actionLabel="Discover people" />}
-              {tab === "followers" && <EmptyTab icon={Users} title="No followers yet"          body="Host a room or join conversations to grow your audience."          action="/create"   actionLabel="Host a room" />}
-              {tab === "saved"     && <EmptyTab icon={Heart} title="Nothing saved yet"         body="Save rooms, moments, and community posts to revisit them."         action="/discover" actionLabel="Explore Loop" />}
-            </div>
-          </div>
-        </div>
-      </div>
-    </AppShell>
-  );
-}

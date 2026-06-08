@@ -30,7 +30,9 @@ import {
   JWT_ISSUER,
   JWT_AUDIENCE,
   TTL_OTP_S,
+  TTL_SSO_S,
 } from "../lib/jwt.js";
+import { parseSessionCookie } from "../lib/cookie.js";
 
 export const auth = new Hono<{
   Bindings: CloudflareEnv;
@@ -363,6 +365,67 @@ auth.get("/me", async (c) => {
  * Tokens without a jti (issued before PHD-001) cannot be revoked server-side —
  * they expire naturally within 30 days (OTP) or 7 days (SSO).
  */
+/* ── GET /api/auth/silent ────────────────────────────────────────────── */
+/**
+ * Cookie-based silent session check. Issues a fresh Loop-scoped JWT on success.
+ *
+ * ROUTING-FIX-001 (2026-06-08): The equivalent handler in rald-sso.ts is mounted
+ * at app.route("/api/auth/rald-sso", raldSso) → resolves to /api/auth/rald-sso/silent,
+ * NOT /api/auth/silent. The client (use-auth.tsx, api-fetch.ts) calls GET /api/auth/silent.
+ * This handler is added here (auth router → /api/auth/*) so the route resolves correctly.
+ *
+ * Both handlers are kept — rald-sso/silent remains for backward-compat;
+ * this is the canonical path going forward.
+ */
+auth.get("/silent", async (c) => {
+  const token = parseSessionCookie(c.req.header("Cookie"));
+  if (!token) return c.json({ valid: false, reason: "no_session_cookie" }, 401);
+
+  const rald = await verifyJwt(token, c.env.RALD_JWT_SECRET) as {
+    id: string; email?: string; phone?: string; name?: string | null; role?: string;
+  } | null;
+  if (!rald || !rald.id) return c.json({ valid: false, reason: "invalid_or_expired_token" }, 401);
+
+  // Fire-and-forget profile upsert on cold-start (mirrors rald-sso.ts behaviour)
+  const sbUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
+  const displayName = rald.name ?? (rald.email ? rald.email.split("@")[0] : null);
+  fetch(`${sbUrl}/rest/v1/profiles`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization:  `Bearer ${c.env.SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey:         c.env.SUPABASE_SERVICE_ROLE_KEY,
+      Prefer:         "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify({ id: rald.id, ...(displayName ? { display_name: displayName } : {}) }),
+  }).catch(() => null);
+
+  const now = Math.floor(Date.now() / 1000);
+  const loopToken = await signJwt(
+    {
+      sub:    rald.id,
+      email:  rald.email ?? null,
+      role:   rald.role  ?? "user",
+      iss:    JWT_ISSUER,
+      aud:    JWT_AUDIENCE,
+      iat:    now,
+      exp:    now + TTL_SSO_S,
+      jti:    crypto.randomUUID(),
+      id:     rald.id,
+      source: "silent",
+    },
+    c.env.RALD_JWT_SECRET,
+  );
+
+  return c.json({
+    valid:        true,
+    user:         { id: rald.id, email: rald.email ?? null, role: rald.role ?? "user" },
+    access_token: loopToken,
+  });
+});
+
+/* ── POST /api/auth/signout ──────────────────────────────────────────── */
+
 auth.post("/signout", requireAuth(), async (c) => {
   const user = c.get("user");
 
