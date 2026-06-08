@@ -54,15 +54,10 @@ function post(event: LoopEvent, properties: Record<string, unknown>): void {
     ts: Date.now(),
   });
 
-  // Use sendBeacon when available so events survive page unload; fall back to fetch
-  const url = `${API_BASE}/api/analytics`;
-  if (typeof navigator !== "undefined" && navigator.sendBeacon) {
-    const blob = new Blob([body], { type: "application/json" });
-    // sendBeacon doesn't support custom headers, so fall through to fetch for auth
-  }
-
-  // fetch: fire-and-forget, no await
-  fetch(url, {
+  // fetch with keepalive:true survives page unload in modern browsers.
+  // sendBeacon is intentionally not used — it doesn't support custom headers
+  // and we need Authorization: Bearer <token> on every request.
+  fetch(`${API_BASE}/api/analytics`, {
     method:  "POST",
     headers: {
       "Content-Type":  "application/json",
