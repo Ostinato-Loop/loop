@@ -4,7 +4,8 @@
 
 import { Link, useLocation } from "react-router-dom";
 import { Home, Compass, Plus, MessageCircle, User as UserIcon } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { fetchUnreadCount } from "@/lib/api/notifications";
 import { CreateSheet } from "@/components/create-sheet";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,11 @@ const navItems = [
 export function BottomNav() {
   const { pathname } = useLocation();
   const [createOpen, setCreateOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    fetchUnreadCount().then(setUnread).catch(() => {});
+  }, [pathname]);
 
   return (
     <>
@@ -54,10 +60,15 @@ export function BottomNav() {
             const Icon = item.icon;
             return (
               <Link key={item.to} to={item.to} className="flex flex-col items-center justify-center gap-0.5">
-                <Icon
-                  className={cn("h-[22px] w-[22px]", active ? "text-neon" : "text-muted-foreground")}
-                  strokeWidth={active ? 2.4 : 2}
-                />
+                <div className="relative">
+                  <Icon
+                    className={cn("h-[22px] w-[22px]", active ? "text-neon" : "text-muted-foreground")}
+                    strokeWidth={active ? 2.4 : 2}
+                  />
+                  {item.to === "/me" && unread > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-primary border border-background" />
+                  )}
+                </div>
                 <span className={cn("text-[10px]", active ? "text-foreground font-semibold" : "text-muted-foreground")}>
                   {item.label}
                 </span>

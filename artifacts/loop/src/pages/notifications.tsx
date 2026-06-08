@@ -11,14 +11,15 @@ import { useEffect, useState, useCallback } from "react";
 import { useAuth, computeTrustScore } from "@/hooks/use-auth";
 import { AppShell } from "@/components/layout/app-shell";
 import {
-  Bell, Shield, CheckCircle2, Mic,
+  Bell, Shield, CheckCircle2, Mic, MessageSquare,
   ArrowRight, UserPlus, ChevronLeft, MapPin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { authedSupabase } from "@/integrations/supabase/client";
+import { fetchNotifications, markNotificationsRead, type ApiNotif } from "@/lib/api/notifications";
 
 
-type NotifKind = "follow" | "trust" | "profile" | "room_invite" | "regional" | "system";
+type NotifKind = "follow" | "trust" | "profile" | "room_invite" | "regional" | "system" | "dm" | "friend_request" | "connection_accepted";
 
 type Notif = {
   id:           string;
@@ -43,23 +44,29 @@ function timeAgo(ts: number): string {
 
 function kindIcon(kind: NotifKind) {
   switch (kind) {
-    case "follow":   return UserPlus;
-    case "trust":    return Shield;
-    case "profile":  return CheckCircle2;
-    case "room_invite": return Mic;
-    case "regional": return MapPin;
-    default:         return Bell;
+    case "follow":              return UserPlus;
+    case "trust":               return Shield;
+    case "profile":             return CheckCircle2;
+    case "room_invite":         return Mic;
+    case "regional":            return MapPin;
+    case "dm":                  return MessageSquare;
+    case "friend_request":      return UserPlus;
+    case "connection_accepted": return CheckCircle2;
+    default:                    return Bell;
   }
 }
 
 function kindColor(kind: NotifKind): string {
   switch (kind) {
-    case "follow":   return "bg-primary/10 text-primary";
-    case "trust":    return "bg-amber-500/10 text-amber-500";
-    case "profile":  return "bg-emerald-500/10 text-emerald-500";
-    case "room_invite": return "bg-fuchsia-500/10 text-fuchsia-500";
-    case "regional": return "bg-primary/10 text-primary";
-    default:         return "bg-secondary text-muted-foreground";
+    case "follow":              return "bg-primary/10 text-primary";
+    case "trust":               return "bg-amber-500/10 text-amber-500";
+    case "profile":             return "bg-emerald-500/10 text-emerald-500";
+    case "room_invite":         return "bg-fuchsia-500/10 text-fuchsia-500";
+    case "regional":            return "bg-primary/10 text-primary";
+    case "dm":                  return "bg-violet-500/10 text-violet-500";
+    case "friend_request":      return "bg-blue-500/10 text-blue-500";
+    case "connection_accepted": return "bg-emerald-500/10 text-emerald-500";
+    default:                    return "bg-secondary text-muted-foreground";
   }
 }
 
@@ -130,6 +137,58 @@ async function fetchFollowingLiveRooms(userId: string): Promise<Notif[]> {
   } catch { return []; }
 }
 
+/** Map API DB notifications → local Notif shape for unified rendering. */
+function mapApiNotifs(data: ApiNotif[]): Notif[] {
+  return data.flatMap(n => {
+    const actor = n.actor;
+    const name  = actor?.display_name ?? actor?.username ?? "Someone";
+    const ini   = name.split(" ").map((w: string) => w[0]).slice(0, 2).join("").toUpperCase();
+    switch (n.type) {
+      case "direct_message":
+        return [{
+          id:          `api-${n.id}`,
+          kind:        "dm" as const,
+          title:       "New message",
+          body:        (n.data?.["preview"] as string | undefined) ?? `${name} sent you a message`,
+          ts:          new Date(n.created_at).getTime(),
+          read:        n.read_at !== null,
+          action:      n.data?.["conversation_id"] ? `/messages/${n.data["conversation_id"]}` : "/messages",
+          actionLabel: "Open",
+          avatar:      actor?.avatar_url ?? null,
+          initials:    ini,
+        }];
+      case "friend_request":
+        return [{
+          id:          `api-${n.id}`,
+          kind:        "friend_request" as const,
+          title:       "Friend request",
+          body:        `${name} wants to connect`,
+          ts:          new Date(n.created_at).getTime(),
+          read:        n.read_at !== null,
+          action:      actor?.id ? `/users/${actor.id}` : undefined,
+          actionLabel: "View",
+          avatar:      actor?.avatar_url ?? null,
+          initials:    ini,
+        }];
+      case "connection_accepted":
+        return [{
+          id:          `api-${n.id}`,
+          kind:        "connection_accepted" as const,
+          title:       "Connection accepted",
+          body:        `${name} accepted your connection request`,
+          ts:          new Date(n.created_at).getTime(),
+          read:        n.read_at !== null,
+          action:      actor?.id ? `/users/${actor.id}` : undefined,
+          actionLabel: "View",
+          avatar:      actor?.avatar_url ?? null,
+          initials:    ini,
+        }];
+      default:
+        return [];
+    }
+  });
+}
+
 export default function NotificationsPage() {
   const { user, profile, loading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -140,9 +199,10 @@ export default function NotificationsPage() {
     if (!user || !profile) return;
     setLoading(true);
     try {
-      const [followers, liveRooms] = await Promise.all([
+      const [followers, liveRooms, apiNotifs] = await Promise.all([
         fetchFollowerNotifs(user.id),
         fetchFollowingLiveRooms(user.id),
+        fetchNotifications({ limit: 30 }),
       ]);
 
       const systemNotifs: Notif[] = [];
@@ -190,9 +250,14 @@ export default function NotificationsPage() {
         });
       }
 
-      const all = [...liveRooms, ...followers, ...systemNotifs]
+      const all = [...mapApiNotifs(apiNotifs), ...liveRooms, ...followers, ...systemNotifs]
         .sort((a, b) => b.ts - a.ts);
       setNotifs(all);
+
+      // Clear badge: mark all DB notifications read (fire-and-forget)
+      if (apiNotifs.some(n => !n.read_at)) {
+        markNotificationsRead(true).catch(() => {});
+      }
     } finally {
       setLoading(false);
     }
