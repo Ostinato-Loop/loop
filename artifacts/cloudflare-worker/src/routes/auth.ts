@@ -170,7 +170,7 @@ auth.post("/send-otp", async (c) => {
       message_type: "NUMERIC",
       to:       phone,
       from:     c.env.TERMII_SENDER_ID,
-      channel:  "generic",
+      channel:  phone.startsWith("+234") ? "dnd" : "generic",
       pin_attempts: 3,
       pin_time_to_live: 10,
       pin_length: 6,
@@ -182,13 +182,14 @@ auth.post("/send-otp", async (c) => {
 
   if (!resp.ok) {
     const err = await resp.text().catch(() => "");
-    console.error("[auth/send-otp] Termii error:", resp.status, err.slice(0, 200));
-    return c.json({ error: "Failed to send OTP" }, 502);
+    console.error("[auth/send-otp] Termii error:", resp.status, err.slice(0, 400));
+    return c.json({ error: "Failed to send OTP", _debug: { termii_status: resp.status, termii_body: err.slice(0, 400) } }, 502);
   }
 
   const data = (await resp.json()) as { pinId?: string };
   if (!data.pinId) {
-    return c.json({ error: "Failed to send OTP" }, 502);
+    console.error("[auth/send-otp] missing pinId:", JSON.stringify(data).slice(0, 400));
+    return c.json({ error: "Failed to send OTP", _debug: { reason: 'missing_pinId', termii_response: JSON.stringify(data).slice(0, 400) } }, 502);
   }
 
   await c.env.CACHE.put(`otp:pin:${phone}`, data.pinId, { expirationTtl: 600 });
@@ -199,6 +200,14 @@ auth.post("/send-otp", async (c) => {
     remainingPhone: phoneCheck.remaining - 1,
     remainingIp: ipCheck.remaining - 1,
   });
+});
+
+
+/* ── POST /api/auth/request-otp (alias → send-otp) ─────────────────── */
+auth.post("/request-otp", async (c) => {
+  const url = new URL(c.req.url);
+  url.pathname = url.pathname.replace(/\/request-otp$/, '/send-otp');
+  return auth.request(url.toString(), { method: 'POST', headers: c.req.raw.headers, body: c.req.raw.body }, c.env);
 });
 
 /* ── POST /api/auth/verify-otp ───────────────────────────────────────── */
