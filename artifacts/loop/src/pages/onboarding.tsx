@@ -10,8 +10,7 @@ import { cn } from "@/lib/utils";
 import { listRooms, type Room } from "@/lib/api/rooms";
 import { Loader2, Search, MapPin, Globe2, ChevronRight, CheckCircle2 } from "lucide-react";
 import {
-  COUNTRIES, getStates, getLgas, formatLocation,
-  type Country, type Region,
+  COUNTRIES, getStates, getLgas,
 } from "@/lib/regions-data";
 
 const INTERESTS = [

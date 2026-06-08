@@ -1,4 +1,3 @@
-import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoomCard } from "@/components/rooms/room-card";
@@ -6,7 +5,6 @@ import { listRooms, type Room } from "@/lib/api/rooms";
 import { Radio, Users, TrendingUp } from "lucide-react";
 
 export default function LivePage() {
-  const navigate = useNavigate();
   const [rooms, setRooms] = useState<Room[] | null>(null);
   const [elapsed, setElapsed] = useState(0);
 

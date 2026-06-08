@@ -133,7 +133,7 @@ async function fetchFollowingLiveRooms(userId: string): Promise<Notif[]> {
 }
 
 export default function NotificationsPage() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const [loading, setLoading] = useState(true);
@@ -201,7 +201,7 @@ export default function NotificationsPage() {
   }, [user, profile]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (!loading && !user) navigate("/login"); }, [loading, user, navigate]);
+  useEffect(() => { if (!authLoading && !user) navigate("/login"); }, [authLoading, user, navigate]);
 
   return (
     <AppShell>

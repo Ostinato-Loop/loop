@@ -5,7 +5,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { RoomCard } from "@/components/rooms/room-card";
 import { listRooms, type Room, type RoomCategory } from "@/lib/api/rooms";
 import {
-  searchRelatedPeople, getPeopleSuggestions, hasRaldIdentity,
+  searchRelatedPeople, getPeopleSuggestions,
   type PersonResult, type PersonSuggestion,
 } from "@/lib/api/people";
 import { useFollow } from "@/lib/api/follows";
@@ -251,7 +251,7 @@ function PeopleTab({ onReport }: { onReport: (t: ReportTarget) => void }) {
 }
 
 /* ── Near Me tab ─────────────────────────────────────────────────────── */
-function NearMeTab({ onReport }: { onReport: (t: ReportTarget) => void }) {
+function NearMeTab({ onReport: _onReport }: { onReport: (t: ReportTarget) => void }) {
   const { profile } = useAuth();
   const navigate    = useNavigate();
   const [rooms, setRooms]     = useState<Room[]>([]);
