@@ -112,8 +112,7 @@ async function fetchFollowingLiveRooms(userId: string): Promise<Notif[]> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: follows } = await (supabase as any)
-      .from("follows").select("following_id").eq("follower_id", userId).limit(100)
-      as { data: Array<{ following_id: string }> | null };
+      .from("follows").select("following_id").eq("follower_id", userId).limit(100) as { data: Array<{ following_id: string }> | null };
     if (!follows || follows.length === 0) return [];
     const ids = follows.map(f => f.following_id);
     const { data: rooms } = await supabase
