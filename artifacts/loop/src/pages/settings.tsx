@@ -1,22 +1,25 @@
 /**
  * Loop — Settings Page
  * Part 7: All settings must fully function. No "Coming Soon" or placeholders.
+ * REVOKE-ALL-001 (2026-06-09): Added Security & Devices section (Device Center).
  * LILCKY STUDIO LIMITED
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
+import { authFetch } from "@/lib/api-fetch";
+import { setSessionToken } from "@/lib/session-store";
 import { authedSupabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/layout/app-shell";
 import {
-  ChevronLeft, ChevronRight, Bell, Shield,
-  UserCircle, MapPin, Trash2, Download, Sun, Moon, Monitor,
-  BellOff, BellRing, Volume2, Check, Loader2, Lock,
+  ChevronLeft, ChevronRight, Bell, Shield, UserCircle, MapPin, Trash2,
+  Download, Sun, Moon, Monitor, BellOff, BellRing, Volume2, Check,
+  Loader2, Lock, Smartphone, LogOut, ShieldAlert, Globe,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-type Section = "menu" | "profile" | "region" | "notifications" | "privacy" | "account" | "appearance";
+type Section = "menu" | "profile" | "region" | "notifications" | "privacy" | "security" | "account" | "appearance";
 
 const LANGUAGES = [
   { code: "en", label: "English" },
@@ -30,13 +33,16 @@ const LANGUAGES = [
 ];
 
 const MENU_SECTIONS = [
-  { id: "profile" as Section,       icon: UserCircle, label: "Profile Settings",      sub: "Name, bio, avatar, handle" },
-  { id: "region" as Section,        icon: MapPin,     label: "Region Settings",        sub: "Country, state, LGA, LCDA" },
-  { id: "notifications" as Section, icon: Bell,       label: "Notification Settings",  sub: "Alerts, sounds, room notifications" },
-  { id: "privacy" as Section,       icon: Shield,     label: "Privacy Settings",       sub: "Visibility, blocking, data" },
-  { id: "account" as Section,       icon: Lock,       label: "Account Settings",       sub: "Phone, security, delete account" },
-  { id: "appearance" as Section,    icon: Sun,        label: "Appearance",             sub: "Theme, display preferences" },
+  { id: "profile"       as Section, icon: UserCircle,  label: "Profile Settings",     sub: "Name, bio, avatar, handle" },
+  { id: "region"        as Section, icon: MapPin,       label: "Region Settings",      sub: "Country, state, LGA, LCDA" },
+  { id: "notifications" as Section, icon: Bell,         label: "Notifications",        sub: "Alerts, sounds, room notifications" },
+  { id: "privacy"       as Section, icon: Shield,       label: "Privacy",              sub: "Visibility, blocking, data" },
+  { id: "security"      as Section, icon: ShieldAlert,  label: "Security & Devices",   sub: "Active sessions, sign out other devices" },
+  { id: "account"       as Section, icon: Lock,         label: "Account",              sub: "Phone, identity, delete account" },
+  { id: "appearance"    as Section, icon: Sun,          label: "Appearance",           sub: "Theme, display preferences" },
 ];
+
+/* ── ProfileSettings ─────────────────────────────────────────────────── */
 
 function ProfileSettings() {
   const { user, profile, refreshProfile } = useAuth();
@@ -117,6 +123,8 @@ function ProfileSettings() {
   );
 }
 
+/* ── RegionSettings ──────────────────────────────────────────────────── */
+
 function RegionSettings() {
   const { user, profile, refreshProfile } = useAuth();
   const [query, setQuery] = useState("");
@@ -157,19 +165,12 @@ function RegionSettings() {
     try {
       const { error } = await authedSupabase()
         .from("profiles")
-        .update({
-          country:  selected.country,
-          state_id: selected.state_id,
-          lga_id:   selected.lga_id,
-          lcda_id:  selected.lcda_id,
-        })
+        .update({ country: selected.country, state_id: selected.state_id, lga_id: selected.lga_id, lcda_id: selected.lcda_id })
         .eq("id", user.id);
       if (error) throw error;
       await refreshProfile();
       toast.success("Region updated");
-      setSelected(null);
-      setQuery("");
-      setResults([]);
+      setSelected(null); setQuery(""); setResults([]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not save");
     } finally {
@@ -225,6 +226,8 @@ function RegionSettings() {
   );
 }
 
+/* ── NotificationSettings ────────────────────────────────────────────── */
+
 function NotificationSettings() {
   const [roomAlerts, setRoomAlerts] = useState(true);
   const [mentionAlerts, setMentionAlerts] = useState(true);
@@ -261,10 +264,7 @@ function NotificationSettings() {
           <p className="text-xs text-muted-foreground">{sub}</p>
         </div>
       </div>
-      <button
-        onClick={() => onChange(!value)}
-        className={cn("relative h-6 w-11 rounded-full transition-colors", value ? "bg-primary" : "bg-border")}
-      >
+      <button onClick={() => onChange(!value)} className={cn("relative h-6 w-11 rounded-full transition-colors", value ? "bg-primary" : "bg-border")}>
         <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", value ? "translate-x-5" : "translate-x-0.5")} />
       </button>
     </div>
@@ -288,16 +288,15 @@ function NotificationSettings() {
           </div>
         </div>
       </div>
-      <button
-        onClick={save}
-        className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2"
-      >
+      <button onClick={save} className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2">
         {saved ? <Check className="h-4 w-4" /> : null}
         {saved ? "Saved" : "Save preferences"}
       </button>
     </div>
   );
 }
+
+/* ── PrivacySettings ─────────────────────────────────────────────────── */
 
 function PrivacySettings() {
   const [profilePublic, setProfilePublic] = useState(true);
@@ -317,10 +316,7 @@ function PrivacySettings() {
         <p className="text-sm font-medium">{label}</p>
         <p className="text-xs text-muted-foreground">{sub}</p>
       </div>
-      <button
-        onClick={() => onChange(!value)}
-        className={cn("relative h-6 w-11 shrink-0 rounded-full transition-colors", value ? "bg-primary" : "bg-border")}
-      >
+      <button onClick={() => onChange(!value)} className={cn("relative h-6 w-11 shrink-0 rounded-full transition-colors", value ? "bg-primary" : "bg-border")}>
         <span className={cn("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform", value ? "translate-x-5" : "translate-x-0.5")} />
       </button>
     </div>
@@ -333,16 +329,251 @@ function PrivacySettings() {
         <Toggle value={showRegion}    onChange={setShowRegion}    label="Show my region" sub="Display your country and state on your profile" />
       </div>
       <p className="text-xs text-muted-foreground">Your phone number is never visible to other users. Only your username and display name are shown publicly.</p>
-      <button
-        onClick={save}
-        className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2"
-      >
+      <button onClick={save} className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2">
         {saved ? <Check className="h-4 w-4" /> : null}
         {saved ? "Saved" : "Save preferences"}
       </button>
     </div>
   );
 }
+
+/* ── SecuritySettings — Device Center ────────────────────────────────── */
+
+type Device = {
+  id:            string;
+  device_name:   string;
+  device_type:   string;
+  os:            string;
+  browser:       string;
+  ip_address:    string | null;
+  city:          string | null;
+  country:       string | null;
+  last_seen_at:  string;
+  is_trusted:    boolean;
+};
+
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 2)   return "Just now";
+  if (mins < 60)  return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)   return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return "Yesterday";
+  return `${days} days ago`;
+}
+
+/** Best-effort current device detection by comparing navigator.userAgent */
+function detectCurrentDevice(devices: Device[]): string | null {
+  const ua = navigator.userAgent;
+  const browser =
+    /Edg\//.test(ua)     ? "Edge"    :
+    /Chrome\//.test(ua)  ? "Chrome"  :
+    /Safari\//.test(ua)  ? "Safari"  :
+    /Firefox\//.test(ua) ? "Firefox" : "Unknown";
+  const os =
+    /iPhone/.test(ua)    ? "iOS"     :
+    /Android/.test(ua)   ? "Android" :
+    /Macintosh/.test(ua) ? "macOS"   :
+    /Windows/.test(ua)   ? "Windows" : "Other";
+
+  // First match wins (list is sorted by last_seen DESC — most recent first)
+  for (const d of devices) {
+    if (d.browser === browser && d.os.startsWith(os)) return d.id;
+  }
+  return devices[0]?.id ?? null; // Fall back to most-recently-seen
+}
+
+function DeviceIcon({ type }: { type: string }) {
+  if (type === "mobile" || type === "tablet") return <Smartphone className="h-5 w-5 text-muted-foreground" />;
+  return <Monitor className="h-5 w-5 text-muted-foreground" />;
+}
+
+function SecuritySettings() {
+  const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [revoking, setRevoking] = useState<string | null>(null); // device id being revoked
+  const [revokeAllBusy, setRevokeAllBusy] = useState(false);
+  const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
+
+  const loadDevices = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/auth/devices`);
+      if (res.ok) {
+        const data = await res.json() as { devices: Device[] };
+        setDevices(data.devices ?? []);
+        setCurrentDeviceId(detectCurrentDevice(data.devices ?? []));
+      }
+    } catch { /* silent */ } finally {
+      setLoading(false);
+    }
+  }, [API_BASE]);
+
+  useEffect(() => { loadDevices(); }, [loadDevices]);
+
+  const revokeDevice = async (deviceId: string) => {
+    if (deviceId === currentDeviceId) return; // Never revoke current device from here
+    setRevoking(deviceId);
+    try {
+      const res = await authFetch(`${API_BASE}/api/auth/revoke-device`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ device_id: deviceId }),
+      });
+      if (res.ok) {
+        setDevices(prev => prev.filter(d => d.id !== deviceId));
+        toast.success("Device signed out");
+      } else {
+        toast.error("Could not revoke device");
+      }
+    } catch {
+      toast.error("Could not revoke device");
+    } finally {
+      setRevoking(null);
+    }
+  };
+
+  const revokeAll = async () => {
+    setRevokeAllBusy(true);
+    try {
+      const res = await authFetch(`${API_BASE}/api/auth/revoke-all`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        const data = await res.json() as { access_token?: string };
+        if (data.access_token) setSessionToken(data.access_token);
+        toast.success("All other devices signed out");
+        // Reload device list — only current device should remain
+        await loadDevices();
+      } else {
+        toast.error("Could not revoke other sessions");
+      }
+    } catch {
+      toast.error("Could not revoke other sessions");
+    } finally {
+      setRevokeAllBusy(false);
+    }
+  };
+
+  const otherDevices = devices.filter(d => d.id !== currentDeviceId);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-5 py-6 space-y-6">
+
+      {/* Revoke-all action */}
+      {otherDevices.length > 0 && (
+        <button
+          onClick={revokeAll}
+          disabled={revokeAllBusy}
+          className="w-full h-12 rounded-xl border border-destructive/40 bg-destructive/10 text-destructive font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
+        >
+          {revokeAllBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+          {revokeAllBusy ? "Signing out…" : `Sign out ${otherDevices.length} other device${otherDevices.length !== 1 ? "s" : ""}`}
+        </button>
+      )}
+
+      {/* Current device */}
+      {currentDeviceId && devices.find(d => d.id === currentDeviceId) && (() => {
+        const d = devices.find(dev => dev.id === currentDeviceId)!;
+        return (
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">This device</p>
+            <div className="rounded-2xl border border-primary/30 bg-primary/5 px-4 py-4 flex items-start gap-3">
+              <div className="h-9 w-9 rounded-xl bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
+                <DeviceIcon type={d.device_type} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-semibold">{d.device_name}</p>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-full">Current</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">{d.browser} · {d.os}</p>
+                {(d.city || d.country) && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                    <Globe className="h-3 w-3 inline" />
+                    {[d.city, d.country].filter(Boolean).join(", ")}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground mt-0.5">Active {relativeTime(d.last_seen_at)}</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Other devices */}
+      {otherDevices.length > 0 && (
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Other sessions</p>
+          <div className="overflow-hidden rounded-2xl border border-border bg-surface divide-y divide-border">
+            {otherDevices.map((d) => (
+              <div key={d.id} className="px-4 py-3.5 flex items-start gap-3">
+                <div className="h-9 w-9 rounded-xl bg-secondary flex items-center justify-center shrink-0 mt-0.5">
+                  <DeviceIcon type={d.device_type} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold">{d.device_name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{d.browser} · {d.os}</p>
+                  {(d.city || d.country) && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                      <Globe className="h-3 w-3 inline" />
+                      {[d.city, d.country].filter(Boolean).join(", ")}
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-0.5">Last active {relativeTime(d.last_seen_at)}</p>
+                </div>
+                <button
+                  onClick={() => revokeDevice(d.id)}
+                  disabled={revoking === d.id}
+                  className="shrink-0 h-8 px-3 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:border-destructive/50 hover:text-destructive transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {revoking === d.id
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : <LogOut className="h-3 w-3" />}
+                  {revoking === d.id ? "…" : "Sign out"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {devices.length === 0 && (
+        <div className="text-center py-12 space-y-2">
+          <Smartphone className="h-8 w-8 text-muted-foreground/40 mx-auto" />
+          <p className="text-sm text-muted-foreground">No devices found</p>
+          <p className="text-xs text-muted-foreground/60">Devices appear here after each sign-in</p>
+        </div>
+      )}
+
+      {otherDevices.length === 0 && devices.length > 0 && (
+        <div className="rounded-xl border border-border bg-surface px-4 py-3.5 text-center">
+          <p className="text-sm font-medium text-muted-foreground">Only signed in on this device</p>
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        Signing out a device immediately revokes its session. The device will need to sign in again.
+        If you don't recognise a session, sign out all other devices immediately.
+      </p>
+    </div>
+  );
+}
+
+/* ── AppearanceSettings ──────────────────────────────────────────────── */
 
 function AppearanceSettings() {
   const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");
@@ -366,8 +597,8 @@ function AppearanceSettings() {
   };
 
   const opts = [
-    { id: "light" as const,  icon: Sun,     label: "Light" },
-    { id: "dark"  as const,  icon: Moon,    label: "Dark" },
+    { id: "light"  as const, icon: Sun,     label: "Light" },
+    { id: "dark"   as const, icon: Moon,    label: "Dark" },
     { id: "system" as const, icon: Monitor, label: "Auto" },
   ];
 
@@ -382,15 +613,10 @@ function AppearanceSettings() {
             <button
               key={opt.id}
               onClick={() => applyTheme(opt.id)}
-              className={cn(
-                "flex flex-col items-center gap-2 py-5 rounded-2xl border transition-colors",
-                active ? "border-primary bg-primary/10" : "border-border bg-surface",
-              )}
+              className={cn("flex flex-col items-center gap-2 py-5 rounded-2xl border transition-colors", active ? "border-primary bg-primary/10" : "border-border bg-surface")}
             >
               <Icon className={cn("h-5 w-5", active ? "text-primary" : "text-muted-foreground")} />
-              <span className={cn("text-xs font-semibold", active ? "text-primary" : "text-muted-foreground")}>
-                {opt.label}
-              </span>
+              <span className={cn("text-xs font-semibold", active ? "text-primary" : "text-muted-foreground")}>{opt.label}</span>
             </button>
           );
         })}
@@ -398,6 +624,8 @@ function AppearanceSettings() {
     </div>
   );
 }
+
+/* ── AccountSettings ─────────────────────────────────────────────────── */
 
 function AccountSettings() {
   const { user, signOut } = useAuth();
@@ -471,6 +699,8 @@ function AccountSettings() {
   );
 }
 
+/* ── SettingsPage ────────────────────────────────────────────────────── */
+
 export default function SettingsPage() {
   const navigate = useNavigate();
   const [section, setSection] = useState<Section>("menu");
@@ -481,13 +711,14 @@ export default function SettingsPage() {
   };
 
   const SECTION_TITLE: Record<Section, string> = {
-    menu: "Settings",
-    profile: "Profile Settings",
-    region: "Region Settings",
+    menu:          "Settings",
+    profile:       "Profile Settings",
+    region:        "Region Settings",
     notifications: "Notifications",
-    privacy: "Privacy",
-    account: "Account",
-    appearance: "Appearance",
+    privacy:       "Privacy",
+    security:      "Security & Devices",
+    account:       "Account",
+    appearance:    "Appearance",
   };
 
   return (
@@ -538,6 +769,7 @@ export default function SettingsPage() {
       {section === "region"        && <RegionSettings />}
       {section === "notifications" && <NotificationSettings />}
       {section === "privacy"       && <PrivacySettings />}
+      {section === "security"      && <SecuritySettings />}
       {section === "account"       && <AccountSettings />}
       {section === "appearance"    && <AppearanceSettings />}
     </AppShell>
