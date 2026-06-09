@@ -515,3 +515,171 @@ auth.post("/signout", requireAuth(), async (c) => {
 
   return c.json({ ok: true, revoked });
 });
+
+/* ── GET /api/auth/devices ───────────────────────────────────────────── */
+/**
+ * Returns all registered devices for the authenticated user.
+ * Sorted by last_seen_at DESC — first entry is the most recently active device.
+ *
+ * REVOKE-ALL-001 (2026-06-09): Powers the Device Center security UI.
+ * The client detects "current device" by comparing navigator.userAgent
+ * against the browser + os fields.
+ */
+auth.get("/devices", requireAuth(), async (c) => {
+  const user = c.get("user");
+  const sbUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  const resp = await fetch(
+    `${sbUrl}/rest/v1/auth_devices?user_id=eq.${user.id}&select=id,device_name,device_type,os,browser,ip_address,city,country,last_seen_at,is_trusted&order=last_seen_at.desc&limit=20`,
+    { headers: { Authorization: `Bearer ${sbKey}`, apikey: sbKey } },
+  );
+
+  if (!resp.ok) {
+    return c.json({ devices: [] });
+  }
+
+  const devices = (await resp.json()) as Array<{
+    id: string;
+    device_name: string;
+    device_type: string;
+    os: string;
+    browser: string;
+    ip_address: string | null;
+    city: string | null;
+    country: string | null;
+    last_seen_at: string;
+    is_trusted: boolean;
+  }>;
+
+  return c.json({ devices });
+});
+
+/* ── POST /api/auth/revoke-all ───────────────────────────────────────── */
+/**
+ * Revoke all sessions for the authenticated user except the current one.
+ *
+ * Mechanism (REVOKE-ALL-001, 2026-06-09):
+ *   1. Set revoke_before:<userId> = now (ms) in KV with 30-day TTL.
+ *      Any token with iat * 1000 ≤ this value is rejected by requireAuth().
+ *   2. Issue a fresh token for the calling device (iat > revoke_before).
+ *   3. Set a fresh loop_session cookie with the new token.
+ *   4. Fire non-blocking POST auth.rald.cloud/session/revoke-all for ecosystem propagation.
+ *   5. Write audit log.
+ *
+ * The calling device remains active. All other devices are immediately locked out.
+ * On their next request, requireAuth() will reject their tokens and they'll get 401.
+ */
+auth.post("/revoke-all", requireAuth(), async (c) => {
+  const user = c.get("user");
+  const now = Date.now();
+
+  // User-level timestamp revocation — invalidates all tokens issued ≤ now
+  await c.env.CACHE.put(`revoke_before:${user.id}`, String(now), {
+    expirationTtl: 2_592_000, // 30 days
+  });
+
+  // Extract old token to pass source claim to new token
+  const authHeader = c.req.header("Authorization");
+  const rawToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : parseSessionCookie(c.req.header("Cookie"));
+  const oldPayload = rawToken ? await verifyJwt(rawToken, c.env.RALD_JWT_SECRET) : null;
+
+  // Issue a fresh token for the current device (iat = now + 1s > revoke_before)
+  const nowSec = Math.floor(now / 1000) + 1;
+  const freshToken = await signJwt(
+    {
+      sub:    user.id,
+      email:  user.email ?? null,
+      role:   user.role,
+      iss:    JWT_ISSUER,
+      aud:    JWT_AUDIENCE,
+      iat:    nowSec,
+      exp:    nowSec + TTL_SSO_S,
+      jti:    crypto.randomUUID(),
+      id:     user.id,
+      phone:  user.phone ?? null,
+      source: oldPayload?.source ?? "revoke-all",
+    },
+    c.env.RALD_JWT_SECRET,
+  );
+
+  // Refresh cookie with new token
+  c.header("Set-Cookie", buildSessionCookie(freshToken, TTL_SSO_S));
+
+  // Non-blocking: propagate to RALD Auth ecosystem
+  if (rawToken) {
+    fetch("https://auth.rald.cloud/session/revoke-all", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${rawToken}` },
+    }).catch(() => null);
+  }
+
+  console.log("[auth/revoke-all]", JSON.stringify({
+    userId:    user.id,
+    revokedAt: new Date(now).toISOString(),
+    timestamp: new Date().toISOString(),
+  }));
+
+  return c.json({
+    ok:               true,
+    revoked_at:       new Date(now).toISOString(),
+    access_token:     freshToken,
+    message:          "All other sessions revoked. Your current session is preserved.",
+  });
+});
+
+/* ── POST /api/auth/revoke-device ────────────────────────────────────── */
+/**
+ * Revoke a specific device by deleting its auth_devices row.
+ *
+ * REVOKE-ALL-001 (2026-06-09): Single-device revocation for the Device Center UI.
+ * Body: { device_id: string }
+ *
+ * Note: This removes the device registration record. The device's tokens remain
+ * valid until they expire or the user calls revoke-all. For immediate revocation,
+ * the user should call POST /revoke-all instead.
+ * Future: add per-device JTI blocklist if strict immediate revocation is needed.
+ */
+auth.post("/revoke-device", requireAuth(), async (c) => {
+  const user = c.get("user");
+  const body = (await c.req.json().catch(() => ({}))) as { device_id?: string };
+  if (!body.device_id) return c.json({ error: "device_id required" }, 400);
+
+  const sbUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // Delete the device record (user_id guard prevents deleting other users' devices)
+  const resp = await fetch(
+    `${sbUrl}/rest/v1/auth_devices?id=eq.${body.device_id}&user_id=eq.${user.id}`,
+    {
+      method:  "DELETE",
+      headers: {
+        Authorization: `Bearer ${sbKey}`,
+        apikey:        sbKey,
+        Prefer:        "return=minimal",
+      },
+    },
+  );
+
+  // Non-blocking: propagate to RALD Auth ecosystem
+  const rawToken = c.req.header("Authorization")?.slice(7)
+    ?? parseSessionCookie(c.req.header("Cookie"));
+  if (rawToken) {
+    fetch("https://auth.rald.cloud/session/revoke-device", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${rawToken}` },
+      body:    JSON.stringify({ device_id: body.device_id }),
+    }).catch(() => null);
+  }
+
+  console.log("[auth/revoke-device]", JSON.stringify({
+    userId:   user.id,
+    deviceId: body.device_id,
+    ok:       resp.ok,
+    timestamp: new Date().toISOString(),
+  }));
+
+  return c.json({ ok: true, device_id: body.device_id, message: "Device revoked." });
+});
