@@ -71,6 +71,9 @@ RALD_AUTH_URL = "https://auth.rald.cloud"
 # LIVEKIT_API_SECRET
 # LIVEKIT_URL
 
+[build]
+command = "pnpm install --no-frozen-lockfile"
+
 # ── Production environment ────────────────────────────────
 # Wrangler v4: named envs do NOT auto-inherit top-level bindings.
 # All bindings must be declared explicitly for [env.production].
