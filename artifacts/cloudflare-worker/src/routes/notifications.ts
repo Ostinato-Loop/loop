@@ -75,9 +75,11 @@ notifications.get("/count", requireAuth(), async (c) => {
 });
 
 /* ── POST /api/notifications/read ────────────────────────────────────── */
+type ReadBody = { ids?: string[]; all?: boolean };
+
 notifications.post("/read", requireAuth(), async (c) => {
   const user           = c.get("user");
-  const body           = await c.req.json<{ ids?: string[]; all?: boolean }>().catch(() => ({}));
+  const body           = (await c.req.json().catch(() => ({}))) as ReadBody;
   const { ids, all }   = body;
 
   if (!all && (!Array.isArray(ids) || ids.length === 0)) {
@@ -106,21 +108,23 @@ notifications.post("/read", requireAuth(), async (c) => {
 // Authenticated with shared MESSENGER_WEBHOOK_KEY header (not RALD JWT).
 const notifyRouter = new Hono<{ Bindings: CloudflareEnv }>();
 
+type DmWebhookBody = {
+  recipient_id?: string;
+  actor_id?:     string;
+  resource_id?:  string;
+  data?: { preview?: string; conversation_id?: string };
+};
+
 notifyRouter.post("/dm", async (c) => {
   const webhookKey = c.req.header("x-messenger-webhook-key");
   const envKey     = c.env.MESSENGER_WEBHOOK_KEY;
 
-  if (!envKey)                         return c.json({ error: "DM notifications not configured" }, 503);
+  if (!envKey)                              return c.json({ error: "DM notifications not configured" }, 503);
   if (!webhookKey || webhookKey !== envKey) return c.json({ error: "Invalid webhook key" }, 401);
 
-  const body = await c.req.json<{
-    recipient_id?: string;
-    actor_id?:     string;
-    resource_id?:  string;
-    data?: { preview?: string; conversation_id?: string };
-  }>().catch(() => ({}));
-
+  const body = (await c.req.json().catch(() => ({}))) as DmWebhookBody;
   const { recipient_id, actor_id, resource_id, data } = body;
+
   if (!recipient_id || !actor_id || !resource_id) {
     return c.json({ error: "recipient_id, actor_id, and resource_id are required" }, 400);
   }

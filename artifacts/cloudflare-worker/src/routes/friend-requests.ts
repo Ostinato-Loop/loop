@@ -28,11 +28,13 @@ function sb(url: string, key: string) {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
+type SendBody = { receiver_id?: string };
+
 /* ── POST /api/friend-requests ───────────────────────────────────────── */
 friendRequests.post("/", requireAuth(), async (c) => {
-  const user              = c.get("user");
-  const body              = await c.req.json<{ receiver_id?: string }>().catch(() => ({}));
-  const { receiver_id }   = body;
+  const user            = c.get("user");
+  const body            = (await c.req.json().catch(() => ({}))) as SendBody;
+  const { receiver_id } = body;
 
   if (!receiver_id) return c.json({ error: "receiver_id is required" }, 400);
   if (receiver_id === user.id) return c.json({ error: "Cannot send a friend request to yourself" }, 400);
