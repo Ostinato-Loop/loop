@@ -157,6 +157,17 @@ jobs:
           fi
           echo "$LIVEKIT_API_SECRET" | pnpm exec wrangler secret put LIVEKIT_API_SECRET --env production
 
+      - name: Push MESSENGER_WEBHOOK_KEY to worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          MESSENGER_WEBHOOK_KEY: ${{ secrets.MESSENGER_WEBHOOK_KEY }}
+        run: |
+          if [ -z "$MESSENGER_WEBHOOK_KEY" ]; then
+            echo "WARNING: MESSENGER_WEBHOOK_KEY not set — DM notifications will be unavailable" && exit 0
+          fi
+          echo "$MESSENGER_WEBHOOK_KEY" | pnpm exec wrangler secret put MESSENGER_WEBHOOK_KEY --env production
+
+
       - name: Post-deploy smoke test (Worker)
         run: |
           sleep 5

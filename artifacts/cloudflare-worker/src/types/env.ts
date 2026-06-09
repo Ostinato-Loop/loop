@@ -30,4 +30,9 @@ export interface CloudflareEnv {
   LIVEKIT_URL: string;
   LIVEKIT_API_KEY: string;
   LIVEKIT_API_SECRET: string;
+
+  // Messenger integration — shared key for DM notification webhook
+  // Provision via: wrangler secret put MESSENGER_WEBHOOK_KEY
+  // Same value must be set in the Messenger worker as LOOP_API_WEBHOOK_KEY
+  MESSENGER_WEBHOOK_KEY: string;
 }
