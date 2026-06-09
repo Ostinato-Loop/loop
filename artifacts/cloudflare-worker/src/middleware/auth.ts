@@ -1,17 +1,20 @@
 /**
  * requireAuth middleware — Loop Cloudflare Worker
  *
- * Validates the session against RALD_JWT_SECRET.
  * Token resolution priority (highest first):
- *   1. Authorization: Bearer <token>  — explicit header (API clients, /api/auth/me)
- *   2. loop_session HttpOnly cookie   — browser requests after COOKIE-001 migration
+ *   1. Authorization: Bearer <token>  — explicit header
+ *   2. loop_session HttpOnly cookie   — browser requests (COOKIE-001)
  *
- * COOKIE-001 (2026-06-09): Cookie fallback added. All browser API calls now work
- *   with credentials: 'include' even without a Bearer header. Existing Bearer
- *   callers (Supabase service, internal tools) continue to work unchanged.
+ * Revocation checks (in order):
+ *   a. Per-token JTI blocklist   — revoked:jti:<jti>  (PHD-001, signout)
+ *   b. User-level revoke-all     — revoke_before:<userId> timestamp (REVOKE-ALL-001)
+ *      Any token whose iat * 1000 ≤ revoke_before is invalid — the user
+ *      signed out all other devices and the calling device issued a fresh token.
  *
- * PHD-001 (2026-06-07): Checks KV revocation blocklist (revoked:jti:<jti>).
- * IDN-001 (2026-06-07): Uses shared verifyJwt from lib/jwt.ts (RALD_JWT_SECRET).
+ * COOKIE-001     (2026-06-09): Cookie fallback added.
+ * REVOKE-ALL-001 (2026-06-09): User-level timestamp revocation added.
+ * PHD-001        (2026-06-07): Per-token JTI blocklist check.
+ * IDN-001        (2026-06-07): Shared RALD_JWT_SECRET.
  */
 
 import { createMiddleware } from "hono/factory";
@@ -36,15 +39,25 @@ async function extractUser(
   const payload = await verifyJwt(token, secret);
   if (!payload) return null;
 
-  // PHD-001: Check revocation blocklist
+  const id = (payload.id ?? payload.sub) as string | undefined;
+  if (!id) return null;
+
+  // (a) Per-token JTI blocklist — PHD-001
   const jti = payload.jti as string | undefined;
   if (jti) {
     const revoked = await cache.get(`revoked:jti:${jti}`);
     if (revoked) return null;
   }
 
-  const id = (payload.id ?? payload.sub) as string | undefined;
-  if (!id) return null;
+  // (b) User-level revoke-all timestamp — REVOKE-ALL-001
+  // Any token issued at or before the revoke_before timestamp is dead.
+  // The device that called /revoke-all received a fresh token (iat > revoke_before).
+  const revokeBefore = await cache.get(`revoke_before:${id}`);
+  if (revokeBefore) {
+    const revokeBeforeMs = parseInt(revokeBefore, 10);
+    const tokenIatMs = typeof payload.iat === "number" ? payload.iat * 1000 : 0;
+    if (tokenIatMs <= revokeBeforeMs) return null;
+  }
 
   return {
     id,
