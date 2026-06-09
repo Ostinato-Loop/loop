@@ -1,21 +1,23 @@
 /**
  * requireAuth middleware — Loop Cloudflare Worker
  *
- * Validates the Bearer token in Authorization header against RALD_JWT_SECRET.
- * Checks the KV revocation blocklist (jti) before passing to the route handler.
+ * Validates the session against RALD_JWT_SECRET.
+ * Token resolution priority (highest first):
+ *   1. Authorization: Bearer <token>  — explicit header (API clients, /api/auth/me)
+ *   2. loop_session HttpOnly cookie   — browser requests after COOKIE-001 migration
  *
- * Usage:
- *   router.get("/protected", requireAuth(), async (c) => {
- *     const user = c.get("user");  // AuthUser
- *   });
+ * COOKIE-001 (2026-06-09): Cookie fallback added. All browser API calls now work
+ *   with credentials: 'include' even without a Bearer header. Existing Bearer
+ *   callers (Supabase service, internal tools) continue to work unchanged.
  *
- * IDN-001 (2026-06-07): Uses shared verifyJwt from lib/jwt.ts (RALD_JWT_SECRET).
  * PHD-001 (2026-06-07): Checks KV revocation blocklist (revoked:jti:<jti>).
+ * IDN-001 (2026-06-07): Uses shared verifyJwt from lib/jwt.ts (RALD_JWT_SECRET).
  */
 
 import { createMiddleware } from "hono/factory";
 import type { CloudflareEnv } from "../types/env.js";
 import { verifyJwt } from "../lib/jwt.js";
+import { parseSessionCookie } from "../lib/cookie.js";
 
 export interface AuthUser {
   id:      string;
@@ -26,14 +28,6 @@ export interface AuthUser {
 
 type AuthVariables = { user: AuthUser };
 
-/**
- * Extract and validate a Loop JWT from a Bearer token string.
- * Returns null if the token is invalid, expired, or revoked.
- *
- * @param token  - Raw JWT string (without "Bearer " prefix)
- * @param secret - RALD_JWT_SECRET value
- * @param cache  - KV namespace for revocation blocklist lookup
- */
 async function extractUser(
   token:  string,
   secret: string,
@@ -54,27 +48,31 @@ async function extractUser(
 
   return {
     id,
-    email: payload.email   as string | undefined,
-    phone: payload.phone   as string | undefined,
-    role:  (payload.role   as string | undefined) ?? "user",
+    email: payload.email as string | undefined,
+    phone: payload.phone as string | undefined,
+    role:  (payload.role as string | undefined) ?? "user",
   };
 }
 
-/**
- * Hono middleware that enforces JWT authentication.
- * Sets c.var.user on success. Returns 401 on failure.
- */
 export function requireAuth() {
   return createMiddleware<{ Bindings: CloudflareEnv; Variables: AuthVariables }>(
     async (c, next) => {
+      // Priority 1: Authorization: Bearer header
       const authHeader = c.req.header("Authorization");
-      if (!authHeader?.startsWith("Bearer ")) {
+      let token: string | null = null;
+
+      if (authHeader?.startsWith("Bearer ")) {
+        token = authHeader.slice(7);
+      } else {
+        // Priority 2: loop_session HttpOnly cookie (COOKIE-001)
+        token = parseSessionCookie(c.req.header("Cookie"));
+      }
+
+      if (!token) {
         return c.json({ error: "Unauthorized" }, 401);
       }
 
-      const token = authHeader.slice(7);
       const user = await extractUser(token, c.env.RALD_JWT_SECRET, c.env.CACHE);
-
       if (!user) {
         return c.json({ error: "Unauthorized" }, 401);
       }
