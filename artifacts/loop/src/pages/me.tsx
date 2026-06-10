@@ -1,9 +1,16 @@
+/**
+ * Loop — Me (Profile) Page
+ * PUSH-001 (2026-06-10): Added PushPromptBanner; fixed followers_count mapping.
+ * FOLLOWS-001: Follower/Following counts fetched from /api/follows/me/counts.
+ * LILCKY STUDIO LIMITED
+ */
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { authFetch } from "@/lib/api-fetch";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
+import { PushPromptBanner } from "@/hooks/use-push";
 import {
   BadgeCheck, Bell, ChevronRight, Globe2,
   LogOut, MapPin, Settings, Shield, Star,
@@ -45,8 +52,11 @@ export default function MePage() {
   useEffect(() => {
     if (!user) return;
     authFetch("/api/follows/me/counts")
-      .then(r => r.ok ? r.json() as Promise<ProfileCounts> : Promise.reject())
-      .then(data => setCounts({ followers: data.followers ?? 0, following: data.following ?? 0 }))
+      .then(r => r.ok ? r.json() as Promise<{ followers_count: number; following_count: number }> : Promise.reject())
+      .then(data => setCounts({
+        followers: data.followers_count ?? 0,
+        following: data.following_count ?? 0,
+      }))
       .catch(() => {});
   }, [user]);
 
@@ -115,7 +125,7 @@ export default function MePage() {
           </div>
         </div>
 
-        {/* Stats row */}
+        {/* Stats row — tappable to navigate to followers/following lists when built */}
         <div className="mt-5 grid grid-cols-2 divide-x divide-border overflow-hidden rounded-2xl bg-surface">
           {([
             [counts.followers, "Followers"],
@@ -127,6 +137,9 @@ export default function MePage() {
             </div>
           ))}
         </div>
+
+        {/* Push notification prompt — shown if not yet enabled */}
+        <PushPromptBanner className="mt-4" />
 
         {/* Interests */}
         {profile.interests && profile.interests.length > 0 && (
