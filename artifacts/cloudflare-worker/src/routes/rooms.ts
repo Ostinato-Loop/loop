@@ -170,12 +170,12 @@ rooms.delete('/:roomId', requireAuth(), async (c) => {
     try {
       const now = Math.floor(Date.now() / 1000);
       const payload = { iss: LIVEKIT_API_KEY, sub: 'loop-server', nbf: now, exp: now + 60, video: { roomAdmin: true } };
-      const b64url = (obj: Record<string, unknown>) => btoa(unescape(encodeURIComponent(JSON.stringify(obj)))).replace(/+/g, '-').replace(///g, '_').replace(/=+$/, '');
+      const b64url = (obj: Record<string, unknown>) => btoa(unescape(encodeURIComponent(JSON.stringify(obj)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
       const unsigned = `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(payload)}`;
       const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(LIVEKIT_API_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-      const sig = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(unsigned))))).replace(/+/g, '-').replace(///g, '_').replace(/=+$/, '');
+      const sig = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(unsigned))))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
       const token = `${unsigned}.${sig}`;
-      const wsBase = LIVEKIT_URL.replace(/^wss?:///, 'https://');
+      const wsBase = LIVEKIT_URL.replace(/^wss?:\/\//, 'https://');
       await fetch(`${wsBase}/twirp/livekit.RoomService/DeleteRoom`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
