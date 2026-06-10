@@ -20,13 +20,13 @@ import { track } from "@/lib/analytics";
 import { authFetch } from "@/lib/api-fetch";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowLeft, BadgeCheck, Hand, Mic, MicOff,
+  ArrowLeft, BadgeCheck, Hand, Mic, MicOff, MessageSquare,
   Send, Sparkles, Users, X, Star,
   PhoneOff, Crown, Share2, Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { useLiveKitRoom } from "@/hooks/use-livekit-room";
+import { useLiveKitRoom, type ChatMessage } from "@/hooks/use-livekit-room";
 
 /* ─── types ──────────────────────────────────────────────────────────── */
 type ParticipantRow = {
@@ -150,55 +150,151 @@ function AudienceAvatar({ p, onTap }: { p: ParticipantRow; onTap: () => void }) 
   );
 }
 
+/* ─── PTTButton ──────────────────────────────────────────────────────── */
+function PTTButton({ isPTTActive, onStart, onEnd }: { isPTTActive: boolean; onStart: () => void; onEnd: () => void }) {
+  return (
+    <button
+      onPointerDown={(e) => { e.preventDefault(); onStart(); }}
+      onPointerUp={(e) => { e.preventDefault(); onEnd(); }}
+      onPointerLeave={(e) => { e.preventDefault(); onEnd(); }}
+      onPointerCancel={(e) => { e.preventDefault(); onEnd(); }}
+      onContextMenu={(e) => e.preventDefault()}
+      style={{ touchAction: "none", WebkitUserSelect: "none", userSelect: "none" } as React.CSSProperties}
+      className={cn(
+        "flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold transition select-none",
+        isPTTActive
+          ? "bg-primary text-primary-foreground neon-glow scale-[0.97]"
+          : "border-2 border-primary bg-primary/5 text-primary",
+      )}>
+      <Mic className="h-4 w-4" />
+      {isPTTActive ? "Speaking…" : "Hold to speak"}
+    </button>
+  );
+}
+
+/* ─── RtcChatPanel ───────────────────────────────────────────────────── */
+function RtcChatBubble({ msg }: { msg: ChatMessage }) {
+  const time = new Date(msg.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return (
+    <div className={cn("flex flex-col mb-2.5", msg.isLocal ? "items-end" : "items-start")}>
+      {!msg.isLocal && <p className="mb-0.5 pl-1 text-[11px] font-semibold text-foreground/60">{msg.from}</p>}
+      <div className={cn(
+        "max-w-[78%] break-words rounded-2xl px-3 py-2 text-sm leading-relaxed",
+        msg.isLocal ? "rounded-tr-sm bg-primary text-primary-foreground" : "rounded-tl-sm bg-surface text-foreground/90",
+      )}>
+        {msg.text}
+      </div>
+      <p className={cn("mt-0.5 text-[10px] text-muted-foreground", msg.isLocal ? "pr-1" : "pl-1")}>{time}</p>
+    </div>
+  );
+}
+
+function RtcChatPanel({ messages, onSend, onClose }: {
+  messages: ChatMessage[]; onSend: (text: string) => void; onClose: () => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const listRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [messages.length]);
+  const submit = () => { const t = draft.trim(); if (!t) return; onSend(t); setDraft(""); };
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-50 mx-auto flex h-[65svh] max-w-md flex-col rounded-t-3xl border-t border-border bg-background shadow-2xl">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <span className="font-bold text-sm">Room chat</span>
+        <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-full bg-secondary text-muted-foreground"><X className="h-3.5 w-3.5" /></button>
+      </div>
+      <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-3">
+        {messages.length === 0
+          ? <p className="py-8 text-center text-xs text-muted-foreground">No messages yet — say something!</p>
+          : messages.map((m) => <RtcChatBubble key={m.id} msg={m} />)}
+      </div>
+      <div className="flex items-center gap-2 border-t border-border px-4 py-2 safe-pb">
+        <input value={draft} onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+          placeholder="Type a message…" maxLength={300} autoFocus
+          className="flex-1 rounded-2xl bg-surface px-3 py-2 text-sm outline-none placeholder:text-muted-foreground" />
+        <Button type="button" size="icon" className="h-9 w-9 rounded-full shrink-0" onClick={submit} disabled={!draft.trim()}>
+          <Send className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /* ─── HostControls ───────────────────────────────────────────────────── */
-function HostControls({ muted, onToggleMic, onEndRoom, raisedHandCount, audioError }: {
+function HostControls({ muted, onToggleMic, onEndRoom, raisedHandCount, audioError, pttMode, isPTTActive, onPTTStart, onPTTEnd, onTogglePttMode }: {
   muted: boolean; onToggleMic: () => void; onEndRoom: () => void; raisedHandCount: number; audioError?: boolean;
+  pttMode: boolean; isPTTActive: boolean; onPTTStart: () => void; onPTTEnd: () => void; onTogglePttMode: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between px-4 py-3 gap-3">
-      <button onClick={onToggleMic} disabled={audioError} title={audioError ? "Audio unavailable" : undefined}
-        className={cn(
-          "flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold transition",
-          audioError ? "bg-destructive/10 text-destructive cursor-not-allowed opacity-60"
-            : muted ? "bg-secondary text-foreground" : "bg-primary text-primary-foreground neon-glow",
-        )}>
-        {audioError ? <MicOff className="h-4 w-4" /> : muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-        {audioError ? "No audio" : muted ? "Unmute" : "Mute"}
-      </button>
-      {raisedHandCount > 0 && (
-        <div className="flex items-center gap-1.5 rounded-2xl bg-amber-500/15 px-3 py-3">
-          <Hand className="h-4 w-4 text-amber-500" />
-          <span className="text-sm font-bold text-amber-500">{raisedHandCount}</span>
-        </div>
-      )}
-      <button onClick={onEndRoom}
-        className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-destructive/10 py-3 text-sm font-semibold text-destructive transition hover:bg-destructive/20">
-        <PhoneOff className="h-4 w-4" />
-        End room
-      </button>
+    <div className="flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 gap-3">
+        {pttMode ? (
+          <PTTButton isPTTActive={isPTTActive} onStart={onPTTStart} onEnd={onPTTEnd} />
+        ) : (
+          <button onClick={onToggleMic} disabled={audioError} title={audioError ? "Audio unavailable" : undefined}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold transition",
+              audioError ? "bg-destructive/10 text-destructive cursor-not-allowed opacity-60"
+                : muted ? "bg-secondary text-foreground" : "bg-primary text-primary-foreground neon-glow",
+            )}>
+            {audioError ? <MicOff className="h-4 w-4" /> : muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            {audioError ? "No audio" : muted ? "Unmute" : "Mute"}
+          </button>
+        )}
+        {raisedHandCount > 0 && (
+          <div className="flex items-center gap-1.5 rounded-2xl bg-amber-500/15 px-3 py-3">
+            <Hand className="h-4 w-4 text-amber-500" />
+            <span className="text-sm font-bold text-amber-500">{raisedHandCount}</span>
+          </div>
+        )}
+        <button onClick={onEndRoom}
+          className="flex-1 flex items-center justify-center gap-2 rounded-2xl bg-destructive/10 py-3 text-sm font-semibold text-destructive transition hover:bg-destructive/20">
+          <PhoneOff className="h-4 w-4" />
+          End room
+        </button>
+      </div>
+      <div className="flex justify-center pb-1">
+        <button onClick={onTogglePttMode}
+          className="rounded-full border border-border/60 px-3 py-1 text-[11px] font-semibold text-muted-foreground transition hover:text-foreground">
+          {pttMode ? "Switch to open mic" : "Switch to hold-to-speak"}
+        </button>
+      </div>
     </div>
   );
 }
 
 /* ─── SpeakerControls ────────────────────────────────────────────────── */
-function SpeakerControls({ muted, onToggleMic, onLeave, audioError }: {
+function SpeakerControls({ muted, onToggleMic, onLeave, audioError, pttMode, isPTTActive, onPTTStart, onPTTEnd, onTogglePttMode }: {
   muted: boolean; onToggleMic: () => void; onLeave: () => void; audioError?: boolean;
+  pttMode: boolean; isPTTActive: boolean; onPTTStart: () => void; onPTTEnd: () => void; onTogglePttMode: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <button onClick={onToggleMic} disabled={audioError} title={audioError ? "Audio unavailable" : undefined}
-        className={cn(
-          "flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold transition",
-          audioError ? "bg-destructive/10 text-destructive cursor-not-allowed opacity-60"
-            : muted ? "bg-secondary text-foreground" : "bg-primary text-primary-foreground neon-glow",
-        )}>
-        {audioError ? <MicOff className="h-4 w-4" /> : muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-        {audioError ? "No audio" : muted ? "Unmute" : "Mute"}
-      </button>
-      <button onClick={onLeave}
-        className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-secondary text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive">
-        <X className="h-4 w-4" />
-      </button>
+    <div className="flex flex-col">
+      <div className="flex items-center gap-3 px-4 py-3">
+        {pttMode ? (
+          <PTTButton isPTTActive={isPTTActive} onStart={onPTTStart} onEnd={onPTTEnd} />
+        ) : (
+          <button onClick={onToggleMic} disabled={audioError} title={audioError ? "Audio unavailable" : undefined}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold transition",
+              audioError ? "bg-destructive/10 text-destructive cursor-not-allowed opacity-60"
+                : muted ? "bg-secondary text-foreground" : "bg-primary text-primary-foreground neon-glow",
+            )}>
+            {audioError ? <MicOff className="h-4 w-4" /> : muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            {audioError ? "No audio" : muted ? "Unmute" : "Mute"}
+          </button>
+        )}
+        <button onClick={onLeave}
+          className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-secondary text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="flex justify-center pb-1">
+        <button onClick={onTogglePttMode}
+          className="rounded-full border border-border/60 px-3 py-1 text-[11px] font-semibold text-muted-foreground transition hover:text-foreground">
+          {pttMode ? "Switch to open mic" : "Switch to hold-to-speak"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -320,10 +416,15 @@ export default function RoomPage() {
   const [activity, setActivity]       = useState<ActivityItem[]>([]);
   const [draft, setDraft]             = useState("");
   const [selectedParticipant, setSelectedParticipant] = useState<ParticipantRow | null>(null);
-  const { muted, speakingIds, toggleMic, audioState } = useLiveKitRoom(roomId, user?.id, !loading && !!user);
+  const {
+    muted, speakingIds, toggleMic, audioState,
+    pttMode, isPTTActive, startPTT, endPTT, togglePttMode,
+    messages: rtcMessages, unreadCount, sendMessage: sendRtcMessage, markChatRead, markChatClosed,
+  } = useLiveKitRoom(roomId, user?.id, !loading && !!user);
   const [handRaised, setHandRaised]       = useState(false);
   const [raisedHandCount, setRaisedHandCount] = useState(0);
   const [entered, setEntered]             = useState(false);
+  const [rtcChatOpen, setRtcChatOpen]     = useState(false);
 
 
   // DISCONNECT-001: Host heartbeat — keeps the room alive while host is present.
@@ -568,6 +669,17 @@ export default function RoomPage() {
             className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-surface transition-colors active:bg-surface-elev">
             <Share2 className="h-4 w-4" />
           </button>
+          <button
+            onClick={() => { setRtcChatOpen(true); markChatRead(); }}
+            aria-label="Room chat"
+            className="relative grid h-9 w-9 shrink-0 place-items-center rounded-full bg-surface transition-colors active:bg-surface-elev">
+            <MessageSquare className="h-4 w-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
         </div>
       </header>
 
@@ -677,9 +789,11 @@ export default function RoomPage() {
           ))}
         </div>
         {isHost ? (
-          <HostControls muted={muted} onToggleMic={toggleMic} onEndRoom={endRoom} raisedHandCount={raisedHandCount} audioError={audioState === "error"} />
+          <HostControls muted={muted} onToggleMic={toggleMic} onEndRoom={endRoom} raisedHandCount={raisedHandCount} audioError={audioState === "error"}
+            pttMode={pttMode} isPTTActive={isPTTActive} onPTTStart={startPTT} onPTTEnd={endPTT} onTogglePttMode={togglePttMode} />
         ) : isOnStage ? (
-          <SpeakerControls muted={muted} onToggleMic={toggleMic} onLeave={leaveRoom_} audioError={audioState === "error"} />
+          <SpeakerControls muted={muted} onToggleMic={toggleMic} onLeave={leaveRoom_} audioError={audioState === "error"}
+            pttMode={pttMode} isPTTActive={isPTTActive} onPTTStart={startPTT} onPTTEnd={endPTT} onTogglePttMode={togglePttMode} />
         ) : (
           <ListenerControls handRaised={handRaised} onToggleHand={toggleHandRaise} onLeave={leaveRoom_} />
         )}
@@ -691,6 +805,14 @@ export default function RoomPage() {
           </Button>
         </form>
       </div>
+
+      {/* ── RTC Chat Panel ─────────────────────────────────────────── */}
+      {rtcChatOpen && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={() => { setRtcChatOpen(false); markChatClosed(); }} />
+          <RtcChatPanel messages={rtcMessages} onSend={sendRtcMessage} onClose={() => { setRtcChatOpen(false); markChatClosed(); }} />
+        </>
+      )}
 
       {/* ── Participant Sheet ───────────────────────────────────────── */}
       {selectedParticipant && (
