@@ -5,20 +5,16 @@
    *   1. GET /search/related  — ranked people search (auth required)
    *   2. GET /graph/suggestions — "People you may know" (friends-of-friends)
    *
-   * Auth: uses the RALD master token (rald_master_token) stored by the
-   * cross-app SSO flow. If the user has no master token they are not connected
-   * to the RALD identity graph and only empty results are returned.
+   * Auth: uses the in-memory session token from session-store.
+   * COOKIE-001 (2026-06-09): rald_master_token removed from localStorage.
+   * getSessionToken() is now the single source of truth for auth state.
    *
    * LILCKY STUDIO LIMITED
    */
 
-  const RALD_CORE_URL  = (import.meta.env.VITE_RALD_CORE_URL as string | undefined) ?? "https://auth.rald.cloud";
-  const RALD_TOKEN_KEY = "rald_master_token";
+  import { getSessionToken } from "@/lib/session-store";
 
-  function getRaldToken(): string | null {
-    try { return localStorage.getItem(RALD_TOKEN_KEY); }
-    catch { return null; }
-  }
+  const RALD_CORE_URL  = (import.meta.env.VITE_RALD_CORE_URL as string | undefined) ?? "https://auth.rald.cloud";
 
   function safeError(ctx: string, status: number): Error {
     if (status === 401 || status === 403) return new Error("Session expired. Please sign in again.");
@@ -56,7 +52,7 @@
     query: string,
     limit = 20,
   ): Promise<PersonResult[]> {
-    const token = getRaldToken();
+    const token = getSessionToken();
     if (!token) return [];
 
     const url = new URL(`${RALD_CORE_URL}/search/related`);
@@ -71,7 +67,6 @@
     }
 
     if (r.status === 404) {
-      // Endpoint not yet active — return empty results silently
       console.warn("[people] /search/related endpoint not found — returning []");
       return [];
     }
@@ -84,7 +79,7 @@
   // ── GET /graph/suggestions ────────────────────────────────────────────────────
 
   export async function getPeopleSuggestions(limit = 10): Promise<PersonSuggestion[]> {
-    const token = getRaldToken();
+    const token = getSessionToken();
     if (!token) return [];
 
     const url = new URL(`${RALD_CORE_URL}/graph/suggestions`);
@@ -110,6 +105,5 @@
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
   export function hasRaldIdentity(): boolean {
-    return getRaldToken() !== null;
+    return getSessionToken() !== null;
   }
-  
