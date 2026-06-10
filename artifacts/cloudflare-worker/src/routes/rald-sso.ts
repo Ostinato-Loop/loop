@@ -171,18 +171,55 @@ async function issueLoopToken(
   }, secret);
 }
 
+
+/* ── Debug token decoder (non-verifying) ─────────────────────────────── */
+/**
+ * Decode a JWT payload WITHOUT verifying the signature.
+ * Used only for structured logging so we can see what came in regardless
+ * of whether verification succeeds. Never trust the output for auth decisions.
+ */
+function decodeJwtClaims(token: string): Record<string, unknown> {
+  try {
+    const [, body] = token.split('.');
+    if (!body) return {};
+    return JSON.parse(atob(body.replace(/-/g, '+').replace(/_/g, '/'))) as Record<string, unknown>;
+  } catch { return {}; }
+}
+
 /* ── POST /api/auth/rald-sso ─────────────────────────────────────────── */
 
 raldSso.post("/", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { rald_token?: string };
   if (!body.rald_token) return c.json({ error: "rald_token is required" }, 400);
 
+  // SSO-AUD-FIX-001 + SSO-LOG-001: Decode claims BEFORE verification for observability.
+  // This tells us exactly what arrived (aud, iss, exp) when auth fails.
+  const incomingClaims = decodeJwtClaims(body.rald_token);
+  const logCtx = {
+    incoming_aud: incomingClaims.aud ?? null,
+    incoming_iss: incomingClaims.iss ?? null,
+    incoming_exp: incomingClaims.exp ?? null,
+    incoming_sub: incomingClaims.sub ?? incomingClaims.id ?? null,
+    token_age_s:  typeof incomingClaims.iat === 'number'
+      ? Math.floor(Date.now() / 1000) - (incomingClaims.iat as number)
+      : null,
+    timestamp: new Date().toISOString(),
+  };
+
   // SSO-AUD-FIX-001: Pass null as expectedAud — incoming RALD SSO token is a
   // cross-system token from profiles.rald.cloud. Its aud claim is set by RALD
   // (e.g. "sso" or the app_id), not "loop". Enforcing aud:"loop" here breaks SSO.
   // The Loop-scoped token we re-sign below WILL have aud:"loop".
   const rald = await verifyJwt(body.rald_token, c.env.RALD_JWT_SECRET, null) as RaldPayload | null;
-  if (!rald || !rald.id) return c.json({ error: "Invalid or expired RALD token" }, 401);
+  if (!rald || !rald.id) {
+    console.warn('[rald-sso] token rejected', JSON.stringify({
+      level: 'warn',
+      reason: 'invalid_or_expired_rald_token',
+      service: 'loop-api',
+      ...logCtx,
+    }));
+    return c.json({ error: 'Invalid or expired RALD token' }, 401);
+  }
 
   const sbUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
   const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -199,8 +236,12 @@ raldSso.post("/", async (c) => {
   // COOKIE-001: Set HttpOnly session cookie — no localStorage from browser
   c.header("Set-Cookie", buildSessionCookie(loopToken, TTL_SSO_S));
 
-  console.log("[rald-sso]", JSON.stringify({
-    userId: rald.id, source: "rald-sso", timestamp: new Date().toISOString(),
+  console.log('[rald-sso] exchange ok', JSON.stringify({
+    level: 'info',
+    service: 'loop-api',
+    userId: rald.id,
+    source: 'rald-sso',
+    ...logCtx,
   }));
 
   return c.json({
