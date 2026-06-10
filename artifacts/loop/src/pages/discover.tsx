@@ -16,9 +16,9 @@
  */
 
 import { useEffect, useState, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
-import { authedSupabase } from "@/integrations/supabase/client";
+import { supabase, authedSupabase } from "@/integrations/supabase/client";
 import { authFetch } from "@/lib/api-fetch";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoomCard } from "@/components/rooms/room-card";
@@ -481,6 +481,94 @@ function PeopleTab() {
   );
 }
 
+/* ── RETENTION-016: Top rooms this week ─────────────────────────────── */
+/**
+ * Ranked list of the 5 rooms with the highest audience_count created in the
+ * last 7 days. Gives returning users a social-proof signal: "X people were
+ * in this room" primes them to click in and drives re-engagement.
+ *
+ * Design:
+ *   · Medals 🥇🥈🥉 for ranks 1–3, muted "#4" "#5" for the rest
+ *   · Proportional audience bar under each title (relative to the #1 room)
+ *   · Tapping any row navigates to /room/:id — works for ended rooms too
+ */
+function TopRoomsThisWeek({ rooms }: { rooms: Room[] }) {
+  if (rooms.length === 0) return null;
+
+  const MEDALS = ["🥇", "🥈", "🥉"];
+  const max = Math.max(...rooms.map((r) => r.audience_count ?? 0), 1);
+
+  const categoryEmoji: Record<string, string> = {
+    community:   "🏘️",
+    news:        "📡",
+    commentary:  "🎙️",
+    radio:       "📻",
+    "dj-session":"🎧",
+    education:   "📚",
+    business:    "💼",
+    general:     "🎵",
+  };
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center gap-1.5">
+        <TrendingUp className="h-4 w-4 text-primary" />
+        <h2 className="font-display text-sm font-bold uppercase tracking-wider">Top this week</h2>
+      </div>
+
+      <div className="space-y-2">
+        {rooms.map((room, i) => {
+          const hostName = room.host?.display_name ?? room.host?.username ?? "Unknown host";
+          const pct      = Math.max(4, Math.round(((room.audience_count ?? 0) / max) * 100));
+
+          return (
+            <Link
+              key={room.id}
+              to={`/room/${room.id}`}
+              className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-3 transition-all hover:border-primary/30 hover:bg-primary/5 active:scale-[0.98]"
+            >
+              {/* rank badge */}
+              <div className="w-7 shrink-0 text-center">
+                {i < 3 ? (
+                  <span className="text-lg leading-none select-none">{MEDALS[i]}</span>
+                ) : (
+                  <span className="text-xs font-black tabular-nums text-muted-foreground">#{i + 1}</span>
+                )}
+              </div>
+
+              {/* category icon */}
+              <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 text-base select-none">
+                {categoryEmoji[room.category] ?? "🎙️"}
+              </div>
+
+              {/* text + bar */}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold leading-tight truncate">{room.title}</p>
+                <p className="text-[11px] text-muted-foreground truncate mt-0.5">{hostName}</p>
+                {/* proportional audience bar — anchored to the #1 room */}
+                <div className="mt-1.5 h-1 rounded-full bg-border overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-primary/60 transition-all duration-700"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* count */}
+              <div className="shrink-0 text-right ml-1">
+                <p className="text-sm font-bold tabular-nums">
+                  {(room.audience_count ?? 0).toLocaleString()}
+                </p>
+                <p className="text-[10px] text-muted-foreground">listeners</p>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 /* ── Main page ──────────────────────────────────────────────────────── */
 const VALID_TABS: FeedTab[] = ["all", "live", "near", "trending", "events", "people"];
 
@@ -489,6 +577,7 @@ export default function DiscoverPage() {
   const navigate                        = useNavigate();
   const [searchParams]                  = useSearchParams();
   const [rooms, setRooms]               = useState<Room[] | null>(null);
+  const [topRooms, setTopRooms]         = useState<Room[] | null>(null);
   const [error, setError]               = useState<string | null>(null);
   const [locationSkipped, setLocationSkipped] = useState(false);
 
@@ -511,6 +600,24 @@ export default function DiscoverPage() {
         setError(e.message);
       });
   }, [category, user, feedTab]);
+
+  // RETENTION-016: Top rooms this week — separate query (includes ended rooms,
+  // ordered by audience_count DESC, filtered to last 7 days).
+  useEffect(() => {
+    if (!user) return;
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    supabase
+      .from("rooms")
+      .select("*, host:profiles!rooms_host_id_fkey(username, display_name, avatar_url, is_verified)")
+      .gte("created_at", sevenDaysAgo)
+      .gt("audience_count", 0)
+      .order("audience_count", { ascending: false })
+      .limit(5)
+      .then(({ data, error: err }) => {
+        if (err) { console.error("[discover] topRooms:", err.message); return; }
+        setTopRooms((data as Room[]) ?? []);
+      });
+  }, [user]);
 
   /* ── Save location (Progressive Trust) ── */
   const saveLocation = async (stateId: string) => {
@@ -631,6 +738,11 @@ export default function DiscoverPage() {
               {liveRooms.slice(0, 6).map((r) => <RoomCard key={r.id} room={r} compact />)}
             </div>
           </section>
+        )}
+
+        {/* ── Top rooms this week ── */}
+        {(feedTab === "all" || feedTab === "trending") && topRooms && topRooms.length > 0 && (
+          <TopRoomsThisWeek rooms={topRooms} />
         )}
 
         {/* ── Full feed (All + Trending) ── */}
