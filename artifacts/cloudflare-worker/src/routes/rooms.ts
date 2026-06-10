@@ -16,6 +16,94 @@ import { getRecommendations } from "../services/recommendations.js";
 
 const rooms = new Hono<{ Bindings: CloudflareEnv; Variables: { user: AuthUser } }>();
 
+
+/**
+ * POST /api/rooms
+ * Create a new live audio room.
+ *
+ * Body: { title, description?, category, visibility?, tags? }
+ * Returns: Room object (201)
+ * Errors: 400 (missing fields), 429 (rate limit exceeded)
+ *
+ * RATE-LIMIT-001 (2026-06-10): Per-user room creation capped at 3 per 24 h
+ * using the CACHE KV namespace. Key: rl:room_create:{userId}.
+ */
+rooms.post("/", requireAuth(), async (c) => {
+  const user  = c.get("user");
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // ── Rate limiting: max 3 rooms per user per 24 h ──────────────────────
+  const rlKey    = `rl:room_create:${user.id}`;
+  const countStr = await c.env.CACHE.get(rlKey);
+  const count    = countStr ? Number(countStr) : 0;
+  if (count >= 3) {
+    return c.json({ error: "Room creation limit reached (max 3 per 24 hours)" }, 429);
+  }
+
+  // ── Validate body ────────────────────────────────────────────────────
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const { title, description, category, tags = [] } = body;
+  const visibility = (body.visibility as string) ?? "public";
+  if (!title || typeof title !== "string" || !title.trim()) {
+    return c.json({ error: "title is required" }, 400);
+  }
+  if (!category || typeof category !== "string") {
+    return c.json({ error: "category is required" }, 400);
+  }
+
+  const headers = {
+    apikey:         sbKey,
+    Authorization:  `Bearer ${sbKey}`,
+    "Content-Type": "application/json",
+    Accept:         "application/json",
+    Prefer:         "return=representation",
+  };
+
+  // ── Insert room row ───────────────────────────────────────────────────
+  const createResp = await fetch(`${sbUrl}/rest/v1/rooms`, {
+    method:  "POST",
+    headers,
+    body:    JSON.stringify({
+      title:          (title as string).trim(),
+      description:    description ?? null,
+      category,
+      visibility,
+      tags:           Array.isArray(tags) ? tags : [],
+      host_id:        user.id,
+      is_live:        true,
+      audience_count: 1,
+    }),
+  });
+
+  if (!createResp.ok) {
+    const errText = await createResp.text().catch(() => "");
+    console.error("[rooms/create] failed:", createResp.status, errText.slice(0, 200));
+    return c.json({ error: "Failed to create room" }, 500);
+  }
+
+  const rows = await createResp.json() as Record<string, unknown>[];
+  if (!rows.length) return c.json({ error: "Room created but not returned" }, 500);
+  const room = rows[0];
+
+  // ── Add host as participant (fire-and-forget) ─────────────────────────
+  fetch(`${sbUrl}/rest/v1/room_participants`, {
+    method:  "POST",
+    headers,
+    body:    JSON.stringify({ room_id: room.id, user_id: user.id, role: "host" }),
+  }).catch(err => console.warn("[rooms/create] participant insert failed:", err));
+
+  // ── Increment rate limit counter (expires after 24 h) ────────────────
+  await c.env.CACHE.put(rlKey, String(count + 1), { expirationTtl: 86_400 });
+
+  console.log(JSON.stringify({
+    level: "info", event: "room_created",
+    roomId: room.id, userId: user.id,
+    service: "loop-api", timestamp: new Date().toISOString(),
+  }));
+  return c.json(room, 201);
+});
+
 /**
  * GET /api/rooms
  * Public listing of live and recent rooms. No authentication required.
