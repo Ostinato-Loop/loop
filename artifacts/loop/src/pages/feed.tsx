@@ -1,24 +1,43 @@
 // Loop — Feed Page (Regional Edition)
 // FOLLOWS-001 (2026-06-09): Added "Who to Follow" strip between location banner and categories.
+// RETENTION-006 (2026-06-10): Four gap-fills in the "Who to Follow" strip:
+//   1. sessionStorage persistence — dismissed cards don't re-appear on refresh/navigation
+//   2. refreshKey prop — pull-to-refresh re-fetches suggestions
+//   3. FeedHeader bell upgraded to useNotificationCount (count pill, 60s poll)
+//   4. "See all →" link to /discover in the strip header
 // Regional identity: location badge in header, regional rooms prioritised.
 // LILCKY STUDIO LIMITED
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Search, Bell, Radio, BadgeCheck, MapPin, RefreshCw, UserPlus, X } from "lucide-react";
+import { Search, Bell, Radio, BadgeCheck, MapPin, RefreshCw, UserPlus, X, ChevronRight } from "lucide-react";
 import { listRooms, type Room as ApiRoom, type RoomCategory } from "@/lib/api/rooms";
 import { useAuth } from "@/hooks/use-auth";
 import { useLoop } from "@/lib/loop-store";
 import { authFetch } from "@/lib/api-fetch";
 import { PushPromptBanner } from "@/hooks/use-push";
+import { useNotificationCount, formatBadgeCount } from "@/hooks/use-notification-count";
 import { LoopMark } from "@/components/loop-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { FollowButton } from "@/components/follow-button";
 import { cn } from "@/lib/utils";
 import { Link, useNavigate } from "react-router-dom";
 import { formatLocation } from "@/lib/regions-data";
-import { fetchUnreadCount } from "@/lib/api/notifications";
 
 const PTR_THRESHOLD = 72;
+
+/** sessionStorage key for dismissed suggestion IDs — persists across navigation. */
+const DISMISSED_KEY = "loop:suggestions:dismissed";
+
+function loadDismissed(): Set<string> {
+  try {
+    const raw = sessionStorage.getItem(DISMISSED_KEY);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch { return new Set(); }
+}
+function saveDismissed(ids: Set<string>) {
+  try { sessionStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids])); }
+  catch { /* quota exceeded — ignore */ }
+}
 
 const CATEGORIES = [
   { label: "For you",    value: "" },
@@ -65,27 +84,53 @@ type SuggestedUser = {
   bio:            string | null;
 };
 
-function WhoToFollow() {
+/**
+ * WhoToFollow — horizontally scrollable creator suggestion strip.
+ *
+ * RETENTION-006:
+ *   - Receives refreshKey so pull-to-refresh re-fetches suggestions.
+ *   - Dismissed IDs are persisted in sessionStorage so cards don't
+ *     re-appear on navigation or soft refresh within the session.
+ *   - "See all →" link to /discover for deeper exploration.
+ */
+function WhoToFollow({ refreshKey }: { refreshKey: number }) {
   const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
-  const [users,     setUsers]     = useState<SuggestedUser[]>([]);
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-  const [loading,   setLoading]   = useState(true);
+  const navigate = useNavigate();
+  const [users,   setUsers]   = useState<SuggestedUser[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  // Persist dismissals across renders/navigation within the session
+  const [dismissed, setDismissed] = useState<Set<string>>(loadDismissed);
+
+  const dismiss = useCallback((id: string) => {
+    setDismissed(prev => {
+      const next = new Set([...prev, id]);
+      saveDismissed(next);
+      return next;
+    });
+  }, []);
+
+  // Re-fetch when pull-to-refresh fires (refreshKey increments)
   useEffect(() => {
+    let active = true;
+    setLoading(true);
     authFetch(`${API_BASE}/api/follows/suggestions`)
       .then(r => r.ok ? r.json() as Promise<{ suggestions: SuggestedUser[] }> : Promise.reject())
-      .then(d => setUsers(d.suggestions ?? []))
-      .catch(() => setUsers([]))
-      .finally(() => setLoading(false));
-  }, [API_BASE]);
+      .then(d => { if (active) setUsers(d.suggestions ?? []); })
+      .catch(() => { if (active) setUsers([]); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  // refreshKey is intentional — re-fetch on pull-to-refresh
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [API_BASE, refreshKey]);
 
   const visible = users.filter(u => !dismissed.has(u.id));
 
-  // Don't render the section if loading is done and there are no suggestions
   if (!loading && visible.length === 0) return null;
 
   return (
     <div className="space-y-2">
+      {/* Section header with "See all" link */}
       <div className="flex items-center justify-between px-0.5">
         <div className="flex items-center gap-1.5">
           <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
@@ -93,6 +138,13 @@ function WhoToFollow() {
             Who to follow
           </span>
         </div>
+        <button
+          onClick={() => navigate("/discover")}
+          className="flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline"
+        >
+          See all
+          <ChevronRight className="h-3 w-3" />
+        </button>
       </div>
 
       <div className="flex gap-3 overflow-x-auto scrollbar-none pb-1 -mx-4 px-4">
@@ -104,7 +156,7 @@ function WhoToFollow() {
               <SuggestionCard
                 key={u.id}
                 user={u}
-                onDismiss={() => setDismissed(prev => new Set([...prev, u.id]))}
+                onDismiss={() => dismiss(u.id)}
               />
             ))}
       </div>
@@ -127,7 +179,7 @@ function SuggestionCard({
       {/* Dismiss */}
       <button
         onClick={onDismiss}
-        aria-label="Dismiss"
+        aria-label={`Dismiss ${name}`}
         className="absolute top-2 right-2 h-5 w-5 rounded-full bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
       >
         <X className="h-3 w-3" />
@@ -157,13 +209,18 @@ function SuggestionCard({
             <BadgeCheck className="h-3 w-3 text-primary shrink-0" />
           )}
         </div>
-        {user.follower_count > 0 && (
+        {user.follower_count > 0 ? (
           <p className="text-[10px] text-muted-foreground mt-0.5">
             {user.follower_count.toLocaleString()} followers
           </p>
-        )}
-        {user.is_creator && !user.is_verified && (
+        ) : user.is_creator ? (
           <p className="text-[10px] text-primary/70 mt-0.5">Creator</p>
+        ) : null}
+        {/* Bio snippet — max 2 lines */}
+        {user.bio && (
+          <p className="text-[10px] text-muted-foreground/70 mt-0.5 line-clamp-2 leading-snug">
+            {user.bio}
+          </p>
         )}
       </div>
 
@@ -174,7 +231,7 @@ function SuggestionCard({
         size="sm"
         onFollowChange={(following) => {
           if (following) {
-            // Slide out after a brief delay so user sees "Following" state
+            // Brief delay so user sees "Following" state before card slides out
             setTimeout(onDismiss, 1200);
           }
         }}
@@ -293,8 +350,8 @@ export default function FeedPage() {
           </Link>
         )}
 
-        {/* Who to Follow — only shown on "For you" tab */}
-        {activeCategory === "" && <WhoToFollow />}
+        {/* Who to Follow — only shown on "For you" tab; refreshes with pull-to-refresh */}
+        {activeCategory === "" && <WhoToFollow refreshKey={refreshKey} />}
         {activeCategory === "" && <PushPromptBanner />}
 
         <CategoryScroller active={activeCategory} onChange={setActiveCategory} />
@@ -304,10 +361,17 @@ export default function FeedPage() {
   );
 }
 
+/**
+ * FeedHeader — sticky top bar with Loop logo, location, search, and notification bell.
+ *
+ * RETENTION-006: Upgraded bell badge from a one-shot dot to a count pill using
+ * useNotificationCount (60s polling, consistent with bottom-nav badge).
+ */
 function FeedHeader({ location }: { location: string }) {
   const navigate = useNavigate();
-  const [unread, setUnread] = useState(0);
-  useEffect(() => { fetchUnreadCount().then(setUnread).catch(() => {}); }, []);
+  const unread   = useNotificationCount();
+  const badge    = formatBadgeCount(unread);
+
   return (
     <header className="sticky top-0 z-30 bg-background/85 backdrop-blur-xl border-b border-border pt-safe-top">
       <div className="px-4 pt-3 pb-2 flex items-center justify-between">
@@ -333,14 +397,17 @@ function FeedHeader({ location }: { location: string }) {
           >
             <Search className="h-4 w-4" />
           </button>
+          {/* Bell — count pill badge + 60s polling via useNotificationCount */}
           <button
             onClick={() => navigate("/notifications")}
             className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center relative active:scale-95 transition-transform"
-            aria-label="Notifications"
+            aria-label={badge ? `${unread} unread notifications` : "Notifications"}
           >
             <Bell className="h-4 w-4" />
-            {unread > 0 && (
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary border border-background" />
+            {badge && (
+              <span className="absolute top-1 right-1 flex items-center justify-center min-w-[14px] h-3.5 px-0.5 rounded-full bg-primary text-primary-foreground text-[8px] font-bold leading-none border border-background">
+                {badge}
+              </span>
             )}
           </button>
         </div>
