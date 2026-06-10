@@ -73,10 +73,6 @@ RALD_AUTH_URL = "https://auth.rald.cloud"
 # ONESIGNAL_APP_ID
 # ONESIGNAL_REST_API_KEY
 
-# ── Scheduled triggers (cron) ─────────────────────────────
-# DISCONNECT-001: cleanup stale live rooms every 10 minutes
-[triggers]
-crons = ["*/10 * * * *"]
 
 [build]
 command = "pnpm install --no-frozen-lockfile"
