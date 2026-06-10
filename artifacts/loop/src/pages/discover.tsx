@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFollow } from "@/hooks/use-follow";
+import { useRoomQuota } from "@/hooks/use-room-quota";
 
 /* ── Feed tab types ─────────────────────────────────────────────────── */
 type FeedTab = "all" | "live" | "near" | "trending" | "events" | "people";
@@ -587,6 +588,7 @@ export default function DiscoverPage() {
     tabParam && VALID_TABS.includes(tabParam) ? tabParam : "all",
   );
   const [category, setCategory] = useState<RoomCategory | "all">("all");
+  const { quota } = useRoomQuota(user?.id ?? null);
 
   // Auth + onboarding gate now handled by ProtectedRoute in App.tsx
 
@@ -714,6 +716,38 @@ export default function DiscoverPage() {
           <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 flex items-center gap-2.5">
             <span className="text-base" aria-hidden>⚠️</span>
             <p className="text-sm font-medium text-destructive">{error}</p>
+          </div>
+        )}
+
+        {/* ── Quota banner (RATE-LIMIT-001) ── */}
+        {quota !== null && (
+          <div
+            className={cn(
+              "flex items-center justify-between rounded-xl border px-4 py-2.5 text-sm",
+              quota.remaining === 0
+                ? "border-destructive/40 bg-destructive/10 text-destructive"
+                : quota.remaining === 1
+                  ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                  : "border-border bg-surface text-muted-foreground",
+            )}
+          >
+            <span>
+              {quota.remaining === 0
+                ? "Daily room limit reached — resets in 24 h"
+                : quota.remaining === 1
+                  ? "Last room for today — use it well"
+                  : `${quota.remaining} rooms left today`}
+            </span>
+            {quota.remaining > 0 ? (
+              <Link
+                to="/create/room"
+                className="shrink-0 text-xs font-semibold text-primary ml-3"
+              >
+                Start a room →
+              </Link>
+            ) : (
+              <span className="font-mono text-xs opacity-60 ml-3">{quota.used}/{quota.limit}</span>
+            )}
           </div>
         )}
 
