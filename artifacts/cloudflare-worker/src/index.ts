@@ -49,6 +49,7 @@ import { push } from "./routes/push.js";
 import { RoomSession } from "./durable-objects/room-session.js";
 
 export { RoomSession };
+import { cleanupStaleRooms } from "./services/room-cleanup.js";
 
 const app = new Hono<{ Bindings: CloudflareEnv }>();
 
@@ -137,4 +138,11 @@ app.onError((err, c) => {
   );
 });
 
-export default app;
+// DISCONNECT-001: Export both fetch (HTTP) and scheduled (cron) handlers.
+// Cron fires every 10 min (wrangler.toml [triggers]) as DO-alarm fallback.
+export default {
+  fetch:     app.fetch.bind(app),
+  scheduled: async (_event: ScheduledEvent, env: CloudflareEnv, ctx: ExecutionContext): Promise<void> => {
+    ctx.waitUntil(cleanupStaleRooms(env));
+  },
+};
