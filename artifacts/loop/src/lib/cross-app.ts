@@ -2,13 +2,19 @@
  * RALD Cross-App SSO Navigation
  *
  * Resolves WS1-F2 / WS3-F1: when a Loop user navigates to Messenger, Profiles,
- * or any other RALD app, their session is passed via the rald_master_token so
- * they land directly on the destination page without re-authenticating.
+ * or any other RALD app, their session is passed via a short-lived handoff token
+ * so they land directly on the destination page without re-authenticating.
+ *
+ * COOKIE-001 (2026-06-09): rald_master_token removed from localStorage.
+ * Cross-app nav now uses POST /api/auth/rald-sso/handoff (5-minute handoff token).
+ * getSessionToken() from session-store is the source of truth for auth state.
  *
  * Usage:
  *   import { openMessenger } from "@/lib/cross-app";
  *   <button onClick={() => openMessenger("/chats")}>Open Messenger</button>
  */
+
+import { getSessionToken } from "@/lib/session-store";
 
 export const RALD_APPS = {
   loop:      "https://loop.rald.cloud",
@@ -20,33 +26,41 @@ export const RALD_APPS = {
 
 export type RaldAppId = keyof typeof RALD_APPS;
 
-const RALD_TOKEN_KEY = "rald_master_token";
-const RALD_AUTH_UI   = (import.meta.env.VITE_RALD_AUTH_URL as string | undefined) ?? "https://profiles.rald.cloud";
-
-function getRaldToken(): string | null {
-  return localStorage.getItem(RALD_TOKEN_KEY);
-}
-
-function isTokenAlive(token: string): boolean {
-  try {
-    const [, b64] = token.split(".");
-    const p = JSON.parse(atob(b64.replace(/-/g, "+").replace(/_/g, "/"))) as { exp?: number };
-    return !p.exp || p.exp > Date.now() / 1000;
-  } catch { return false; }
-}
+const RALD_AUTH_UI = (import.meta.env.VITE_RALD_AUTH_URL as string | undefined) ?? "https://profiles.rald.cloud";
+const API_BASE     = (import.meta.env.VITE_API_BASE_URL  as string | undefined) ?? "";
 
 /**
  * Navigate to any RALD app with cross-app SSO.
- * If the user has a valid rald_master_token, passes it directly.
- * Otherwise routes through profiles.rald.cloud for sign-in/sign-up.
+ *
+ * 1. If the user has an active session, gets a 5-minute handoff token from the
+ *    Loop Worker and navigates with it.
+ * 2. If no session (or handoff fails), falls back to profiles.rald.cloud for
+ *    sign-in / registration, preserving the intended destination via redirect_to.
  */
 export function openRaldApp(appId: RaldAppId, path = "/"): void {
-  const appUrl    = RALD_APPS[appId];
-  const raldToken = getRaldToken();
+  const appUrl = RALD_APPS[appId];
+  const token  = getSessionToken();
 
-  if (raldToken && isTokenAlive(raldToken)) {
-    const dest = `${appUrl}${path}?rald_token=${encodeURIComponent(raldToken)}&app_id=${appId}`;
-    window.location.href = dest;
+  if (token) {
+    fetch(`${API_BASE}/api/auth/rald-sso/handoff`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ app_id: appId, redirect_to: path }),
+    })
+      .then(res => (res.ok ? res.json() : Promise.reject(new Error(`${res.status}`))) as Promise<{ handoff_token?: string }>)
+      .then(data => {
+        if (data.handoff_token) {
+          window.location.href =
+            `${appUrl}${path}?rald_token=${encodeURIComponent(data.handoff_token)}&app_id=${appId}`;
+          return;
+        }
+        throw new Error("no handoff_token");
+      })
+      .catch(() => {
+        // Handoff failed — fall back to re-auth preserving destination
+        const redirectTo = encodeURIComponent(`${appUrl}${path}`);
+        window.location.href = `${RALD_AUTH_UI}?redirect_to=${redirectTo}&app_id=${appId}`;
+      });
   } else {
     const redirectTo = encodeURIComponent(`${appUrl}${path}`);
     window.location.href = `${RALD_AUTH_UI}?redirect_to=${redirectTo}&app_id=${appId}`;
