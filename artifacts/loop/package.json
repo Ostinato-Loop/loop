@@ -92,6 +92,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.105.4",
     "react-router-dom": "^7.15.1",
-    "livekit-client": "^2.10.0"
+    "livekit-client": "^2.10.0",
+    "@onesignal/onesignal-web-sdk": "^2.0.1"
   }
 }
