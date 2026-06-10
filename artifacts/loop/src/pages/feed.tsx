@@ -23,6 +23,7 @@ import { FollowButton } from "@/components/follow-button";
 import { cn } from "@/lib/utils";
 import { Link, useNavigate } from "react-router-dom";
 import { formatLocation } from "@/lib/regions-data";
+import { followUser } from "@/lib/api/follows";
 
 const PTR_THRESHOLD = 72;
 
@@ -242,6 +243,140 @@ function SuggestionCard({
   );
 }
 
+/* ── RETENTION-013: Post-room debrief card ───────────────────────────── */
+type DebriefSpeaker = {
+  user_id:      string;
+  display_name: string | null;
+  username:     string | null;
+  avatar_url:   string | null;
+};
+type DebriefPayload = {
+  roomId:    string;
+  roomTitle: string;
+  speakers:  DebriefSpeaker[];
+};
+
+function loadDebrief(): DebriefPayload | null {
+  try {
+    const raw = sessionStorage.getItem("loop:debrief");
+    return raw ? (JSON.parse(raw) as DebriefPayload) : null;
+  } catch { return null; }
+}
+function clearDebrief() {
+  try { sessionStorage.removeItem("loop:debrief"); } catch { /* quota */ }
+}
+
+function DebriefCard({
+  payload,
+  onDismiss,
+}: {
+  payload: DebriefPayload;
+  onDismiss: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const getName = (s: DebriefSpeaker) => s.display_name ?? s.username ?? "?";
+
+  // "Tunde, Amara & 2 others" style label
+  const speakerLabel = (() => {
+    const names = payload.speakers.map(getName);
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return `${names[0]} & ${names[1]}`;
+    if (names.length === 3) return `${names[0]}, ${names[1]} & ${names[2]}`;
+    return `${names[0]}, ${names[1]} & ${names.length - 2} others`;
+  })();
+
+  const followAll = async () => {
+    setBusy(true);
+    await Promise.allSettled(payload.speakers.map(s => followUser(s.user_id)));
+    setBusy(false);
+    setDone(true);
+    setTimeout(onDismiss, 1500);
+  };
+
+  const n = payload.speakers.length;
+  const btnLabel = done
+    ? `Following ${n} speaker${n !== 1 ? "s" : ""} ✓`
+    : busy
+      ? "Following…"
+      : `Follow ${n === 1 ? "speaker" : `all ${n} speakers`}`;
+
+  return (
+    <div className="relative rounded-2xl border border-primary/20 bg-surface overflow-hidden">
+      {/* Accent bar */}
+      <div className="h-0.5 w-full bg-gradient-to-r from-primary via-primary/50 to-transparent" />
+
+      <div className="p-4">
+        {/* Header: icon + room title + dismiss */}
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 shrink-0">
+              <Radio className="h-3.5 w-3.5 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-primary leading-none mb-0.5">
+                Just left
+              </p>
+              <p className="text-sm font-bold leading-snug line-clamp-1">{payload.roomTitle}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onDismiss}
+            aria-label="Dismiss"
+            className="ml-2 h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-muted-foreground transition-colors shrink-0 active:scale-90"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+
+        {/* Overlapping avatar stack + speaker names */}
+        <div className="flex items-center gap-2.5 mb-3">
+          <div className="flex -space-x-2 shrink-0">
+            {payload.speakers.slice(0, 4).map((s, i) => (
+              <div
+                key={s.user_id}
+                style={{ zIndex: payload.speakers.length - i }}
+                className={cn(
+                  "relative h-8 w-8 rounded-full ring-2 ring-background overflow-hidden",
+                  "flex items-center justify-center text-[10px] font-bold text-white bg-gradient-to-br",
+                  avatarColor(s.user_id),
+                )}
+              >
+                {s.avatar_url
+                  ? <img src={s.avatar_url} alt={getName(s)} className="absolute inset-0 h-full w-full object-cover" />
+                  : initials(getName(s))
+                }
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground leading-snug flex-1 min-w-0">
+            <span className="font-semibold text-foreground">{speakerLabel}</span>
+            {" "}spoke in this room
+          </p>
+        </div>
+
+        {/* Follow all CTA */}
+        <button
+          type="button"
+          disabled={busy || done}
+          onClick={() => void followAll()}
+          className={cn(
+            "w-full h-9 rounded-xl text-xs font-bold transition-all active:scale-[0.98]",
+            done
+              ? "bg-secondary text-muted-foreground border border-border cursor-default"
+              : "bg-primary text-primary-foreground neon-glow",
+            busy && "opacity-60 cursor-wait",
+          )}
+        >
+          {btnLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Feed page ────────────────────────────────────────────────────────── */
 
 export default function FeedPage() {
@@ -271,6 +406,16 @@ export default function FeedPage() {
   })();
 
   const location = profile ? formatLocation(profile) : "";
+
+  // RETENTION-013: post-room debrief card
+  const [debrief, setDebrief] = useState<DebriefPayload | null>(() => loadDebrief());
+  const dismissDebrief = useCallback(() => { clearDebrief(); setDebrief(null); }, []);
+  // Auto-dismiss after 30 seconds so it never feels sticky
+  useEffect(() => {
+    if (!debrief) return;
+    const t = setTimeout(dismissDebrief, 30_000);
+    return () => clearTimeout(t);
+  }, [debrief, dismissDebrief]);
 
   // ── Pull-to-refresh ─────────────────────────────────────────────────
   useEffect(() => {
@@ -350,6 +495,10 @@ export default function FeedPage() {
             <span className="text-xs text-primary font-semibold shrink-0">Near me →</span>
           </Link>
         )}
+
+        {/* RETENTION-013: Post-room debrief card — shown once after leaving a room.
+             Reads from sessionStorage, auto-dismisses after 30s.              */}
+        {debrief && <DebriefCard payload={debrief} onDismiss={dismissDebrief} />}
 
         {/* Who to Follow — only shown on "For you" tab; refreshes with pull-to-refresh */}
         {activeCategory === "" && <WhoToFollow refreshKey={refreshKey} />}

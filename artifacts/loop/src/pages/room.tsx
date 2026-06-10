@@ -737,6 +737,32 @@ export default function RoomPage() {
   const leaveRoom_ = async () => {
     if (!roomId || !user) return;
     track("room_leave", { room_id: roomId });
+
+    // RETENTION-013: write debrief payload to sessionStorage before leaving so
+    // the feed can surface a post-room card offering to follow the speakers.
+    // Uses participantsRef.current (always-fresh) not the render-time `speakers`
+    // const, which is declared later in the same scope.
+    if (room) {
+      try {
+        const speakerSnap = participantsRef.current
+          .filter(p => ["host", "speaker", "moderator"].includes(p.role) && p.user_id !== user.id)
+          .slice(0, 4)
+          .map(p => ({
+            user_id:      p.user_id,
+            display_name: p.profiles?.display_name ?? null,
+            username:     p.profiles?.username ?? null,
+            avatar_url:   p.profiles?.avatar_url ?? null,
+          }));
+        if (speakerSnap.length > 0) {
+          sessionStorage.setItem("loop:debrief", JSON.stringify({
+            roomId,
+            roomTitle: room.title,
+            speakers:  speakerSnap,
+          }));
+        }
+      } catch { /* sessionStorage quota exceeded — skip silently */ }
+    }
+
     try { await leaveRoom(roomId, user.id); } catch { /* ignore */ }
     navigate("/");
   };
