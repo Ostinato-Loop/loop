@@ -280,3 +280,40 @@
     to   { transform: scaleY(1.00); }
   }
 }
+
+/* ── MOB-004 FIX: Prevent iOS Safari viewport zoom on input focus ──── */
+/* iOS zooms when font-size < 16px. max(16px, 1em) honours larger user fonts. */
+@layer base {
+  input[type="text"],
+  input[type="tel"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="number"],
+  input:not([type]),
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
+/* ── MOB-002 FIX: Chip minimum touch target (44px Apple HIG / 48dp Material) ── */
+@layer utilities {
+  .touch-chip {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+/* ── MOB-005 FIX: Prevent keyboard from overlapping fixed bottom elements ── */
+/* interactive-widget=resizes-content in viewport meta handles the rest.
+   This ensures the app uses dynamic viewport height on iOS Safari. */
+@layer base {
+  html {
+    height: 100%;
+  }
+  body {
+    min-height: 100dvh;
+  }
+}
