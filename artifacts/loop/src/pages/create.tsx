@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { createRoom, type RoomCategory, type RoomVisibility } from "@/lib/api/rooms";
 import { authFetch } from "@/lib/api-fetch";
+import { useRoomQuota } from "@/hooks/use-room-quota";
 import { toast } from "sonner";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,7 @@ import { Clock } from "lucide-react";
 
 // Phase H: All 7 Loop Room Types fully wired for room creation
 // PUSH-001 (2026-06-10): Notify followers via push when room goes live.
+// RATE-LIMIT-001 (2026-06-10): Quota badge + button guard via useRoomQuota.
 // LILCKY STUDIO LIMITED
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -65,6 +67,9 @@ export default function CreatePage() {
   const [visibility, setVisibility] = useState<RoomVisibility>("public");
   const [busy, setBusy] = useState(false);
 
+  const { quota, refetch: refetchQuota } = useRoomQuota(user?.id ?? null);
+  const atLimit = quota !== null && quota.remaining === 0;
+
   // Auth gate now handled by ProtectedRoute in App.tsx
 
   const comingSoon = kind && kind !== "room" ? COMING_SOON[kind] : null;
@@ -101,14 +106,15 @@ export default function CreatePage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || atLimit) return;
     setBusy(true);
     try {
       if (!user) throw new Error("Not signed in");
       const room = await createRoom(user.id, { title: title.trim(), description, category, visibility });
       track("room_create", { room_id: room.id, category, visibility });
 
-      // Notify followers — non-blocking, must not delay navigation
+      // Sync quota counter then notify followers — both non-blocking
+      refetchQuota();
       notifyRoomLive(user.id, room.id, title.trim(), category);
 
       toast.success("Room started");
@@ -198,12 +204,38 @@ export default function CreatePage() {
           </div>
         </div>
 
+        {/* Quota badge — only shown once server responds */}
+        {quota !== null && (
+          <div
+            className={cn(
+              "flex items-center justify-between rounded-xl border px-4 py-3 text-sm",
+              atLimit
+                ? "border-destructive/40 bg-destructive/10 text-destructive"
+                : "border-border bg-surface text-muted-foreground",
+            )}
+          >
+            <span>
+              {atLimit
+                ? "Daily room limit reached — resets in 24 h"
+                : `${quota.remaining} room${quota.remaining === 1 ? "" : "s"} left today`}
+            </span>
+            <span className="font-mono text-xs opacity-70">
+              {quota.used}/{quota.limit}
+            </span>
+          </div>
+        )}
+
         <Button
           type="submit"
-          disabled={busy || !title.trim()}
-          className="h-12 w-full rounded-xl bg-gradient-mint text-primary-foreground font-semibold shadow-mint"
+          disabled={busy || !title.trim() || atLimit}
+          className={cn(
+            "h-12 w-full rounded-xl font-semibold transition-colors",
+            atLimit
+              ? "bg-muted text-muted-foreground cursor-not-allowed"
+              : "bg-gradient-mint text-primary-foreground shadow-mint",
+          )}
         >
-          {busy ? "Starting…" : "Go live"}
+          {busy ? "Starting…" : atLimit ? "Limit reached — try tomorrow" : "Go live"}
         </Button>
       </form>
     </AppShell>
