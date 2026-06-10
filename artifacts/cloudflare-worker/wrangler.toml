@@ -116,8 +116,12 @@ binding = "AI"
 [env.production.observability]
 enabled = true
 
+# CRON-DISABLED-001: CF free plan account limit (5 total crons) is exhausted by
+# other workers on this account. Setting crons=[] clears any stale triggers on
+# loop-api without trying to add new ones, allowing the deploy to succeed.
+# Re-enable by restoring: crons = ["*/10 * * * *"] once quota is freed.
 [env.production.triggers]
-crons = ["*/10 * * * *"]
+crons = []
 
 [env.production.vars]
 ENVIRONMENT   = "production"
