@@ -235,4 +235,57 @@ rooms.patch('/:roomId', requireAuth(), async (c) => {
   return c.json({ ok: true, roomId, updated: Object.keys(patch) });
 });
 
+
+/**
+ * POST /api/rooms/:roomId/heartbeat
+ * Host liveness signal — called every 60s from the room page.
+ *
+ * DISCONNECT-001 (2026-06-10):
+ *   1. Verifies the caller is the room's host.
+ *   2. Updates last_heartbeat_at on the room row (for cron backup).
+ *   3. Resets the RoomSession DO alarm to now + 5 minutes.
+ *
+ * If the host stops heartbeating (disconnect, crash, tab close), the DO
+ * alarm fires after 5 minutes and auto-ends the room.
+ */
+rooms.post('/:roomId/heartbeat', requireAuth(), async (c) => {
+  const { roomId } = c.req.param();
+  const user    = c.get('user');
+  const sbUrl   = c.env.SUPABASE_URL;
+  const sbKey   = c.env.SUPABASE_SERVICE_ROLE_KEY;
+  const headers = {
+    apikey: sbKey, Authorization: `Bearer ${sbKey}`,
+    'Content-Type': 'application/json', Accept: 'application/json',
+  };
+
+  // Verify host ownership (cheap single-row lookup)
+  const roomResp = await fetch(`${sbUrl}/rest/v1/rooms?id=eq.${roomId}&select=id,host_id&limit=1`, { headers });
+  if (!roomResp.ok) return c.json({ error: 'Failed to verify room' }, 500);
+  const rows = await roomResp.json() as { id: string; host_id: string }[];
+  if (!rows.length) return c.json({ error: 'Room not found' }, 404);
+  if (rows[0].host_id !== user.id) return c.json({ error: 'Only the host can heartbeat this room' }, 403);
+
+  // Update last_heartbeat_at in Supabase (belt-and-suspenders for cron)
+  await fetch(`${sbUrl}/rest/v1/rooms?id=eq.${roomId}`, {
+    method: 'PATCH', headers,
+    body:   JSON.stringify({ last_heartbeat_at: new Date().toISOString() }),
+  }).catch((err) => console.warn('[heartbeat] db update failed:', err));
+
+  // Reset DO alarm (primary recovery mechanism)
+  try {
+    const doId   = c.env.ROOM_SESSION.idFromName(roomId);
+    const doStub = c.env.ROOM_SESSION.get(doId);
+    await doStub.fetch(new Request('https://do-internal/heartbeat', {
+      method: 'POST',
+      body:   JSON.stringify({ roomId, hostId: user.id }),
+      headers: { 'Content-Type': 'application/json' },
+    }));
+  } catch (err) {
+    // DO unavailable — DB update above is the fallback; don't fail the request
+    console.warn('[heartbeat] DO alarm reset failed (non-fatal):', err);
+  }
+
+  return c.json({ ok: true });
+});
+
 export { rooms };
