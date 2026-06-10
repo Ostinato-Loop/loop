@@ -107,9 +107,13 @@ export async function listMessages(roomId: string, limit = 50) {
 
 // ── Authenticated writes — authed client, loop_token in Authorization header ─
 
-/** createRoom — creates the room row and immediately marks it live. */
+/** createRoom — creates the room via the Loop Worker (rate-limited: 3 per 24h).
+ *
+ * RATE-LIMIT-001 (2026-06-10): Routed through POST /api/rooms in the Cloudflare
+ * Worker, which enforces a per-user creation cap of 3 rooms per 24 hours.
+ */
 export async function createRoom(
-  userId: string,
+  _userId: string,
   input: {
     title: string;
     description?: string;
@@ -118,29 +122,17 @@ export async function createRoom(
     tags?: string[];
   },
 ): Promise<Room> {
-  if (!userId) throw new Error("Not signed in");
-  const db = authedSupabase();
-  const { data, error } = await db
-    .from("rooms")
-    .insert({
-      title: input.title,
-      description: input.description ?? null,
-      category: input.category,
-      visibility: input.visibility,
-      tags: input.tags ?? [],
-      host_id: userId,
-      is_live: true,
-      audience_count: 1,
-    })
-    .select("*")
-    .single();
-  if (error) throw sanitiseRoomError(error, "createRoom");
-  await db.from("room_participants").insert({
-    room_id: data.id,
-    user_id: userId,
-    role: "host",
+  const res = await authFetch(`${API_BASE}/api/rooms`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify(input),
   });
-  return data as Room;
+  if (res.status === 429) throw new Error("Room creation limit reached (max 3 per 24 hours)");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Failed to create room" })) as { error?: string };
+    throw new Error(err.error ?? "Failed to create room");
+  }
+  return res.json() as Promise<Room>;
 }
 
 /** Mark a room live or ended. */
