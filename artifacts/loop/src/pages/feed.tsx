@@ -9,6 +9,7 @@ import { listRooms, type Room as ApiRoom, type RoomCategory } from "@/lib/api/ro
 import { useAuth } from "@/hooks/use-auth";
 import { useLoop } from "@/lib/loop-store";
 import { authFetch } from "@/lib/api-fetch";
+import { PushPromptBanner } from "@/hooks/use-push";
 import { LoopMark } from "@/components/loop-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { FollowButton } from "@/components/follow-button";
@@ -294,6 +295,7 @@ export default function FeedPage() {
 
         {/* Who to Follow — only shown on "For you" tab */}
         {activeCategory === "" && <WhoToFollow />}
+        {activeCategory === "" && <PushPromptBanner />}
 
         <CategoryScroller active={activeCategory} onChange={setActiveCategory} />
         <LiveStrip category={activeCategory} interests={interests} profile={profile} refreshKey={refreshKey} />
