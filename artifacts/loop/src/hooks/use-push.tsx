@@ -1,35 +1,27 @@
 /**
- * Loop — usePush Hook
- * Manages push notification permission state and subscription lifecycle.
- *
- * PUSH-001 (2026-06-10)
+ * Loop — usePush Hook (OneSignal)
+ * PUSH-001 (2026-06-10): Replaced VAPID with OneSignal.
  * LILCKY STUDIO LIMITED
- *
- * Usage:
- *   const { state, prompt, dismiss } = usePush();
- *
- *   state: PushState — "unsupported" | "denied" | "prompt" | "subscribed" | "unsubscribed"
- *   prompt(): triggers permission request + subscription
- *   dismiss(): marks "don't ask again" for this session
  */
-
 import { useState, useEffect, useCallback } from "react";
+import { Bell, X } from "lucide-react";
 import {
   getPushState,
   subscribeToPush,
-  listenForSubscriptionChange,
+  identifyPushUser,
   type PushState,
 } from "@/lib/push";
 import { useAuth } from "@/hooks/use-auth";
-
-interface UsePushResult {
-  state:    PushState;
-  loading:  boolean;
-  prompt:   () => Promise<void>;
-  dismiss:  () => void;
-}
+import { cn } from "@/lib/utils";
 
 const SESSION_DISMISSED_KEY = "loop:push:dismissed";
+
+interface UsePushResult {
+  state:   PushState;
+  loading: boolean;
+  prompt:  () => Promise<void>;
+  dismiss: () => void;
+}
 
 export function usePush(): UsePushResult {
   const { user } = useAuth();
@@ -45,29 +37,24 @@ export function usePush(): UsePushResult {
       .finally(() => setLoading(false));
   }, [user]);
 
-  // Listen for SW key rotation
+  // Set OneSignal external user ID whenever the user authenticates
   useEffect(() => {
-    if (!("serviceWorker" in navigator)) return;
-    const cleanup = listenForSubscriptionChange();
-    return cleanup;
-  }, []);
+    if (!user) return;
+    identifyPushUser(user.id).catch(() => {});
+  }, [user?.id]);
 
   const prompt = useCallback(async () => {
     setLoading(true);
     try {
       const next = await subscribeToPush();
       setState(next);
-      // Clear session-dismissed flag if they successfully subscribed
-      if (next === "subscribed") {
-        sessionStorage.removeItem(SESSION_DISMISSED_KEY);
-      }
+      if (next === "subscribed") sessionStorage.removeItem(SESSION_DISMISSED_KEY);
     } finally {
       setLoading(false);
     }
   }, []);
 
   const dismiss = useCallback(() => {
-    // Mark dismissed for this browser session — won't prompt again until next session
     sessionStorage.setItem(SESSION_DISMISSED_KEY, "1");
     setState(prev => prev === "prompt" ? "unsubscribed" : prev);
   }, []);
@@ -75,23 +62,11 @@ export function usePush(): UsePushResult {
   return { state, loading, prompt, dismiss };
 }
 
-/* ── Push Prompt Banner ──────────────────────────────────────────────
- * Drop-in UI component that shows a nudge banner to users who haven't
- * enabled push yet. Import separately so pages can opt-in individually.
- *
- * Usage:
- *   import { PushPromptBanner } from "@/hooks/use-push";
- *   <PushPromptBanner />
- */
-
-import { Bell, X } from "lucide-react";
-import { cn } from "@/lib/utils";
-
+/* ── PushPromptBanner ─────────────────────────────────────────────── */
 export function PushPromptBanner({ className }: { className?: string }) {
   const { state, loading, prompt, dismiss } = usePush();
   const [busy, setBusy] = useState(false);
 
-  // Don't show if: unsupported, denied, already subscribed, loading, or dismissed this session
   const dismissed = typeof sessionStorage !== "undefined" &&
     sessionStorage.getItem(SESSION_DISMISSED_KEY) === "1";
 
@@ -123,14 +98,14 @@ export function PushPromptBanner({ className }: { className?: string }) {
         <button
           onClick={handleEnable}
           disabled={busy}
-          className="text-xs font-bold bg-primary text-primary-foreground px-3 py-1.5 rounded-full neon-glow disabled:opacity-60 transition-opacity"
+          className="text-xs font-bold bg-primary text-primary-foreground px-3 py-1.5 rounded-full neon-glow disabled:opacity-60"
         >
           {busy ? "…" : "Enable"}
         </button>
         <button
           onClick={dismiss}
-          className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
           aria-label="Dismiss"
+          className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
         >
           <X className="h-3 w-3" />
         </button>
