@@ -42,9 +42,17 @@ max_batch_timeout = 5
 name       = "ROOM_SESSION"
 class_name = "RoomSession"
 
+[[durable_objects.bindings]]
+name       = "CLEANUP_COORDINATOR"
+class_name = "CleanupCoordinator"
+
 [[migrations]]
 tag                = "v1"
 new_sqlite_classes = ["RoomSession"]
+
+[[migrations]]
+tag                = "v2"
+new_sqlite_classes = ["CleanupCoordinator"]
 
 # ── Workers AI ────────────────────────────────────────────
 [ai]
@@ -109,6 +117,10 @@ max_batch_timeout = 5
 [[env.production.durable_objects.bindings]]
 name       = "ROOM_SESSION"
 class_name = "RoomSession"
+
+[[env.production.durable_objects.bindings]]
+name       = "CLEANUP_COORDINATOR"
+class_name = "CleanupCoordinator"
 
 [env.production.ai]
 binding = "AI"
