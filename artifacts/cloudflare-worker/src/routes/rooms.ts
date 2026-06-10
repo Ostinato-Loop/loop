@@ -104,6 +104,26 @@ rooms.post("/", requireAuth(), async (c) => {
   return c.json(room, 201);
 });
 
+
+/**
+ * GET /api/rooms/quota
+ * Returns the authenticated user's room-creation quota for the current 24 h window.
+ *
+ * RATE-LIMIT-001: Reads the same KV key written by POST /api/rooms so the
+ * frontend can show "X of 3 rooms used today" before the user tries to create.
+ *
+ * Response: { used: number, limit: 3, remaining: number }
+ * Returns remaining: 3 for users who have not yet created any rooms today.
+ */
+rooms.get("/quota", requireAuth(), async (c) => {
+  const LIMIT    = 3;
+  const user     = c.get("user");
+  const rlKey    = `rl:room_create:${user.id}`;
+  const countStr = await c.env.CACHE.get(rlKey);
+  const used     = countStr ? Number(countStr) : 0;
+  return c.json({ used, limit: LIMIT, remaining: Math.max(0, LIMIT - used) });
+});
+
 /**
  * GET /api/rooms
  * Public listing of live and recent rooms. No authentication required.
