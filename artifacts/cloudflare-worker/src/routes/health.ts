@@ -2,13 +2,17 @@
  * Loop API — Health Endpoint
  * Mounted at /health and /api/health
  *
- * GET /api/health          — shallow liveness check (fast, always available)
- * GET /api/health/deep     — deep readiness check (Supabase + KV + env vars)
+ * GET /api/health             — shallow liveness check (fast, always available)
+ * GET /api/health/deep        — deep readiness check (Supabase + KV + env vars)
+ * GET /api/health/coordinator — CleanupCoordinator DO status (armed? next run?)
  *
  * HARDENING-001 (2026-06-10):
  *   Added /api/health/deep — pings Supabase REST API and KV, measures latency.
  *   Shallow /health used by load balancers (fast, no external calls).
  *   Deep /health/deep used by monitoring dashboards before declaring healthy.
+ * CRON-DISABLED-001 (2026-06-10):
+ *   Added /api/health/coordinator — exposes CleanupCoordinator DO armed state
+ *   so uptime monitors can alert if the stale-room sweep loop ever stops.
  */
 
 import { Hono } from "hono";
@@ -127,6 +131,54 @@ health.get("/deep", async (c) => {
     },
     allOk ? 200 : 503,
   );
+});
+
+
+/* ── GET /api/health/coordinator — CleanupCoordinator DO status ──────── */
+// Returns whether the singleton DO is armed and when its next sweep fires.
+// Returns 200 when armed (loop is running), 503 when not armed (needs /arm call).
+// CRON-DISABLED-001: use this with an uptime monitor to alert if the loop dies.
+health.get("/coordinator", async (c) => {
+  const t0 = Date.now();
+
+  try {
+    const coordId   = c.env.CLEANUP_COORDINATOR.idFromName("global");
+    const coordStub = c.env.CLEANUP_COORDINATOR.get(coordId);
+    const resp      = await coordStub.fetch(
+      new Request("https://do/status", { method: "GET" }),
+    );
+    const status = await resp.json<{ ok: boolean; nextRun: string | null }>();
+    const armed  = status.nextRun !== null;
+    const msUntilNextRun = armed
+      ? Math.max(0, new Date(status.nextRun!).getTime() - Date.now())
+      : null;
+
+    return c.json(
+      {
+        ok:             armed,
+        armed,
+        nextRun:        status.nextRun ?? null,
+        msUntilNextRun,
+        intervalMs:     10 * 60 * 1000,
+        probeMs:        Date.now() - t0,
+        service:        "cleanup-coordinator-do",
+        timestamp:      new Date().toISOString(),
+      },
+      armed ? 200 : 503,
+    );
+  } catch (err) {
+    return c.json(
+      {
+        ok:        false,
+        armed:     false,
+        error:     String(err).slice(0, 200),
+        probeMs:   Date.now() - t0,
+        service:   "cleanup-coordinator-do",
+        timestamp: new Date().toISOString(),
+      },
+      503,
+    );
+  }
 });
 
 export { health };
