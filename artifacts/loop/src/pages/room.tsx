@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase, authedSupabase, getLoopToken } from "@/integrations/supabase/client";
 import {
-  getRoom, joinRoom, leaveRoom, endRoom,
+  getRoom, joinRoom, leaveRoom, endRoom as endRoomApi,
   listMessages, listParticipants,
   sendMessage, sendReaction,
   type Room,
@@ -571,7 +571,7 @@ export default function RoomPage() {
     const confirmed = window.confirm('End this room? All listeners will be removed and audio will stop.');
     if (!confirmed) return;
     try {
-      await endRoom(roomId);
+      await endRoomApi(roomId);
       track('room_end', { room_id: roomId });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not end room');
