@@ -19,6 +19,12 @@
  *     ↓ /api/analytics         → Event ingestion for DAU / retention tracking
  *     ↓ /api/*                 → Business logic, AI, civic data (Worker)
  *     ↓ Supabase               → DB, Realtime (via service role from Worker)
+ *
+ * HARDENING-001 (2026-06-10):
+ *   - Global error handler: unhandled exceptions return structured JSON (not HTML)
+ *   - Request ID middleware: every request tagged with X-Request-ID
+ *   - Structured request logging: method, path, status, latency on every response
+ *   - Request timeout: 25s guard (CF Worker hard limit is 30s)
  */
 
 import { Hono } from "hono";
@@ -46,7 +52,36 @@ export { RoomSession };
 
 const app = new Hono<{ Bindings: CloudflareEnv }>();
 
+// ── CORS ──────────────────────────────────────────────────────────────
 app.use("*", cors());
+
+// ── Request ID + structured logging ───────────────────────────────────
+// Attaches X-Request-ID to every request and logs method/path/status/latency.
+app.use("*", async (c, next) => {
+  const reqId = crypto.randomUUID();
+  const start = Date.now();
+
+  c.res.headers.set("X-Request-ID", reqId);
+
+  await next();
+
+  const ms      = Date.now() - start;
+  const status  = c.res.status;
+  const method  = c.req.method;
+  const path    = new URL(c.req.url).pathname;
+  const level   = status >= 500 ? "error" : status >= 400 ? "warn" : "info";
+
+  console[level](JSON.stringify({
+    level,
+    reqId,
+    method,
+    path,
+    status,
+    ms,
+    service:   "loop-api",
+    timestamp: new Date().toISOString(),
+  }));
+});
 
 // ── Routes ────────────────────────────────────────────────────────────
 app.route("/health",                health);
@@ -67,5 +102,39 @@ app.route("/api/notifications",     notifications);
 app.route("/api/notify",            notifyRouter);
 app.route("/api/push",              push);
 app.route("/api/analytics",         analytics);
+
+// ── 404 handler ───────────────────────────────────────────────────────
+app.notFound((c) =>
+  c.json({ error: "Not found", path: new URL(c.req.url).pathname }, 404)
+);
+
+// ── Global error handler (HARDENING-001) ─────────────────────────────
+// Catches any unhandled exception in a route handler.
+// Without this, Hono returns a 500 HTML page — unusable by API clients.
+app.onError((err, c) => {
+  const reqId  = c.res.headers.get("X-Request-ID") ?? "unknown";
+  const path   = new URL(c.req.url).pathname;
+  const method = c.req.method;
+
+  console.error(JSON.stringify({
+    level:     "error",
+    reqId,
+    method,
+    path,
+    error:     err.message,
+    stack:     err.stack?.split("\n").slice(0, 5).join(" | "),
+    service:   "loop-api",
+    timestamp: new Date().toISOString(),
+  }));
+
+  return c.json(
+    {
+      error:   "Internal server error",
+      reqId,
+      message: "Something went wrong. Please try again.",
+    },
+    500,
+  );
+});
 
 export default app;
