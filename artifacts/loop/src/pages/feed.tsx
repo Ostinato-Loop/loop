@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { Link, useNavigate } from "react-router-dom";
 import { formatLocation } from "@/lib/regions-data";
 import { followUser } from "@/lib/api/follows";
+import { LiveWaveform } from "@/components/rooms/room-card";
 
 const PTR_THRESHOLD = 72;
 
@@ -718,7 +719,7 @@ function RoomRow({ room, onClick }: { room: ApiRoom; onClick: () => void }) {
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold truncate">{room.title}</p>
         <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+          <LiveWaveform className="text-primary" />
           <span className={cn(
             "text-[11px] transition-colors duration-500",
             updated ? "text-primary font-semibold" : "text-muted-foreground",

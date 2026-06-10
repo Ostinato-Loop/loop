@@ -1,9 +1,55 @@
 // RETENTION-009 (2026-06-10): Live audience count via useLiveRoomCount.
+// RETENTION-015 (2026-06-10): LiveWaveform replaces the static live-dot.
 import { Link } from "react-router-dom";
 import { Users, BadgeCheck, Lock, Mic } from "lucide-react";
 import type { Room } from "@/lib/api/rooms";
 import { cn } from "@/lib/utils";
 import { useLiveRoomCount } from "@/hooks/use-live-room-count";
+
+/**
+ * Animated equalizer bars that replace the static pulsing dot on live rooms.
+ *
+ * Each bar independently oscillates between scaleY(0.18) and scaleY(1.0)
+ * using the `loop-wave` keyframe defined in index.css. Different durations
+ * and delays per bar create an organic, out-of-phase waveform appearance.
+ *
+ * Uses `bg-current` + `origin-bottom` so the bars grow upward and inherit
+ * whatever text-color is set by the parent (text-primary, text-white, etc.).
+ */
+const WAVE_BARS: { h: number; dur: string; delay: string }[] = [
+  { h:  8, dur: '0.55s', delay: '0.00s' },
+  { h: 13, dur: '0.40s', delay: '0.12s' },
+  { h: 10, dur: '0.70s', delay: '0.06s' },
+  { h: 14, dur: '0.50s', delay: '0.20s' },
+  { h:  7, dur: '0.60s', delay: '0.08s' },
+];
+
+export function LiveWaveform({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn("inline-flex items-end gap-[1.5px] shrink-0", className)}
+      aria-label="Live audio"
+      role="img"
+    >
+      {WAVE_BARS.map((b, i) => (
+        <span
+          key={i}
+          className="inline-block w-[2px] rounded-full bg-current origin-bottom"
+          style={{
+            height:                   b.h,
+            animationName:            'loop-wave',
+            animationDuration:        b.dur,
+            animationDelay:           b.delay,
+            animationTimingFunction:  'ease-in-out',
+            animationIterationCount:  'infinite',
+            animationDirection:       'alternate',
+            animationFillMode:        'both',
+          }}
+        />
+      ))}
+    </span>
+  );
+}
 
 const categoryGradient: Record<string, string> = {
   sports:        "from-emerald-500/25 via-teal-500/15 to-transparent",
@@ -50,7 +96,7 @@ export function RoomCard({ room, compact = false }: { room: Room; compact?: bool
           </span>
           {room.is_live && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold uppercase text-primary">
-              <span className="h-1.5 w-1.5 rounded-full bg-primary live-dot" />
+              <LiveWaveform className="text-primary" />
               Live
             </span>
           )}
