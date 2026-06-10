@@ -35,4 +35,16 @@ export interface CloudflareEnv {
   // Provision via: wrangler secret put MESSENGER_WEBHOOK_KEY
   // Same value must be set in the Messenger worker as LOOP_API_WEBHOOK_KEY
   MESSENGER_WEBHOOK_KEY: string;
+
+  // Web Push — VAPID keys (RFC 8292)
+  // Generate once with: npx web-push generate-vapid-keys
+  // Provision via:
+  //   wrangler secret put VAPID_PRIVATE_KEY
+  //   wrangler secret put VAPID_PUBLIC_KEY   (can also be a plain var)
+  //   wrangler secret put VAPID_SUBJECT      (mailto: or https: URI)
+  // The public key must also be set in Loop frontend:
+  //   VITE_VAPID_PUBLIC_KEY=<same value>
+  VAPID_PUBLIC_KEY: string;
+  VAPID_PRIVATE_KEY: string;
+  VAPID_SUBJECT: string;   // e.g. "mailto:push@loop.fm"
 }
