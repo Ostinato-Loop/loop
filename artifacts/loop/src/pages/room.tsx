@@ -17,6 +17,7 @@ import {
   type Room,
 } from "@/lib/api/rooms";
 import { track } from "@/lib/analytics";
+import { authFetch } from "@/lib/api-fetch";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, BadgeCheck, Hand, Mic, MicOff,
@@ -48,6 +49,8 @@ type MessageRow = {
 };
 type FloatingReaction = { id: number; emoji: string; x: number; lane: number };
 type ActivityItem = { id: number; text: string };
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
 const REACTIONS = ["🔥", "👏", "❤️", "🎯", "😂", "💯"];
 const LANES = 5;
@@ -321,6 +324,25 @@ export default function RoomPage() {
   const [handRaised, setHandRaised]       = useState(false);
   const [raisedHandCount, setRaisedHandCount] = useState(0);
   const [entered, setEntered]             = useState(false);
+
+
+  // DISCONNECT-001: Host heartbeat — keeps the room alive while host is present.
+  // Sends every 60s. If 5 minutes pass with no heartbeat, the DO alarm auto-ends the room.
+  useEffect(() => {
+    if (!roomId || !user || !room) return;
+    // Only the host sends heartbeats
+    const myRoleNow = participants.find((p) => p.user_id === user.id)?.role ?? 'listener';
+    if (myRoleNow !== 'host') return;
+
+    const sendHeartbeat = () => {
+      authFetch(`${API_BASE}/api/rooms/${roomId}/heartbeat`, { method: 'POST' })
+        .catch(() => {}); // Non-blocking — network error must never interrupt the host
+    };
+
+    sendHeartbeat(); // Send immediately on mount
+    const interval = setInterval(sendHeartbeat, 60_000);
+    return () => clearInterval(interval);
+  }, [roomId, user?.id, room?.id, participants]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const floatId         = useRef(0);
   const actId           = useRef(0);
