@@ -8,6 +8,7 @@ export interface CloudflareEnv {
   MEDIA: R2Bucket;
   TASK_QUEUE: Queue;
   ROOM_SESSION: DurableObjectNamespace;
+  CLEANUP_COORDINATOR: DurableObjectNamespace;
   AI: Ai;
 
   ENVIRONMENT: "development" | "staging" | "production";
