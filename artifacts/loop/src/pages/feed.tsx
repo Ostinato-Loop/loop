@@ -139,7 +139,7 @@ function WhoToFollow({ refreshKey }: { refreshKey: number }) {
           </span>
         </div>
         <button
-          onClick={() => navigate("/discover")}
+          onClick={() => navigate("/discover?tab=people")}
           className="flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline"
         >
           See all
