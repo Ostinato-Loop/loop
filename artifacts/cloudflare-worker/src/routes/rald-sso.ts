@@ -177,7 +177,11 @@ raldSso.post("/", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { rald_token?: string };
   if (!body.rald_token) return c.json({ error: "rald_token is required" }, 400);
 
-  const rald = await verifyJwt(body.rald_token, c.env.RALD_JWT_SECRET) as RaldPayload | null;
+  // SSO-AUD-FIX-001: Pass null as expectedAud — incoming RALD SSO token is a
+  // cross-system token from profiles.rald.cloud. Its aud claim is set by RALD
+  // (e.g. "sso" or the app_id), not "loop". Enforcing aud:"loop" here breaks SSO.
+  // The Loop-scoped token we re-sign below WILL have aud:"loop".
+  const rald = await verifyJwt(body.rald_token, c.env.RALD_JWT_SECRET, null) as RaldPayload | null;
   if (!rald || !rald.id) return c.json({ error: "Invalid or expired RALD token" }, 401);
 
   const sbUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
