@@ -7,7 +7,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
-import OneSignal from "@onesignal/onesignal-web-sdk";
+import OneSignal from "react-onesignal";
 
 // ── Offline detection banner ──────────────────────────────────────────────
 let offlineBanner: HTMLDivElement | null = null;
