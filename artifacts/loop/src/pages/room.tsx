@@ -213,7 +213,7 @@ function RtcChatPanel({ messages, onSend, onClose }: {
         <input value={draft} onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
           placeholder="Type a message…" maxLength={300} autoFocus
-          className="flex-1 rounded-2xl bg-surface px-3 py-2 text-sm outline-none placeholder:text-muted-foreground" />
+          className="flex-1 rounded-2xl bg-surface px-3 py-2 text-base outline-none placeholder:text-muted-foreground min-h-[44px]" />
         <Button type="button" size="icon" className="h-9 w-9 rounded-full shrink-0" onClick={submit} disabled={!draft.trim()}>
           <Send className="h-4 w-4" />
         </Button>
