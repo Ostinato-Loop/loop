@@ -49,6 +49,7 @@ export default function MePage() {
   const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
   const [signingOut, setSigningOut] = useState(false);
+  const [revokingAll, setRevokingAll] = useState(false);
   const [counts, setCounts] = useState<ProfileCounts>({ followers: 0, following: 0 });
   const notifCount = useNotificationCount();
   const notifBadge = formatBadgeCount(notifCount);
@@ -211,6 +212,44 @@ export default function MePage() {
               <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
             </button>
           ))}
+        </div>
+
+        {/* Account Security — AUTH-RECOVERY-001 */}
+        <h2 className="mt-6 mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Account Security</h2>
+        <div className="rounded-2xl border border-border overflow-hidden divide-y divide-border">
+          {/* Identity on file */}
+          <div className="flex items-center gap-3 px-4 py-3.5">
+            <div className="h-9 w-9 rounded-xl bg-secondary flex items-center justify-center shrink-0">
+              <Shield className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Signed in as</p>
+              <p className="text-xs text-muted-foreground truncate">{user.phone || "—"}</p>
+            </div>
+          </div>
+
+          {/* Sign out of all devices */}
+          <button
+            type="button"
+            disabled={revokingAll}
+            onClick={async () => {
+              setRevokingAll(true);
+              try {
+                await authFetch(`${import.meta.env.VITE_API_BASE_URL ?? ""}/api/auth/sessions`, { method: "DELETE" });
+              } catch { /* non-critical */ }
+              setRevokingAll(false);
+            }}
+            className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/60 transition-colors disabled:opacity-50"
+          >
+            <div className="h-9 w-9 rounded-xl bg-secondary flex items-center justify-center shrink-0">
+              <LogOut className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <div className="min-w-0 flex-1 text-left">
+              <p className="text-sm font-semibold">{revokingAll ? "Signing out…" : "Sign out everywhere"}</p>
+              <p className="text-xs text-muted-foreground">Remove all active sessions on other devices</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+          </button>
         </div>
 
         {/* Sign out */}
