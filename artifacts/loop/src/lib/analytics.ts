@@ -21,6 +21,7 @@ export type LoopEvent =
   | "login"
   | "signup"
   | "onboarding_complete"
+  | "username_claimed"
   | "room_create"
   | "room_join"
   | "room_leave"

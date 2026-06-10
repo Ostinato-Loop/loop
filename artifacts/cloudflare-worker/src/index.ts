@@ -46,6 +46,8 @@ import { analytics } from "./routes/analytics.js";
 import { notifications, notifyRouter } from "./routes/notifications.js";
 import { friendRequests } from "./routes/friend-requests.js";
 import { push } from "./routes/push.js";
+import { retention } from "./routes/retention.js";
+import { metrics } from "./routes/metrics.js";
 import { RoomSession } from "./durable-objects/room-session.js";
 
 export { RoomSession };
@@ -120,6 +122,8 @@ app.route("/api/notifications",     notifications);
 app.route("/api/notify",            notifyRouter);
 app.route("/api/push",              push);
 app.route("/api/analytics",         analytics);
+app.route("/api/retention",         retention);
+app.route("/api/metrics",           metrics);
 
 // ── 404 handler ───────────────────────────────────────────────────────
 app.notFound((c) =>

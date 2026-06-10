@@ -378,6 +378,67 @@ function DebriefCard({
   );
 }
 
+/* ── RETENTION-020: Friends Active Now strip ──────────────────────────── */
+type FriendActive = {
+  friend: { username: string | null; display_name: string | null; avatar_url: string | null; is_verified: boolean } | null;
+  room:   { id: string; title: string; is_live: boolean } | null;
+};
+
+function FriendsActiveNow({ refreshKey }: { refreshKey: number }) {
+  const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
+  const navigate = useNavigate();
+  const [friends, setFriends] = useState<FriendActive[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    authFetch(`${API_BASE}/api/retention/feed?limit=8`)
+      .then(r => r.ok ? r.json() as Promise<{ friends_active: FriendActive[] }> : Promise.reject())
+      .then(d => { if (active) setFriends((d.friends_active ?? []).filter(f => f.room?.is_live)); })
+      .catch(() => { if (active) setFriends([]); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [API_BASE, refreshKey]);
+
+  if (!loading && friends.length === 0) return null;
+
+  const getName = (f: FriendActive["friend"]) => f?.display_name ?? f?.username ?? "?";
+  const initials2 = (f: FriendActive["friend"]) => { const n = getName(f); return n.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase(); };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5 px-0.5">
+        <span className="h-1.5 w-1.5 rounded-full bg-primary live-dot inline-block" />
+        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Friends live now</span>
+      </div>
+      <div className="flex gap-3 overflow-x-auto scrollbar-none pb-1 -mx-4 px-4">
+        {loading
+          ? [1, 2].map(i => <div key={i} className="shrink-0 w-44 h-24 rounded-2xl bg-surface border border-border animate-pulse" />)
+          : friends.map((f, i) => (
+            <button
+              key={i}
+              onClick={() => f.room && navigate(`/rooms/${f.room.id}`)}
+              className="shrink-0 w-44 rounded-2xl border border-primary/20 bg-surface p-3 text-left space-y-2 active:scale-95 transition-transform"
+            >
+              <div className="flex items-center gap-2">
+                <div className="h-7 w-7 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center text-primary-foreground font-bold text-[10px] shrink-0">
+                  {initials2(f.friend)}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold truncate">{getName(f.friend)}</p>
+                  <p className="text-[10px] text-primary font-medium">Live now</p>
+                </div>
+              </div>
+              <p className="text-[11px] text-foreground/80 line-clamp-2 leading-tight">{f.room?.title ?? "In a room"}</p>
+            </button>
+          ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── Feed page ────────────────────────────────────────────────────────── */
 
 export default function FeedPage() {
@@ -503,6 +564,8 @@ export default function FeedPage() {
 
         {/* Who to Follow — only shown on "For you" tab; refreshes with pull-to-refresh */}
         {activeCategory === "" && <WhoToFollow refreshKey={refreshKey} />}
+        {/* RETENTION-020: Friends Active Now — who in your network is live */}
+        {activeCategory === "" && <FriendsActiveNow refreshKey={refreshKey} />}
         {activeCategory === "" && <PushPromptBanner />}
 
         <CategoryScroller active={activeCategory} onChange={setActiveCategory} />
