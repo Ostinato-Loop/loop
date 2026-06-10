@@ -1,24 +1,46 @@
 // Loop — Feed Page (Regional Edition)
 // FOLLOWS-001 (2026-06-09): Added "Who to Follow" strip between location banner and categories.
+// RETENTION-006 (2026-06-10): Four gap-fills in the "Who to Follow" strip:
+//   1. sessionStorage persistence — dismissed cards don't re-appear on refresh/navigation
+//   2. refreshKey prop — pull-to-refresh re-fetches suggestions
+//   3. FeedHeader bell upgraded to useNotificationCount (count pill, 60s poll)
+//   4. "See all →" link to /discover in the strip header
 // Regional identity: location badge in header, regional rooms prioritised.
 // LILCKY STUDIO LIMITED
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Search, Bell, Radio, BadgeCheck, MapPin, RefreshCw, UserPlus, X } from "lucide-react";
+import { Search, Bell, Radio, BadgeCheck, MapPin, RefreshCw, UserPlus, X, ChevronRight, Users } from "lucide-react";
 import { listRooms, type Room as ApiRoom, type RoomCategory } from "@/lib/api/rooms";
 import { useAuth } from "@/hooks/use-auth";
 import { useLoop } from "@/lib/loop-store";
 import { authFetch } from "@/lib/api-fetch";
 import { PushPromptBanner } from "@/hooks/use-push";
+import { useNotificationCount, formatBadgeCount } from "@/hooks/use-notification-count";
+import { useLiveRoomCount } from "@/hooks/use-live-room-count";
 import { LoopMark } from "@/components/loop-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { FollowButton } from "@/components/follow-button";
 import { cn } from "@/lib/utils";
 import { Link, useNavigate } from "react-router-dom";
 import { formatLocation } from "@/lib/regions-data";
-import { fetchUnreadCount } from "@/lib/api/notifications";
+import { followUser } from "@/lib/api/follows";
+import { LiveWaveform } from "@/components/rooms/room-card";
 
 const PTR_THRESHOLD = 72;
+
+/** sessionStorage key for dismissed suggestion IDs — persists across navigation. */
+const DISMISSED_KEY = "loop:suggestions:dismissed";
+
+function loadDismissed(): Set<string> {
+  try {
+    const raw = sessionStorage.getItem(DISMISSED_KEY);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch { return new Set(); }
+}
+function saveDismissed(ids: Set<string>) {
+  try { sessionStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids])); }
+  catch { /* quota exceeded — ignore */ }
+}
 
 const CATEGORIES = [
   { label: "For you",    value: "" },
@@ -65,27 +87,53 @@ type SuggestedUser = {
   bio:            string | null;
 };
 
-function WhoToFollow() {
+/**
+ * WhoToFollow — horizontally scrollable creator suggestion strip.
+ *
+ * RETENTION-006:
+ *   - Receives refreshKey so pull-to-refresh re-fetches suggestions.
+ *   - Dismissed IDs are persisted in sessionStorage so cards don't
+ *     re-appear on navigation or soft refresh within the session.
+ *   - "See all →" link to /discover for deeper exploration.
+ */
+function WhoToFollow({ refreshKey }: { refreshKey: number }) {
   const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
-  const [users,     setUsers]     = useState<SuggestedUser[]>([]);
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
-  const [loading,   setLoading]   = useState(true);
+  const navigate = useNavigate();
+  const [users,   setUsers]   = useState<SuggestedUser[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  // Persist dismissals across renders/navigation within the session
+  const [dismissed, setDismissed] = useState<Set<string>>(loadDismissed);
+
+  const dismiss = useCallback((id: string) => {
+    setDismissed(prev => {
+      const next = new Set([...prev, id]);
+      saveDismissed(next);
+      return next;
+    });
+  }, []);
+
+  // Re-fetch when pull-to-refresh fires (refreshKey increments)
   useEffect(() => {
+    let active = true;
+    setLoading(true);
     authFetch(`${API_BASE}/api/follows/suggestions`)
       .then(r => r.ok ? r.json() as Promise<{ suggestions: SuggestedUser[] }> : Promise.reject())
-      .then(d => setUsers(d.suggestions ?? []))
-      .catch(() => setUsers([]))
-      .finally(() => setLoading(false));
-  }, [API_BASE]);
+      .then(d => { if (active) setUsers(d.suggestions ?? []); })
+      .catch(() => { if (active) setUsers([]); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  // refreshKey is intentional — re-fetch on pull-to-refresh
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [API_BASE, refreshKey]);
 
   const visible = users.filter(u => !dismissed.has(u.id));
 
-  // Don't render the section if loading is done and there are no suggestions
   if (!loading && visible.length === 0) return null;
 
   return (
     <div className="space-y-2">
+      {/* Section header with "See all" link */}
       <div className="flex items-center justify-between px-0.5">
         <div className="flex items-center gap-1.5">
           <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
@@ -93,6 +141,13 @@ function WhoToFollow() {
             Who to follow
           </span>
         </div>
+        <button
+          onClick={() => navigate("/discover?tab=people")}
+          className="flex items-center gap-0.5 text-[11px] font-semibold text-primary hover:underline"
+        >
+          See all
+          <ChevronRight className="h-3 w-3" />
+        </button>
       </div>
 
       <div className="flex gap-3 overflow-x-auto scrollbar-none pb-1 -mx-4 px-4">
@@ -104,7 +159,7 @@ function WhoToFollow() {
               <SuggestionCard
                 key={u.id}
                 user={u}
-                onDismiss={() => setDismissed(prev => new Set([...prev, u.id]))}
+                onDismiss={() => dismiss(u.id)}
               />
             ))}
       </div>
@@ -127,7 +182,7 @@ function SuggestionCard({
       {/* Dismiss */}
       <button
         onClick={onDismiss}
-        aria-label="Dismiss"
+        aria-label={`Dismiss ${name}`}
         className="absolute top-2 right-2 h-5 w-5 rounded-full bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
       >
         <X className="h-3 w-3" />
@@ -157,13 +212,18 @@ function SuggestionCard({
             <BadgeCheck className="h-3 w-3 text-primary shrink-0" />
           )}
         </div>
-        {user.follower_count > 0 && (
+        {user.follower_count > 0 ? (
           <p className="text-[10px] text-muted-foreground mt-0.5">
             {user.follower_count.toLocaleString()} followers
           </p>
-        )}
-        {user.is_creator && !user.is_verified && (
+        ) : user.is_creator ? (
           <p className="text-[10px] text-primary/70 mt-0.5">Creator</p>
+        ) : null}
+        {/* Bio snippet — max 2 lines */}
+        {user.bio && (
+          <p className="text-[10px] text-muted-foreground/70 mt-0.5 line-clamp-2 leading-snug">
+            {user.bio}
+          </p>
         )}
       </div>
 
@@ -174,12 +234,146 @@ function SuggestionCard({
         size="sm"
         onFollowChange={(following) => {
           if (following) {
-            // Slide out after a brief delay so user sees "Following" state
+            // Brief delay so user sees "Following" state before card slides out
             setTimeout(onDismiss, 1200);
           }
         }}
         className="w-full justify-center"
       />
+    </div>
+  );
+}
+
+/* ── RETENTION-013: Post-room debrief card ───────────────────────────── */
+type DebriefSpeaker = {
+  user_id:      string;
+  display_name: string | null;
+  username:     string | null;
+  avatar_url:   string | null;
+};
+type DebriefPayload = {
+  roomId:    string;
+  roomTitle: string;
+  speakers:  DebriefSpeaker[];
+};
+
+function loadDebrief(): DebriefPayload | null {
+  try {
+    const raw = sessionStorage.getItem("loop:debrief");
+    return raw ? (JSON.parse(raw) as DebriefPayload) : null;
+  } catch { return null; }
+}
+function clearDebrief() {
+  try { sessionStorage.removeItem("loop:debrief"); } catch { /* quota */ }
+}
+
+function DebriefCard({
+  payload,
+  onDismiss,
+}: {
+  payload: DebriefPayload;
+  onDismiss: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const getName = (s: DebriefSpeaker) => s.display_name ?? s.username ?? "?";
+
+  // "Tunde, Amara & 2 others" style label
+  const speakerLabel = (() => {
+    const names = payload.speakers.map(getName);
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return `${names[0]} & ${names[1]}`;
+    if (names.length === 3) return `${names[0]}, ${names[1]} & ${names[2]}`;
+    return `${names[0]}, ${names[1]} & ${names.length - 2} others`;
+  })();
+
+  const followAll = async () => {
+    setBusy(true);
+    await Promise.allSettled(payload.speakers.map(s => followUser(s.user_id)));
+    setBusy(false);
+    setDone(true);
+    setTimeout(onDismiss, 1500);
+  };
+
+  const n = payload.speakers.length;
+  const btnLabel = done
+    ? `Following ${n} speaker${n !== 1 ? "s" : ""} ✓`
+    : busy
+      ? "Following…"
+      : `Follow ${n === 1 ? "speaker" : `all ${n} speakers`}`;
+
+  return (
+    <div className="relative rounded-2xl border border-primary/20 bg-surface overflow-hidden">
+      {/* Accent bar */}
+      <div className="h-0.5 w-full bg-gradient-to-r from-primary via-primary/50 to-transparent" />
+
+      <div className="p-4">
+        {/* Header: icon + room title + dismiss */}
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 shrink-0">
+              <Radio className="h-3.5 w-3.5 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-primary leading-none mb-0.5">
+                Just left
+              </p>
+              <p className="text-sm font-bold leading-snug line-clamp-1">{payload.roomTitle}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onDismiss}
+            aria-label="Dismiss"
+            className="ml-2 h-6 w-6 rounded-full bg-secondary flex items-center justify-center text-muted-foreground transition-colors shrink-0 active:scale-90"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+
+        {/* Overlapping avatar stack + speaker names */}
+        <div className="flex items-center gap-2.5 mb-3">
+          <div className="flex -space-x-2 shrink-0">
+            {payload.speakers.slice(0, 4).map((s, i) => (
+              <div
+                key={s.user_id}
+                style={{ zIndex: payload.speakers.length - i }}
+                className={cn(
+                  "relative h-8 w-8 rounded-full ring-2 ring-background overflow-hidden",
+                  "flex items-center justify-center text-[10px] font-bold text-white bg-gradient-to-br",
+                  avatarColor(s.user_id),
+                )}
+              >
+                {s.avatar_url
+                  ? <img src={s.avatar_url} alt={getName(s)} className="absolute inset-0 h-full w-full object-cover" />
+                  : initials(getName(s))
+                }
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground leading-snug flex-1 min-w-0">
+            <span className="font-semibold text-foreground">{speakerLabel}</span>
+            {" "}spoke in this room
+          </p>
+        </div>
+
+        {/* Follow all CTA */}
+        <button
+          type="button"
+          disabled={busy || done}
+          onClick={() => void followAll()}
+          className={cn(
+            "w-full h-9 rounded-xl text-xs font-bold transition-all active:scale-[0.98]",
+            done
+              ? "bg-secondary text-muted-foreground border border-border cursor-default"
+              : "bg-primary text-primary-foreground neon-glow",
+            busy && "opacity-60 cursor-wait",
+          )}
+        >
+          {btnLabel}
+        </button>
+      </div>
     </div>
   );
 }
@@ -213,6 +407,16 @@ export default function FeedPage() {
   })();
 
   const location = profile ? formatLocation(profile) : "";
+
+  // RETENTION-013: post-room debrief card
+  const [debrief, setDebrief] = useState<DebriefPayload | null>(() => loadDebrief());
+  const dismissDebrief = useCallback(() => { clearDebrief(); setDebrief(null); }, []);
+  // Auto-dismiss after 30 seconds so it never feels sticky
+  useEffect(() => {
+    if (!debrief) return;
+    const t = setTimeout(dismissDebrief, 30_000);
+    return () => clearTimeout(t);
+  }, [debrief, dismissDebrief]);
 
   // ── Pull-to-refresh ─────────────────────────────────────────────────
   useEffect(() => {
@@ -293,8 +497,12 @@ export default function FeedPage() {
           </Link>
         )}
 
-        {/* Who to Follow — only shown on "For you" tab */}
-        {activeCategory === "" && <WhoToFollow />}
+        {/* RETENTION-013: Post-room debrief card — shown once after leaving a room.
+             Reads from sessionStorage, auto-dismisses after 30s.              */}
+        {debrief && <DebriefCard payload={debrief} onDismiss={dismissDebrief} />}
+
+        {/* Who to Follow — only shown on "For you" tab; refreshes with pull-to-refresh */}
+        {activeCategory === "" && <WhoToFollow refreshKey={refreshKey} />}
         {activeCategory === "" && <PushPromptBanner />}
 
         <CategoryScroller active={activeCategory} onChange={setActiveCategory} />
@@ -304,10 +512,17 @@ export default function FeedPage() {
   );
 }
 
+/**
+ * FeedHeader — sticky top bar with Loop logo, location, search, and notification bell.
+ *
+ * RETENTION-006: Upgraded bell badge from a one-shot dot to a count pill using
+ * useNotificationCount (60s polling, consistent with bottom-nav badge).
+ */
 function FeedHeader({ location }: { location: string }) {
   const navigate = useNavigate();
-  const [unread, setUnread] = useState(0);
-  useEffect(() => { fetchUnreadCount().then(setUnread).catch(() => {}); }, []);
+  const unread   = useNotificationCount();
+  const badge    = formatBadgeCount(unread);
+
   return (
     <header className="sticky top-0 z-30 bg-background/85 backdrop-blur-xl border-b border-border pt-safe-top">
       <div className="px-4 pt-3 pb-2 flex items-center justify-between">
@@ -333,14 +548,17 @@ function FeedHeader({ location }: { location: string }) {
           >
             <Search className="h-4 w-4" />
           </button>
+          {/* Bell — count pill badge + 60s polling via useNotificationCount */}
           <button
             onClick={() => navigate("/notifications")}
             className="h-9 w-9 rounded-full bg-secondary flex items-center justify-center relative active:scale-95 transition-transform"
-            aria-label="Notifications"
+            aria-label={badge ? `${unread} unread notifications` : "Notifications"}
           >
             <Bell className="h-4 w-4" />
-            {unread > 0 && (
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary border border-background" />
+            {badge && (
+              <span className="absolute top-1 right-1 flex items-center justify-center min-w-[14px] h-3.5 px-0.5 rounded-full bg-primary text-primary-foreground text-[8px] font-bold leading-none border border-background">
+                {badge}
+              </span>
             )}
           </button>
         </div>
@@ -479,6 +697,9 @@ function LiveStrip({
   );
 }
 
+// RETENTION-009: useLiveRoomCount wires each row to real-time audience_count
+// updates via postgres_changes, so the listener count ticks up/down within
+// ~200ms without any polling.
 function RoomRow({ room, onClick }: { room: ApiRoom; onClick: () => void }) {
   const CATEGORY_EMOJI: Record<string, string> = {
     community:"🏘️", news:"📡", commentary:"🎙️", radio:"📻",
@@ -486,6 +707,7 @@ function RoomRow({ room, onClick }: { room: ApiRoom; onClick: () => void }) {
   };
   const emoji = CATEGORY_EMOJI[room.category] ?? "🔊";
   const host  = (room as ApiRoom & { host?: { display_name?: string | null } }).host;
+  const { count, updated } = useLiveRoomCount(room.id, room.audience_count);
 
   return (
     <button
@@ -497,8 +719,13 @@ function RoomRow({ room, onClick }: { room: ApiRoom; onClick: () => void }) {
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold truncate">{room.title}</p>
         <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-          <span className="text-[11px] text-muted-foreground">{room.audience_count} listening</span>
+          <LiveWaveform className="text-primary" />
+          <span className={cn(
+            "text-[11px] transition-colors duration-500",
+            updated ? "text-primary font-semibold" : "text-muted-foreground",
+          )}>
+            {count.toLocaleString()} listening
+          </span>
           {host?.display_name && (
             <>
               <span className="text-muted-foreground/40">·</span>
@@ -507,7 +734,14 @@ function RoomRow({ room, onClick }: { room: ApiRoom; onClick: () => void }) {
           )}
         </div>
       </div>
-      <BadgeCheck className="h-4 w-4 text-muted-foreground/30 shrink-0" />
+      {/* Live listener count — flashes primary when someone joins */}
+      <div className={cn(
+        "flex items-center gap-1 text-xs font-medium shrink-0 transition-colors duration-500",
+        updated ? "text-primary" : "text-muted-foreground/50",
+      )}>
+        <Users className="h-3.5 w-3.5" />
+        {count.toLocaleString()}
+      </div>
     </button>
   );
 }

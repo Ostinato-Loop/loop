@@ -272,4 +272,11 @@
   .neon-glow {
     box-shadow: 0 0 20px rgba(0, 255, 136, 0.4), 0 0 40px rgba(0, 255, 136, 0.15);
   }
+
+  /* ── RETENTION-015: Live audio waveform bars ────────────── */
+  /* Used by LiveWaveform component in room-card.tsx + feed.tsx */
+  @keyframes loop-wave {
+    from { transform: scaleY(0.18); }
+    to   { transform: scaleY(1.00); }
+  }
 }

@@ -27,6 +27,8 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useLiveKitRoom, type ChatMessage } from "@/hooks/use-livekit-room";
+import { useFollow } from "@/lib/api/follows";
+import { updateStreak } from "@/hooks/use-room-streak";
 
 /* ─── types ──────────────────────────────────────────────────────────── */
 type ParticipantRow = {
@@ -403,6 +405,109 @@ function ParticipantSheet({ p, onClose }: { p: ParticipantRow; onClose: () => vo
   );
 }
 
+/* ─── RETENTION-012: "You might know" discovery sheet ───────────────── */
+/**
+ * Per-participant card inside the sheet.
+ * useFollow is mounted here so status checks are isolated per user.
+ */
+function YouMightKnowCard({ p }: { p: ParticipantRow }) {
+  const { following, loading, toggle } = useFollow(p.user_id);
+  const name = p.profiles?.display_name ?? p.profiles?.username ?? "Someone";
+
+  return (
+    <div className="flex items-center gap-3 py-3">
+      {/* Avatar */}
+      <div className={cn(
+        "relative h-10 w-10 rounded-full shrink-0 flex items-center justify-center overflow-hidden",
+        "bg-gradient-to-br text-xs font-bold text-white",
+        avatarColor(p.user_id),
+      )}>
+        {p.profiles?.avatar_url
+          ? <img src={p.profiles.avatar_url} alt={name} className="absolute inset-0 h-full w-full object-cover" />
+          : initials(name)
+        }
+      </div>
+
+      {/* Name + badge */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1">
+          <p className="text-sm font-semibold truncate">{name}</p>
+          {p.profiles?.is_verified && (
+            <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-primary" />
+          )}
+        </div>
+        {p.profiles?.username && (
+          <p className="text-[11px] text-muted-foreground truncate">@{p.profiles.username}</p>
+        )}
+      </div>
+
+      {/* Follow button */}
+      <button
+        type="button"
+        disabled={loading || following}
+        onClick={() => void toggle()}
+        className={cn(
+          "shrink-0 h-7 rounded-full px-3 text-[11px] font-bold transition-all active:scale-95",
+          following
+            ? "bg-secondary text-muted-foreground border border-border cursor-default"
+            : "bg-primary text-primary-foreground neon-glow",
+          loading && "opacity-50 cursor-wait",
+        )}
+      >
+        {following ? "Following ✓" : "Follow"}
+      </button>
+    </div>
+  );
+}
+
+function YouMightKnowSheet({
+  candidates,
+  onDismiss,
+}: {
+  candidates: ParticipantRow[];
+  onDismiss: () => void;
+}) {
+  return (
+    <>
+      {/* Scrim */}
+      <div
+        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+        onClick={onDismiss}
+      />
+      {/* Sheet */}
+      <div className="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-md rounded-t-3xl border-t border-border bg-background px-5 pb-8 pt-4 animate-in slide-in-from-bottom duration-300">
+        {/* Handle */}
+        <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-border" />
+
+        {/* Heading */}
+        <div className="mb-1 flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 shrink-0">
+            <Users className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-bold">People you might know</p>
+            <p className="text-[11px] text-muted-foreground leading-tight">Also in this room right now</p>
+          </div>
+        </div>
+
+        {/* Candidate list */}
+        <div className="divide-y divide-border/60">
+          {candidates.map(p => <YouMightKnowCard key={p.user_id} p={p} />)}
+        </div>
+
+        {/* Dismiss */}
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="mt-4 w-full h-11 rounded-2xl bg-secondary text-sm font-semibold text-muted-foreground transition-colors active:bg-surface-elev"
+        >
+          Not now
+        </button>
+      </div>
+    </>
+  );
+}
+
 /* ─── main component ─────────────────────────────────────────────────── */
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -425,6 +530,16 @@ export default function RoomPage() {
   const [raisedHandCount, setRaisedHandCount] = useState(0);
   const [entered, setEntered]             = useState(false);
   const [rtcChatOpen, setRtcChatOpen]     = useState(false);
+  // RETENTION-010: room-ended overlay for listeners
+  const [roomEnded, setRoomEnded]         = useState(false);
+  const [endCountdown, setEndCountdown]   = useState(10);
+
+  // RETENTION-012: "You might know" discovery prompt
+  const [showYouMightKnow, setShowYouMightKnow] = useState(false);
+  const [ymkCandidates, setYmkCandidates]       = useState<ParticipantRow[]>([]);
+  // Always-fresh ref so the 60s timer closure reads current participants, not stale capture
+  const participantsRef = useRef<ParticipantRow[]>([]);
+  useEffect(() => { participantsRef.current = participants; }, [participants]);
 
 
   // DISCONNECT-001: Host heartbeat — keeps the room alive while host is present.
@@ -472,6 +587,7 @@ export default function RoomPage() {
         prevParticipants.current = p as ParticipantRow[];
         setMessages(m as MessageRow[]);
         await joinRoom(roomId, user.id);
+        updateStreak(user.id); // RETENTION-014: record daily room activity for streak tracking
         track("room_join", { room_id: roomId, category: r?.category ?? null, is_live: r?.is_live ?? false });
         setTimeout(() => setEntered(true), 80);
       } catch (e) { toast.error(e instanceof Error ? e.message : "Could not load room"); }
@@ -514,6 +630,18 @@ export default function RoomPage() {
           prevParticipants.current = next as ParticipantRow[];
           setParticipants(next as ParticipantRow[]);
         })
+      // RETENTION-010: detect room-ended event for listeners.
+      // When the host ends the room, the server sets is_live=false on the rooms row.
+      // Listeners receive this UPDATE within ~200ms and see the overlay instead of
+      // a silent freeze. The host is already navigated away by endRoom() → navigate('/').
+      .on("postgres_changes",
+        { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${roomId}` },
+        (payload) => {
+          const updated = payload.new as { is_live: boolean };
+          if (!updated.is_live && myRole !== "host") {
+            setRoomEnded(true);
+          }
+        })
       .subscribe();
 
     const evtCh = supabase.channel(`room:${roomId}:events`)
@@ -532,6 +660,34 @@ export default function RoomPage() {
   }, [roomId, user, navigate, pushActivity]);
 
   useEffect(() => { msgEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
+
+  // RETENTION-010: auto-navigate to home after countdown when room ends
+  useEffect(() => {
+    if (!roomEnded) return;
+    if (endCountdown <= 0) { navigate("/"); return; }
+    const t = setTimeout(() => setEndCountdown(n => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [roomEnded, endCountdown, navigate]);
+
+  // RETENTION-012: fire "You might know" sheet 60s after the user enters.
+  // Only for listeners/speakers (hosts are focused on running the room).
+  // sessionStorage key prevents re-showing after dismiss within the same session.
+  useEffect(() => {
+    if (!entered || !user || !roomId) return;
+    const storageKey = `loop:ymk:${roomId}`;
+    if (sessionStorage.getItem(storageKey)) return;
+    const t = setTimeout(() => {
+      const myRoleNow = participantsRef.current.find(p => p.user_id === user.id)?.role ?? "listener";
+      if (myRoleNow === "host") return;
+      const candidates = participantsRef.current
+        .filter(p => p.user_id !== user.id && p.role !== "host")
+        .slice(0, 3);
+      if (candidates.length === 0) return;
+      setYmkCandidates(candidates);
+      setShowYouMightKnow(true);
+    }, 60_000);
+    return () => clearTimeout(t);
+  }, [entered, user, roomId]);
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -573,6 +729,23 @@ export default function RoomPage() {
     try {
       await endRoomApi(roomId);
       track('room_end', { room_id: roomId });
+
+      // RETENTION-017: "You missed this" — notify followers when a room ends with
+      // a large audience (threshold enforced server-side: 500+). Fire-and-forget:
+      // failure here should never block the host from being navigated home.
+      if (room) {
+        authFetch(`${API_BASE}/api/notify/room-ended`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            room_id:        roomId,
+            title:          room.title,
+            audience_count: room.audience_count ?? 0,
+          }),
+        }).catch((e: unknown) =>
+          console.warn("[room] room-ended notify skipped:", e instanceof Error ? e.message : e)
+        );
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not end room');
       return;
@@ -583,6 +756,32 @@ export default function RoomPage() {
   const leaveRoom_ = async () => {
     if (!roomId || !user) return;
     track("room_leave", { room_id: roomId });
+
+    // RETENTION-013: write debrief payload to sessionStorage before leaving so
+    // the feed can surface a post-room card offering to follow the speakers.
+    // Uses participantsRef.current (always-fresh) not the render-time `speakers`
+    // const, which is declared later in the same scope.
+    if (room) {
+      try {
+        const speakerSnap = participantsRef.current
+          .filter(p => ["host", "speaker", "moderator"].includes(p.role) && p.user_id !== user.id)
+          .slice(0, 4)
+          .map(p => ({
+            user_id:      p.user_id,
+            display_name: p.profiles?.display_name ?? null,
+            username:     p.profiles?.username ?? null,
+            avatar_url:   p.profiles?.avatar_url ?? null,
+          }));
+        if (speakerSnap.length > 0) {
+          sessionStorage.setItem("loop:debrief", JSON.stringify({
+            roomId,
+            roomTitle: room.title,
+            speakers:  speakerSnap,
+          }));
+        }
+      } catch { /* sessionStorage quota exceeded — skip silently */ }
+    }
+
     try { await leaveRoom(roomId, user.id); } catch { /* ignore */ }
     navigate("/");
   };
@@ -617,6 +816,56 @@ export default function RoomPage() {
   return (
     <div className={cn("relative mx-auto flex min-h-screen w-full max-w-md flex-col bg-background transition-opacity duration-500", entered ? "opacity-100" : "opacity-0")}>
       <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent" />
+
+      {/* ── RETENTION-010: Room ended overlay ───────────────────────
+           Shown to listeners/speakers when is_live flips false via
+           Supabase realtime. Hosts are navigated away by endRoom().   */}
+      {roomEnded && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/95 backdrop-blur-xl px-6 animate-in fade-in duration-300">
+          {/* Icon */}
+          <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-secondary border border-border">
+            <MicOff className="h-9 w-9 text-muted-foreground" />
+          </div>
+
+          {/* Copy */}
+          <h2 className="font-display text-2xl font-extrabold text-center leading-tight mb-2">
+            This room has ended
+          </h2>
+          {room?.title && (
+            <p className="text-sm text-muted-foreground text-center mb-1 font-medium">
+              "{room.title}"
+            </p>
+          )}
+          {room?.host?.display_name && (
+            <p className="text-xs text-muted-foreground/70 text-center mb-8">
+              hosted by {room.host.display_name}
+            </p>
+          )}
+
+          {/* Countdown */}
+          <p className="text-xs text-muted-foreground text-center mb-6">
+            Returning to home in{" "}
+            <span className="font-bold tabular-nums text-foreground">{endCountdown}s</span>
+            …
+          </p>
+
+          {/* CTAs */}
+          <div className="flex flex-col gap-3 w-full max-w-xs">
+            <button
+              onClick={() => navigate("/discover")}
+              className="w-full h-12 rounded-2xl bg-primary text-primary-foreground text-sm font-bold neon-glow active:scale-[0.98] transition-transform"
+            >
+              Find another room
+            </button>
+            <button
+              onClick={() => navigate("/")}
+              className="w-full h-12 rounded-2xl bg-secondary text-foreground text-sm font-semibold border border-border active:scale-[0.98] transition-transform"
+            >
+              Go home
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Header ─────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/80 px-4 pb-3 pt-safe-top backdrop-blur-xl">
@@ -817,6 +1066,20 @@ export default function RoomPage() {
       {/* ── Participant Sheet ───────────────────────────────────────── */}
       {selectedParticipant && (
         <ParticipantSheet p={selectedParticipant} onClose={() => setSelectedParticipant(null)} />
+      )}
+
+      {/* ── RETENTION-012: "You might know" discovery sheet ─────────────
+           Slides up 60s after a listener/speaker enters the room.
+           Shows up to 3 fellow attendees with inline Follow buttons.
+           Dismiss saves to sessionStorage so it won't re-appear this session. */}
+      {showYouMightKnow && ymkCandidates.length > 0 && (
+        <YouMightKnowSheet
+          candidates={ymkCandidates}
+          onDismiss={() => {
+            setShowYouMightKnow(false);
+            if (roomId) sessionStorage.setItem(`loop:ymk:${roomId}`, "1");
+          }}
+        />
       )}
     </div>
   );

@@ -12,6 +12,11 @@
  *   - These types were inserted into the DB via 009_push_subscriptions.sql but
  *     were excluded from the query, making them invisible to clients.
  *
+ * RETENTION-003 (2026-06-10):
+ *   - Added room_ended to NOTIFICATION_TYPES.
+ *     The /api/push/notify-room-ended endpoint inserts room_ended rows when
+ *     a host ends their room, notifying all followers in their inbox.
+ *
  * LILCKY STUDIO LIMITED
  */
 
@@ -32,6 +37,7 @@ const NOTIFICATION_TYPES = [
   "friend_request",
   "connection_accepted",
   "room_live",
+  "room_ended",
   "new_follower",
 ] as const;
 

@@ -15,6 +15,8 @@
  *
  * FOLLOWS-001 (2026-06-09): Added GET /suggestions endpoint.
  * PUSH-001    (2026-06-10): Fire new-follower push notification via OneSignal on POST follow.
+ * RETENTION-002 (2026-06-10): Dual delivery for new_follower — OneSignal push +
+ *   Supabase notifications table insert so the in-app inbox shows the notification.
  * LILCKY STUDIO LIMITED · 2026-06-07
  */
 
@@ -56,10 +58,12 @@ follows.post("/:userId", requireAuth(), async (c) => {
     return c.json({ error: "Could not follow user" }, 500);
   }
 
-  // ── New-follower push notification (PUSH-001) ──────────────────────
-  // Non-blocking: fetch follower profile then notify the followed user.
+  // ── New-follower dual notification (PUSH-001 + RETENTION-002) ─────────
+  // Non-blocking: fetch follower profile, then:
+  //   1. Send OneSignal push (device notification)
+  //   2. Insert a notifications row (in-app inbox)
   // We use c.executionCtx.waitUntil so the Worker doesn't terminate
-  // before the notification completes, without delaying the response.
+  // before notifications complete, without delaying the response.
   if (c.env.ONESIGNAL_APP_ID && c.env.ONESIGNAL_REST_API_KEY) {
     c.executionCtx.waitUntil(
       notifyNewFollower({
@@ -71,12 +75,31 @@ follows.post("/:userId", requireAuth(), async (c) => {
         followedUserId: targetId,
       })
     );
+  } else {
+    // No OneSignal — still insert DB notification (in-app only)
+    c.executionCtx.waitUntil(
+      insertFollowerNotification({
+        supabaseUrl:    c.env.SUPABASE_URL,
+        supabaseKey:    c.env.SUPABASE_SERVICE_ROLE_KEY,
+        followerId:     user.id,
+        followedUserId: targetId,
+        followerName:   "Someone",
+      })
+    );
   }
 
   return c.json({ ok: true, following: true }, 201);
 });
 
-/** Fetch follower profile name, then dispatch OneSignal notification to the followed user. */
+/**
+ * Fetch follower profile name, then:
+ * 1. Dispatch OneSignal push notification to the followed user.
+ * 2. Insert a Supabase notifications row for the in-app inbox.
+ *
+ * RETENTION-002: Both deliveries must happen so that:
+ *   - Device push fires even when the app is closed
+ *   - In-app inbox shows the notification when the user opens the app
+ */
 async function notifyNewFollower(opts: {
   supabaseUrl:    string;
   supabaseKey:    string;
@@ -99,18 +122,66 @@ async function notifyNewFollower(opts: {
 
     const name = profile?.display_name || profile?.username || "Someone";
 
+    // 1. OneSignal push (device notification)
     await sendOneSignalNotification(opts.appId, opts.restApiKey, {
       externalIds: [opts.followedUserId],
       headings:    { en: "New follower" },
       contents:    { en: `${name} started following you` },
       webUrl:      `/profile/${opts.followerId}`,
       icon:        "/icons/icon-192.png",
-      // collapse_id: one notification per follower, not a flood if they re-follow
       tag:         `new-follower-${opts.followerId}`,
       data:        { type: "new_follower", followerId: opts.followerId },
     });
+
+    // 2. Supabase notifications insert (in-app inbox)
+    await insertFollowerNotification({
+      supabaseUrl:    opts.supabaseUrl,
+      supabaseKey:    opts.supabaseKey,
+      followerId:     opts.followerId,
+      followedUserId: opts.followedUserId,
+      followerName:   name,
+    });
   } catch (err) {
     console.error("[follows] new-follower notification failed:", err);
+  }
+}
+
+/** Insert a new_follower row into the Supabase notifications table. */
+async function insertFollowerNotification(opts: {
+  supabaseUrl:    string;
+  supabaseKey:    string;
+  followerId:     string;
+  followedUserId: string;
+  followerName:   string;
+}): Promise<void> {
+  try {
+    const res = await fetch(`${opts.supabaseUrl}/rest/v1/notifications`, {
+      method:  "POST",
+      headers: {
+        apikey:          opts.supabaseKey,
+        Authorization:   `Bearer ${opts.supabaseKey}`,
+        "Content-Type":  "application/json",
+        Accept:          "application/json",
+        Prefer:          "return=minimal",
+      },
+      body: JSON.stringify({
+        recipient_id:  opts.followedUserId,
+        actor_id:      opts.followerId,
+        type:          "new_follower",
+        resource_id:   opts.followerId,
+        resource_type: "profile",
+        data: { follower_name: opts.followerName },
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      // 409 = duplicate (already notified for this follower) — silently ignore
+      if (res.status !== 409) {
+        console.error("[follows] notifications insert failed:", res.status, text.slice(0, 200));
+      }
+    }
+  } catch (err) {
+    console.error("[follows] notifications insert error:", err);
   }
 }
 

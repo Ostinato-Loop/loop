@@ -10,6 +10,10 @@ import { getRecommendations } from "../services/recommendations.js";
 // properties that changed in v2.49.8 and attempts browser APIs at init time.
 // All DB access uses direct REST fetch with explicit headers.
 
+// RETENTION-004 (2026-06-10): When a host ends a room, call
+// POST /api/push/notify-room-ended (internal) to insert in-app notifications
+// for all followers. Uses MESSENGER_WEBHOOK_KEY as the internal shared secret.
+
 const rooms = new Hono<{ Bindings: CloudflareEnv; Variables: { user: AuthUser } }>();
 
 /**
@@ -35,11 +39,6 @@ rooms.get("/", async (c) => {
   const category    = c.req.query("category");
   const communityId = c.req.query("community_id");
 
-  // FIX: use select=* to avoid "column does not exist" errors when the
-  // production database is on an earlier migration than the codebase expects.
-  // community_id and host_id were added in later migrations; the FK join
-  // host:profiles!rooms_host_id_fkey was also removed for the same reason.
-  // Tighten the select once all migrations have been applied in production.
   const select = "*";
 
   const qs = new URLSearchParams({
@@ -71,7 +70,6 @@ rooms.get("/", async (c) => {
   if (!resp.ok) {
     const body = await resp.text().catch(() => "");
     console.error("[rooms] list error:", resp.status, body.slice(0, 300));
-    // Include _debug so operator can diagnose table/FK issues without CF logs
     return c.json({ error: "Failed to fetch rooms", _debug: body.slice(0, 300) }, 500);
   }
 
@@ -126,6 +124,7 @@ rooms.post("/:roomId/queue-summary", requireAuth(), async (c) => {
  *   3. Deletes all room_participants rows.
  *   4. If LiveKit credentials are present, deletes the LiveKit room (kicks all audio).
  *   5. Queues an AI summary task.
+ *   6. RETENTION-004: Notifies all followers via in-app notification (room_ended).
  *
  * Returns 200 { ok, roomId } on success.
  * Returns 403 if caller is not the host.
@@ -139,9 +138,9 @@ rooms.delete('/:roomId', requireAuth(), async (c) => {
   const headers = { apikey: sbKey, Authorization: `Bearer ${sbKey}`, 'Content-Type': 'application/json', Accept: 'application/json' };
 
   // 1. Fetch room and verify host
-  const roomResp = await fetch(`${sbUrl}/rest/v1/rooms?id=eq.${roomId}&select=id,host_id,is_live&limit=1`, { headers });
+  const roomResp = await fetch(`${sbUrl}/rest/v1/rooms?id=eq.${roomId}&select=id,host_id,is_live,title&limit=1`, { headers });
   if (!roomResp.ok) return c.json({ error: 'Failed to fetch room' }, 500);
-  const rooms_ = await roomResp.json() as { id: string; host_id: string; is_live: boolean }[];
+  const rooms_ = await roomResp.json() as { id: string; host_id: string; is_live: boolean; title: string }[];
   if (!rooms_.length) return c.json({ error: 'Room not found' }, 404);
   const room = rooms_[0];
   if (room.host_id !== user.id) return c.json({ error: 'Only the host can end this room' }, 403);
@@ -157,7 +156,7 @@ rooms.delete('/:roomId', requireAuth(), async (c) => {
     return c.json({ error: 'Failed to end room' }, 500);
   }
 
-  // 3. Remove all participants (fire-and-forget — don't block response)
+  // 3. Remove all participants (fire-and-forget)
   const cleanupPromise = fetch(
     `${sbUrl}/rest/v1/room_participants?room_id=eq.${roomId}`,
     { method: 'DELETE', headers },
@@ -189,6 +188,27 @@ rooms.delete('/:roomId', requireAuth(), async (c) => {
   // 5. Queue AI summary
   const summaryPromise = c.env.TASK_QUEUE.send({ type: 'ai_summary', roomId, requestedBy: user.id, timestamp: Date.now() })
     .catch((err) => console.warn('[rooms/delete] summary queue failed:', err));
+
+  // 6. RETENTION-004: Notify followers that the room ended (in-app inbox)
+  //    Fire-and-forget via waitUntil — never blocks the response.
+  //    Uses the internal /api/push/notify-room-ended route (server-to-server).
+  const roomTitle = room.title ?? "A room";
+  if (c.env.MESSENGER_WEBHOOK_KEY) {
+    c.executionCtx.waitUntil(
+      fetch(new URL('/api/push/notify-room-ended', `https://${new URL(c.req.url).host}`).toString(), {
+        method:  'POST',
+        headers: {
+          Authorization:  `Bearer ${c.env.MESSENGER_WEBHOOK_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          hostId:    user.id,
+          roomId,
+          roomTitle,
+        }),
+      }).catch(err => console.warn('[rooms/delete] room-ended notify failed (non-fatal):', err))
+    );
+  }
 
   await Promise.all([cleanupPromise, livekitPromise, summaryPromise]);
 

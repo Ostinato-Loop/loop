@@ -7,14 +7,22 @@
  *   → User can skip — they'll see all rooms.
  *   → After saving, profile.state_id is persisted and they see "Near <state>".
  *
+ * RETENTION-007 (2026-06-10):
+ *   1. ?tab= deep-link support — feed "See all →" lands on People tab directly.
+ *   2. Loop-native creator suggestions in People tab (no RALD required).
+ *   3. Dead Search button wired to /search.
+ *
  * LILCKY STUDIO LIMITED
  */
 
 import { useEffect, useState, useRef } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
-import { authedSupabase } from "@/integrations/supabase/client";
+import { supabase, authedSupabase } from "@/integrations/supabase/client";
+import { authFetch } from "@/lib/api-fetch";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoomCard } from "@/components/rooms/room-card";
+import { FollowButton } from "@/components/follow-button";
 import { listRooms, type Room, type RoomCategory } from "@/lib/api/rooms";
 import {
   searchRelatedPeople, getPeopleSuggestions, hasRaldIdentity,
@@ -22,7 +30,7 @@ import {
 } from "@/lib/api/people";
 import {
   Search, Sparkles, Radio, Globe2, TrendingUp,
-  Mic, Calendar, Briefcase, Newspaper, ChevronRight,
+  Calendar, Briefcase, Newspaper, ChevronRight,
   Users, BadgeCheck, Check, UserPlus, MapPin, Loader2, ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -270,6 +278,96 @@ function PersonCard({ userId, username, displayName, avatarUrl, isVerified, rald
   );
 }
 
+/* ── Loop-native creator suggestions (no RALD required) ─────────────── */
+type LoopSuggestion = {
+  id:             string;
+  username:       string | null;
+  display_name:   string | null;
+  avatar_url:     string | null;
+  is_verified:    boolean;
+  is_creator:     boolean;
+  follower_count: number;
+  bio:            string | null;
+};
+
+function LoopCreatorSuggestions() {
+  const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+  const [users,   setUsers]   = useState<LoopSuggestion[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    authFetch(`${API_BASE}/api/follows/suggestions`)
+      .then(r => r.ok ? r.json() as Promise<{ suggestions: LoopSuggestion[] }> : Promise.reject())
+      .then(d => { if (active) setUsers(d.suggestions ?? []); })
+      .catch(() => { if (active) setUsers([]); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [API_BASE]);
+
+  if (!loading && users.length === 0) return null;
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center gap-1.5">
+        <UserPlus className="h-3.5 w-3.5 text-primary" />
+        <h2 className="font-display text-xs font-bold uppercase tracking-wider">Creators to follow</h2>
+      </div>
+      {loading ? (
+        <div className="space-y-2">
+          {[0, 1, 2, 3].map(i => <div key={i} className="h-16 animate-pulse rounded-2xl bg-surface" />)}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {users.map(u => {
+            const name = u.display_name ?? u.username ?? "Creator";
+            const color = avatarColor(u.id);
+            return (
+              <div
+                key={u.id}
+                className="flex items-center gap-3 rounded-2xl border border-border bg-surface/60 px-4 py-3"
+              >
+                {/* Avatar */}
+                <div className="shrink-0">
+                  {u.avatar_url ? (
+                    <img src={u.avatar_url} alt={name} className="h-11 w-11 rounded-full object-cover" />
+                  ) : (
+                    <div className={cn(
+                      "h-11 w-11 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-sm font-bold",
+                      color,
+                    )}>
+                      {initials(name)}
+                    </div>
+                  )}
+                </div>
+                {/* Info */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1">
+                    <p className="truncate text-sm font-semibold leading-tight">{name}</p>
+                    {u.is_verified && <BadgeCheck className="h-3.5 w-3.5 text-primary shrink-0" />}
+                  </div>
+                  {u.follower_count > 0 ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      {u.follower_count.toLocaleString()} followers
+                    </p>
+                  ) : u.is_creator ? (
+                    <p className="text-[11px] text-primary/70">Creator</p>
+                  ) : null}
+                  {u.bio && (
+                    <p className="text-[10px] text-muted-foreground/70 mt-0.5 line-clamp-1">{u.bio}</p>
+                  )}
+                </div>
+                {/* Follow */}
+                <FollowButton userId={u.id} initialFollowing={false} size="sm" />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* ── People tab ─────────────────────────────────────────────────────── */
 function PeopleTab() {
   const [query, setQuery]             = useState("");
@@ -304,21 +402,12 @@ function PeopleTab() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [query]);
 
-  if (!hasIdentity) {
-    return (
-      <div className="rounded-2xl border border-dashed border-border bg-surface/50 p-8 text-center space-y-2">
-        <Users className="h-8 w-8 text-muted-foreground/40 mx-auto" />
-        <p className="text-sm font-semibold">Connect your RALD identity</p>
-        <p className="text-xs text-muted-foreground">Sign in via profiles.rald.cloud to discover people you know.</p>
-      </div>
-    );
-  }
-
   const showSearch  = query.trim().length > 0;
   const showResults = showSearch && !searching;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      {/* Search bar — always visible */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
         <input
@@ -332,7 +421,10 @@ function PeopleTab() {
           <button type="button" onClick={() => setQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">✕</button>
         )}
       </div>
+
       {error && <p className="text-xs text-destructive">{error}</p>}
+
+      {/* Search results */}
       {showSearch && (
         <section>
           <h2 className="font-display text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">
@@ -354,39 +446,147 @@ function PeopleTab() {
           ) : null}
         </section>
       )}
+
+      {/* Suggestions — shown when not actively searching */}
       {!showSearch && (
-        <section>
-          <div className="mb-3 flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-primary" />
-            <h2 className="font-display text-xs font-bold uppercase tracking-wider">People you may know</h2>
-          </div>
-          {loadingSugg ? <PeopleSkeleton /> : !suggestions || suggestions.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-2">
-              <Users className="h-8 w-8 text-muted-foreground/40 mx-auto" />
-              <p className="text-sm font-semibold">No suggestions yet</p>
-              <p className="text-xs text-muted-foreground">Join rooms and connect with more people to grow your network.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {suggestions.map((p) => (
-                <PersonCard key={p.user_id} userId={p.user_id} username={p.username} displayName={p.display_name} avatarUrl={p.avatar_url} isVerified={p.is_verified} raldId={p.rald_id} score={p.mutual_score} scoreLabel={p.mutual_score > 0 ? `Mutual score ${p.mutual_score}` : undefined} />
-              ))}
-            </div>
+        <>
+          {/* Loop-native creator suggestions — always shown, no RALD needed */}
+          <LoopCreatorSuggestions />
+
+          {/* RALD social graph suggestions — only for users with RALD identity */}
+          {hasIdentity && (
+            <section>
+              <div className="mb-3 flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                <h2 className="font-display text-xs font-bold uppercase tracking-wider">People you may know</h2>
+              </div>
+              {loadingSugg ? <PeopleSkeleton /> : !suggestions || suggestions.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border p-8 text-center space-y-2">
+                  <Users className="h-8 w-8 text-muted-foreground/40 mx-auto" />
+                  <p className="text-sm font-semibold">No suggestions yet</p>
+                  <p className="text-xs text-muted-foreground">Join rooms and connect with more people to grow your network.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {suggestions.map((p) => (
+                    <PersonCard key={p.user_id} userId={p.user_id} username={p.username} displayName={p.display_name} avatarUrl={p.avatar_url} isVerified={p.is_verified} raldId={p.rald_id} score={p.mutual_score} scoreLabel={p.mutual_score > 0 ? `Mutual score ${p.mutual_score}` : undefined} />
+                  ))}
+                </div>
+              )}
+            </section>
           )}
-        </section>
+        </>
       )}
     </div>
   );
 }
 
+/* ── RETENTION-016: Top rooms this week ─────────────────────────────── */
+/**
+ * Ranked list of the 5 rooms with the highest audience_count created in the
+ * last 7 days. Gives returning users a social-proof signal: "X people were
+ * in this room" primes them to click in and drives re-engagement.
+ *
+ * Design:
+ *   · Medals 🥇🥈🥉 for ranks 1–3, muted "#4" "#5" for the rest
+ *   · Proportional audience bar under each title (relative to the #1 room)
+ *   · Tapping any row navigates to /room/:id — works for ended rooms too
+ */
+function TopRoomsThisWeek({ rooms }: { rooms: Room[] }) {
+  if (rooms.length === 0) return null;
+
+  const MEDALS = ["🥇", "🥈", "🥉"];
+  const max = Math.max(...rooms.map((r) => r.audience_count ?? 0), 1);
+
+  const categoryEmoji: Record<string, string> = {
+    community:   "🏘️",
+    news:        "📡",
+    commentary:  "🎙️",
+    radio:       "📻",
+    "dj-session":"🎧",
+    education:   "📚",
+    business:    "💼",
+    general:     "🎵",
+  };
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center gap-1.5">
+        <TrendingUp className="h-4 w-4 text-primary" />
+        <h2 className="font-display text-sm font-bold uppercase tracking-wider">Top this week</h2>
+      </div>
+
+      <div className="space-y-2">
+        {rooms.map((room, i) => {
+          const hostName = room.host?.display_name ?? room.host?.username ?? "Unknown host";
+          const pct      = Math.max(4, Math.round(((room.audience_count ?? 0) / max) * 100));
+
+          return (
+            <Link
+              key={room.id}
+              to={`/room/${room.id}`}
+              className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-3 transition-all hover:border-primary/30 hover:bg-primary/5 active:scale-[0.98]"
+            >
+              {/* rank badge */}
+              <div className="w-7 shrink-0 text-center">
+                {i < 3 ? (
+                  <span className="text-lg leading-none select-none">{MEDALS[i]}</span>
+                ) : (
+                  <span className="text-xs font-black tabular-nums text-muted-foreground">#{i + 1}</span>
+                )}
+              </div>
+
+              {/* category icon */}
+              <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 text-base select-none">
+                {categoryEmoji[room.category] ?? "🎙️"}
+              </div>
+
+              {/* text + bar */}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold leading-tight truncate">{room.title}</p>
+                <p className="text-[11px] text-muted-foreground truncate mt-0.5">{hostName}</p>
+                {/* proportional audience bar — anchored to the #1 room */}
+                <div className="mt-1.5 h-1 rounded-full bg-border overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-primary/60 transition-all duration-700"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* count */}
+              <div className="shrink-0 text-right ml-1">
+                <p className="text-sm font-bold tabular-nums">
+                  {(room.audience_count ?? 0).toLocaleString()}
+                </p>
+                <p className="text-[10px] text-muted-foreground">listeners</p>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 /* ── Main page ──────────────────────────────────────────────────────── */
+const VALID_TABS: FeedTab[] = ["all", "live", "near", "trending", "events", "people"];
+
 export default function DiscoverPage() {
   const { user, loading, profile, refreshProfile } = useAuth();
+  const navigate                        = useNavigate();
+  const [searchParams]                  = useSearchParams();
   const [rooms, setRooms]               = useState<Room[] | null>(null);
-  const [feedTab, setFeedTab]           = useState<FeedTab>("all");
-  const [category, setCategory]         = useState<RoomCategory | "all">("all");
+  const [topRooms, setTopRooms]         = useState<Room[] | null>(null);
   const [error, setError]               = useState<string | null>(null);
   const [locationSkipped, setLocationSkipped] = useState(false);
+
+  // ?tab= deep-link — lets feed's "See all →" drop into the People tab directly
+  const tabParam = searchParams.get("tab") as FeedTab | null;
+  const [feedTab, setFeedTab] = useState<FeedTab>(
+    tabParam && VALID_TABS.includes(tabParam) ? tabParam : "all",
+  );
+  const [category, setCategory] = useState<RoomCategory | "all">("all");
 
   // Auth + onboarding gate now handled by ProtectedRoute in App.tsx
 
@@ -400,6 +600,24 @@ export default function DiscoverPage() {
         setError(e.message);
       });
   }, [category, user, feedTab]);
+
+  // RETENTION-016: Top rooms this week — separate query (includes ended rooms,
+  // ordered by audience_count DESC, filtered to last 7 days).
+  useEffect(() => {
+    if (!user) return;
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    supabase
+      .from("rooms")
+      .select("*, host:profiles!rooms_host_id_fkey(username, display_name, avatar_url, is_verified)")
+      .gte("created_at", sevenDaysAgo)
+      .gt("audience_count", 0)
+      .order("audience_count", { ascending: false })
+      .limit(5)
+      .then(({ data, error: err }) => {
+        if (err) { console.error("[discover] topRooms:", err.message); return; }
+        setTopRooms((data as Room[]) ?? []);
+      });
+  }, [user]);
 
   /* ── Save location (Progressive Trust) ── */
   const saveLocation = async (stateId: string) => {
@@ -437,6 +655,7 @@ export default function DiscoverPage() {
           </div>
           <button
             type="button"
+            onClick={() => navigate("/search")}
             className="grid h-10 w-10 place-items-center rounded-full border border-border bg-surface text-foreground active:scale-95 transition-transform"
             aria-label="Search"
           >
@@ -519,6 +738,11 @@ export default function DiscoverPage() {
               {liveRooms.slice(0, 6).map((r) => <RoomCard key={r.id} room={r} compact />)}
             </div>
           </section>
+        )}
+
+        {/* ── Top rooms this week ── */}
+        {(feedTab === "all" || feedTab === "trending") && topRooms && topRooms.length > 0 && (
+          <TopRoomsThisWeek rooms={topRooms} />
         )}
 
         {/* ── Full feed (All + Trending) ── */}
