@@ -31,7 +31,7 @@ import {
 import {
   Search, Sparkles, Radio, Globe2, TrendingUp,
   Calendar, Briefcase, Newspaper, ChevronRight,
-  Users, BadgeCheck, Check, UserPlus, MapPin, Loader2, ChevronDown,
+  Users, BadgeCheck, Check, UserPlus, MapPin, Loader2, ChevronDown, Mic,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFollow } from "@/hooks/use-follow";
