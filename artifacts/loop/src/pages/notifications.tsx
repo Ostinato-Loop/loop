@@ -9,6 +9,10 @@
  *   - Regional nudge if profile has no country set
  *   - Trust/profile completion prompts
  *
+ * RETENTION-008 (2026-06-10): Real-time inbox — Supabase postgres_changes INSERT
+ * listener calls load() within ~200ms of a new notification row, so the list
+ * refreshes without a manual pull-to-refresh or page reload.
+ *
  * LILCKY STUDIO LIMITED
  */
 
@@ -21,7 +25,7 @@ import {
   ArrowRight, UserPlus, ChevronLeft, MapPin, Radio,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { authedSupabase } from "@/integrations/supabase/client";
+import { authedSupabase, supabase, getLoopToken } from "@/integrations/supabase/client";
 import { fetchNotifications, markNotificationsRead, type ApiNotif } from "@/lib/api/notifications";
 
 
@@ -371,6 +375,33 @@ export default function NotificationsPage() {
   }, [user, profile]);
 
   useEffect(() => { load(); }, [load]);
+
+  // ── Real-time: refresh inbox on new notification INSERT ─────────────────
+  // Supabase fires this within ~200ms of a server-side insert so the user
+  // sees the new notification appear without a manual pull-to-refresh.
+  // We call load() (full re-fetch + mark-read) because we're already on this
+  // page, so the updated list + read-clear is exactly the right behaviour.
+  useEffect(() => {
+    if (!user?.id) return;
+
+    supabase.realtime.setAuth(getLoopToken() ?? "");
+
+    const ch = supabase
+      .channel(`notif-inbox:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event:  "INSERT",
+          schema: "public",
+          table:  "notifications",
+          filter: `recipient_id=eq.${user.id}`,
+        },
+        () => { load(); },
+      )
+      .subscribe();
+
+    return () => { void supabase.removeChannel(ch); };
+  }, [user?.id, load]);
 
   return (
     <AppShell>
