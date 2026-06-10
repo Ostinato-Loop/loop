@@ -8,7 +8,15 @@
  *   - Issuer: https://loop-api.rald.cloud
  *   - Audience: "loop"
  *
- * See AUDIT/jwt-claim-standard.md for the full specification.
+ * SSO-AUD-FIX-001 (2026-06-10):
+ *   verifyJwt now accepts an optional `expectedAud` parameter.
+ *   Pass null to skip the audience check — required for verifying
+ *   incoming RALD SSO tokens, which are cross-system tokens that
+ *   may carry aud: "sso", aud: undefined, or aud: <app_id> set by
+ *   profiles.rald.cloud. Enforcing aud: "loop" on a token being
+ *   PRESENTED to Loop is incorrect — the aud check only makes sense
+ *   for Loop-internal tokens (requireAuth middleware path).
+ *   Default is still JWT_AUDIENCE for all internal usage.
  *
  * FIX (2026-06-07): signJwt now uses TextEncoder-based base64url encoding
  *   to correctly handle Unicode payloads (African names, Arabic, etc.).
@@ -67,10 +75,16 @@ export async function signJwt(
  * Verify a JWT with HMAC-SHA256.
  * Returns the decoded payload on success; null on invalid signature,
  * expiry, or any parse failure.
+ *
+ * @param expectedAud - Expected audience claim. Pass null to skip the
+ *   audience check entirely (required for incoming cross-system SSO tokens
+ *   from profiles.rald.cloud — see SSO-AUD-FIX-001). Defaults to
+ *   JWT_AUDIENCE ("loop") for all internal token verification.
  */
 export async function verifyJwt(
   token: string,
   secret: string,
+  expectedAud: string | null = JWT_AUDIENCE,
 ): Promise<Record<string, unknown> | null> {
   try {
     const [header, body, sig] = token.split(".");
@@ -89,8 +103,8 @@ export async function verifyJwt(
     if (!valid) return null;
     const payload = JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/"))) as Record<string, unknown>;
     if (typeof payload.exp === "number" && payload.exp < Math.floor(Date.now() / 1000)) return null;
-    // B4 — validate audience claim to prevent cross-service token reuse
-    if (payload.aud !== JWT_AUDIENCE) return null;
+    // Audience check — skipped when expectedAud is null (cross-system SSO exchange)
+    if (expectedAud !== null && payload.aud !== expectedAud) return null;
     return payload;
   } catch {
     return null;
