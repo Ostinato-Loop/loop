@@ -1,22 +1,20 @@
-// Loop — LiveKit Audio Hook
-// Manages LiveKit connection lifecycle, mic mute state, and speaking indicators.
+// Loop — LiveKit Audio Hook (PTT + Data-Channel Chat)
+// Merges loop-core's PTT and data-channel chat into loop's production-grade connection.
 //
-// Graceful degradation:
-//   - If VITE_LIVEKIT_URL is not set → UI-only mode (local mute state only)
-//   - If token fetch fails → audioState = "error", UI remains functional
-//   - If LiveKit disconnects → reconnect handled automatically by the SDK
+// Production invariants kept from loop:
+//   COOKIE-001 (2026-06-10): fetchLiveKitToken uses authFetch (HttpOnly cookie + Bearer).
+//   TOKEN-REFRESH-001 (2026-06-10): tokenProvider passed to lk.connect() for seamless refresh.
+//   Graceful degradation: no VITE_LIVEKIT_URL → UI-only mode, no error shown.
 //
-// COOKIE-001 FIX (2026-06-10): fetchLiveKitToken now uses authFetch.
-//   Prior version used localStorage.getItem("loop_token") — removed in COOKIE-001.
-//   Audio was silently broken for all users since that migration.
-//
-// TOKEN-REFRESH-001 (2026-06-10): Pass tokenProvider to lk.connect().
-//   LiveKit SDK v2.x calls tokenProvider() automatically before the token
-//   expires (~90% of TTL). This eliminates the 4-hour hard disconnect.
-//   No additional timers needed — the SDK handles the refresh lifecycle.
+// Added from loop-core:
+//   PTT-001: Push-to-talk via pub.mute()/unmute(). Listeners get requestToSpeak flow.
+//   CHAT-001: Data-channel chat via room.localParticipant.publishData() + DataReceived event.
 //
 // Usage:
-//   const { muted, speakingIds, toggleMic, audioState } = useLiveKitRoom(roomId, userId, enabled);
+//   const { muted, speakingIds, toggleMic, audioState,
+//           pttMode, isPTTActive, startPTT, endPTT, togglePttMode,
+//           messages, unreadCount, sendMessage, markChatRead, markChatClosed,
+//         } = useLiveKitRoom(roomId, userId, enabled);
 // LILCKY STUDIO LIMITED
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -25,12 +23,42 @@ import { fetchLiveKitToken, createLiveKitTokenProvider, LIVEKIT_URL } from "@/li
 
 export type AudioState = "idle" | "connecting" | "connected" | "error";
 
+export interface ChatMessage {
+  id: string;
+  from: string;
+  text: string;
+  ts: number;
+  isLocal: boolean;
+}
+
+interface ChatPayload {
+  type: "chat";
+  id: string;
+  from: string;
+  text: string;
+  ts: number;
+}
+
+const CHAT_TOPIC = "loop-chat";
+
 export type UseLiveKitRoomResult = {
   audioState: AudioState;
   audioError: string | null;
   muted: boolean;
   speakingIds: Set<string>;
   toggleMic: () => Promise<void>;
+  // PTT-001
+  pttMode: boolean;
+  isPTTActive: boolean;
+  startPTT: () => Promise<void>;
+  endPTT: () => Promise<void>;
+  togglePttMode: () => void;
+  // CHAT-001
+  messages: ChatMessage[];
+  unreadCount: number;
+  sendMessage: (text: string) => Promise<void>;
+  markChatRead: () => void;
+  markChatClosed: () => void;
 };
 
 export function useLiveKitRoom(
@@ -38,14 +66,20 @@ export function useLiveKitRoom(
   userId: string | undefined,
   enabled: boolean,
 ): UseLiveKitRoomResult {
-  const lkRef = useRef<LiveKitRoom | null>(null);
-  const [audioState, setAudioState] = useState<AudioState>("idle");
-  const [audioError, setAudioError] = useState<string | null>(null);
-  const [muted, setMuted] = useState(true); // start muted — user opts into speaking
+  const lkRef        = useRef<LiveKitRoom | null>(null);
+  const pttActiveRef = useRef(false);
+  const chatOpenRef  = useRef(false);
+
+  const [audioState,  setAudioState]  = useState<AudioState>("idle");
+  const [audioError,  setAudioError]  = useState<string | null>(null);
+  const [muted,       setMuted]       = useState(true);
   const [speakingIds, setSpeakingIds] = useState<Set<string>>(new Set());
+  const [pttMode,     setPttMode]     = useState(false);
+  const [isPTTActive, setIsPTTActive] = useState(false);
+  const [messages,    setMessages]    = useState<ChatMessage[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    // UI-only mode: no LIVEKIT_URL configured yet
     if (!LIVEKIT_URL || !enabled || !roomId || !userId) return;
 
     const lk = new LiveKitRoom({
@@ -77,32 +111,47 @@ export function useLiveKitRoom(
     lk.on(RoomEvent.Disconnected, () => {
       setAudioState("idle");
       setSpeakingIds(new Set());
+      setIsPTTActive(false);
     });
     lk.on(RoomEvent.ActiveSpeakersChanged, refreshSpeakers);
     lk.on(RoomEvent.ConnectionStateChanged, (state) => {
       if (state === "reconnecting") setAudioState("connecting");
     });
-    // Auto-attach audio tracks from remote participants
     lk.on(RoomEvent.TrackSubscribed, (track) => {
       if (track.kind === Track.Kind.Audio) track.attach();
     });
 
+    // CHAT-001: Receive data-channel messages
+    lk.on(RoomEvent.DataReceived, (payload: Uint8Array) => {
+      try {
+        const raw = new TextDecoder().decode(payload);
+        const msg = JSON.parse(raw) as ChatPayload;
+        if (msg.type !== "chat") return;
+        const incoming: ChatMessage = {
+          id:      msg.id,
+          from:    msg.from,
+          text:    msg.text,
+          ts:      msg.ts,
+          isLocal: false,
+        };
+        setMessages((prev) => [...prev, incoming]);
+        setUnreadCount((prev) => chatOpenRef.current ? 0 : prev + 1);
+      } catch { /* malformed payload — ignore */ }
+    });
+
     void (async () => {
       try {
-        // TOKEN-REFRESH-001: Fetch initial token, then pass tokenProvider so the
-        // SDK refreshes automatically before expiry. No manual timer needed.
         const token         = await fetchLiveKitToken(roomId, userId);
         const tokenProvider = createLiveKitTokenProvider(roomId, userId);
 
-        await lk.connect(LIVEKIT_URL, token, {
-          // SDK calls tokenProvider() at ~90% of TTL elapsed — seamless refresh
-          tokenProvider,
-        });
+        await lk.connect(LIVEKIT_URL, token, { tokenProvider });
 
-        // Join muted — privacy-first
-        await lk.localParticipant.setMicrophoneEnabled(false);
+        // Join muted — privacy-first. Track stays published so PTT can unmute quickly.
+        await lk.localParticipant.setMicrophoneEnabled(true);
+        const pub = Array.from(lk.localParticipant.audioTrackPublications.values())[0];
+        if (pub) await pub.mute();
+        setMuted(true);
 
-        // Attach any tracks already published before we joined
         lk.remoteParticipants.forEach((p) =>
           p.audioTrackPublications.forEach((pub) => {
             if (pub.track) pub.track.attach();
@@ -110,14 +159,11 @@ export function useLiveKitRoom(
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Audio connection failed";
-
-        // LiveKit not configured — degrade silently (no error shown to user)
         if (msg === "__livekit_not_configured__") {
           setAudioState("idle");
           lkRef.current = null;
           return;
         }
-
         setAudioError(msg);
         setAudioState("error");
         lkRef.current = null;
@@ -127,29 +173,137 @@ export function useLiveKitRoom(
     return () => {
       lk.removeAllListeners();
       void lk.disconnect();
-      lkRef.current = null;
+      lkRef.current  = null;
+      pttActiveRef.current = false;
       setAudioState("idle");
       setSpeakingIds(new Set());
+      setIsPTTActive(false);
     };
   }, [enabled, roomId, userId]);
 
-  const toggleMic = useCallback(async () => {
-    const lk   = lkRef.current;
-    const next = !muted;
-    setMuted(next);
+  // ── Open-mic toggle ────────────────────────────────────────────────────── //
 
+  const toggleMic = useCallback(async () => {
+    const lk = lkRef.current;
     if (!lk || lk.state !== "connected") {
-      // UI-only mode or not yet connected — just track local state
+      setMuted((m) => !m);
       return;
     }
-    try {
-      // next = false → user will be unmuted → enable mic
-      // next = true  → user will be muted   → disable mic
-      await lk.localParticipant.setMicrophoneEnabled(!next);
-    } catch {
-      setMuted(!next); // revert on error
+    const pub = Array.from(lk.localParticipant.audioTrackPublications.values())[0];
+    if (!pub) {
+      // Track not published yet — publish and unmute
+      try {
+        await lk.localParticipant.setMicrophoneEnabled(true);
+        setMuted(false);
+      } catch { /* mic denied */ }
+      return;
     }
-  }, [muted]);
+    if (pub.isMuted) {
+      await pub.unmute();
+      setMuted(false);
+    } else {
+      await pub.mute();
+      setMuted(true);
+    }
+  }, []);
 
-  return { audioState, audioError, muted, speakingIds, toggleMic };
+  // ── PTT-001 ────────────────────────────────────────────────────────────── //
+
+  const startPTT = useCallback(async () => {
+    if (pttActiveRef.current) return;
+    pttActiveRef.current = true;
+    setIsPTTActive(true);
+    const lk = lkRef.current;
+    if (!lk || lk.state !== "connected") return;
+    const local = lk.localParticipant;
+    const pub   = Array.from(local.audioTrackPublications.values())[0];
+    if (!pub) {
+      try {
+        await local.setMicrophoneEnabled(true);
+        setMuted(false);
+      } catch {
+        pttActiveRef.current = false;
+        setIsPTTActive(false);
+      }
+      return;
+    }
+    if (pub.isMuted) {
+      await pub.unmute();
+      setMuted(false);
+    }
+  }, []);
+
+  const endPTT = useCallback(async () => {
+    if (!pttActiveRef.current) return;
+    pttActiveRef.current = false;
+    setIsPTTActive(false);
+    const lk = lkRef.current;
+    if (!lk || lk.state !== "connected") return;
+    const pub = Array.from(lk.localParticipant.audioTrackPublications.values())[0];
+    if (pub && !pub.isMuted) {
+      await pub.mute();
+      setMuted(true);
+    }
+  }, []);
+
+  const togglePttMode = useCallback(() => {
+    setPttMode((prev) => {
+      const next = !prev;
+      // Switching to open-mic: unmute if track is published
+      if (!next) {
+        const lk = lkRef.current;
+        if (lk && lk.state === "connected") {
+          const pub = Array.from(lk.localParticipant.audioTrackPublications.values())[0];
+          if (pub?.isMuted) {
+            pub.unmute().then(() => setMuted(false)).catch(() => {});
+          }
+        }
+      }
+      // Switching to PTT: mute if open
+      if (next) {
+        const lk = lkRef.current;
+        if (lk && lk.state === "connected") {
+          const pub = Array.from(lk.localParticipant.audioTrackPublications.values())[0];
+          if (pub && !pub.isMuted) {
+            pub.mute().then(() => setMuted(true)).catch(() => {});
+          }
+        }
+        pttActiveRef.current = false;
+        setIsPTTActive(false);
+      }
+      return next;
+    });
+  }, []);
+
+  // ── CHAT-001 ───────────────────────────────────────────────────────────── //
+
+  const sendMessage = useCallback(async (text: string) => {
+    const lk = lkRef.current;
+    if (!lk || !text.trim()) return;
+    const payload: ChatPayload = {
+      type: "chat",
+      id:   `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      from: userId ?? "unknown",
+      text: text.trim(),
+      ts:   Date.now(),
+    };
+    const bytes = new TextEncoder().encode(JSON.stringify(payload));
+    await lk.localParticipant.publishData(bytes, { reliable: true, topic: CHAT_TOPIC });
+    setMessages((prev) => [...prev, { ...payload, isLocal: true }]);
+  }, [userId]);
+
+  const markChatRead = useCallback(() => {
+    chatOpenRef.current = true;
+    setUnreadCount(0);
+  }, []);
+
+  const markChatClosed = useCallback(() => {
+    chatOpenRef.current = false;
+  }, []);
+
+  return {
+    audioState, audioError, muted, speakingIds, toggleMic,
+    pttMode, isPTTActive, startPTT, endPTT, togglePttMode,
+    messages, unreadCount, sendMessage, markChatRead, markChatClosed,
+  };
 }
