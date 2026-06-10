@@ -11,7 +11,9 @@
  *  GET    /api/follows/status/:userId   — am I following this user? (auth required)
  *  GET    /api/follows/me/following     — paginated list of users I follow (auth required)
  *  GET    /api/follows/me/followers     — paginated list of my followers (auth required)
+ *  GET    /api/follows/suggestions      — "who to follow" recommendations (auth required)
  *
+ * FOLLOWS-001 (2026-06-09): Added GET /suggestions endpoint.
  * LILCKY STUDIO LIMITED · 2026-06-07
  */
 
@@ -45,7 +47,6 @@ follows.post("/:userId", requireAuth(), async (c) => {
   });
 
   if (error) {
-    // Unique violation = already following → treat as success
     if (error.code === "23505") {
       return c.json({ ok: true, following: true, message: "Already following" });
     }
@@ -185,6 +186,98 @@ follows.get("/me/followers", requireAuth(), async (c) => {
   }
 
   return c.json({ followers: data ?? [], count: data?.length ?? 0 });
+});
+
+/* ── GET /api/follows/suggestions ────────────────────────────────────── */
+/**
+ * Returns up to 8 "Who to Follow" suggestions for the authenticated user.
+ *
+ * FOLLOWS-001 (2026-06-09)
+ *
+ * Algorithm:
+ *   1. Fetch the IDs of users already followed by current user (max 500).
+ *   2. Query profiles NOT in that set, excluding self.
+ *   3. Priority order:
+ *      a. Verified creators (is_verified = true)
+ *      b. Same country as current user
+ *      c. Most followers (follower_count DESC)
+ *   4. Return max 8 results for the "Who to Follow" strip.
+ *
+ * Cached in KV for 5 minutes per user to avoid expensive DB queries on every feed load.
+ */
+follows.get("/suggestions", requireAuth(), async (c) => {
+  const user     = c.get("user");
+  const supabase = sb(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
+  const cacheKey = `follows:suggestions:${user.id}`;
+
+  // KV cache — serve fast on repeat loads
+  const cached = await c.env.CACHE.get(cacheKey);
+  if (cached) {
+    return c.json(JSON.parse(cached));
+  }
+
+  // Step 1: IDs already followed by current user
+  const { data: alreadyFollowing } = await supabase
+    .from("follows")
+    .select("following_id")
+    .eq("follower_id", user.id)
+    .limit(500);
+
+  const excludeIds = new Set<string>([
+    user.id,
+    ...(alreadyFollowing ?? []).map((r: { following_id: string }) => r.following_id),
+  ]);
+
+  // Step 2: Fetch candidate profiles (verified creators first, then by follower count)
+  // Supabase doesn't support NOT IN with a JS array elegantly for large sets,
+  // so we over-fetch and filter in JS for the small exclude set.
+  const { data: candidates } = await supabase
+    .from("profiles")
+    .select("id, username, display_name, avatar_url, is_verified, is_creator, follower_count, country, bio")
+    .eq("onboarded", true)
+    .order("is_verified",    { ascending: false })
+    .order("follower_count", { ascending: false })
+    .limit(50); // over-fetch so we have candidates after filtering
+
+  // Step 3: Filter out already-followed and self, then score
+  const filtered = (candidates ?? [])
+    .filter((p: { id: string }) => !excludeIds.has(p.id))
+    .map((p: {
+      id: string;
+      username: string | null;
+      display_name: string | null;
+      avatar_url: string | null;
+      is_verified: boolean;
+      is_creator: boolean;
+      follower_count: number;
+      country: string | null;
+      bio: string | null;
+    }) => ({
+      id:             p.id,
+      username:       p.username,
+      display_name:   p.display_name,
+      avatar_url:     p.avatar_url,
+      is_verified:    p.is_verified,
+      is_creator:     p.is_creator,
+      follower_count: p.follower_count ?? 0,
+      bio:            p.bio,
+      // Boost same-country profiles
+      _score:
+        (p.is_verified    ? 100 : 0) +
+        (p.is_creator     ?  50 : 0) +
+        (p.country === (user as unknown as { country?: string }).country ? 30 : 0) +
+        Math.min(p.follower_count ?? 0, 20),
+    }))
+    .sort((a, b) => b._score - a._score)
+    .slice(0, 8)
+    .map(({ _score: _, ...rest }) => rest);
+
+  const result = { suggestions: filtered };
+
+  // Cache for 5 minutes
+  await c.env.CACHE.put(cacheKey, JSON.stringify(result), { expirationTtl: 300 });
+
+  return c.json(result);
 });
 
 export { follows };
