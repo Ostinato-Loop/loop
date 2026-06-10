@@ -1,8 +1,14 @@
 /**
- * Loop — Notifications Page (Regional Edition)
- * - Regional nudge if profile has no country set
- * - Live follower notifications
- * - Trust/profile completion prompts
+ * Loop — Notifications Page (Retention Engine Edition)
+ *
+ * RETENTION-003 (2026-06-10): Added support for room_live, room_ended, and
+ * new_follower notification types fetched from the DB via the Loop API.
+ *   - room_live     → "X is live" with deep-link to the room
+ *   - room_ended    → "X's room has ended"
+ *   - new_follower  → "X started following you" (deduped against live follows query)
+ *   - Regional nudge if profile has no country set
+ *   - Trust/profile completion prompts
+ *
  * LILCKY STUDIO LIMITED
  */
 
@@ -12,14 +18,24 @@ import { useAuth, computeTrustScore } from "@/hooks/use-auth";
 import { AppShell } from "@/components/layout/app-shell";
 import {
   Bell, Shield, CheckCircle2, Mic, MessageSquare,
-  ArrowRight, UserPlus, ChevronLeft, MapPin,
+  ArrowRight, UserPlus, ChevronLeft, MapPin, Radio,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { authedSupabase } from "@/integrations/supabase/client";
 import { fetchNotifications, markNotificationsRead, type ApiNotif } from "@/lib/api/notifications";
 
 
-type NotifKind = "follow" | "trust" | "profile" | "room_invite" | "regional" | "system" | "dm" | "friend_request" | "connection_accepted";
+type NotifKind =
+  | "follow"
+  | "trust"
+  | "profile"
+  | "room_invite"
+  | "room_ended"
+  | "regional"
+  | "system"
+  | "dm"
+  | "friend_request"
+  | "connection_accepted";
 
 type Notif = {
   id:           string;
@@ -48,6 +64,7 @@ function kindIcon(kind: NotifKind) {
     case "trust":               return Shield;
     case "profile":             return CheckCircle2;
     case "room_invite":         return Mic;
+    case "room_ended":          return Radio;
     case "regional":            return MapPin;
     case "dm":                  return MessageSquare;
     case "friend_request":      return UserPlus;
@@ -62,6 +79,7 @@ function kindColor(kind: NotifKind): string {
     case "trust":               return "bg-amber-500/10 text-amber-500";
     case "profile":             return "bg-emerald-500/10 text-emerald-500";
     case "room_invite":         return "bg-fuchsia-500/10 text-fuchsia-500";
+    case "room_ended":          return "bg-secondary text-muted-foreground";
     case "regional":            return "bg-primary/10 text-primary";
     case "dm":                  return "bg-violet-500/10 text-violet-500";
     case "friend_request":      return "bg-blue-500/10 text-blue-500";
@@ -121,10 +139,10 @@ async function fetchFollowingLiveRooms(userId: string): Promise<Notif[]> {
       .from("follows").select("following_id").eq("follower_id", userId).limit(100) as { data: Array<{ following_id: string }> | null };
     if (!follows || follows.length === 0) return [];
     const ids = follows.map(f => f.following_id);
-    const { data: rooms } = await authedSupabase()
+    const { data: liveRooms } = await authedSupabase()
       .from("rooms").select("id, title, host_id").eq("is_live", true).in("host_id", ids).limit(5);
-    if (!rooms || rooms.length === 0) return [];
-    return rooms.map(r => ({
+    if (!liveRooms || liveRooms.length === 0) return [];
+    return liveRooms.map(r => ({
       id:          `room-${r.id}`,
       kind:        "room_invite" as const,
       title:       "Live now",
@@ -137,12 +155,21 @@ async function fetchFollowingLiveRooms(userId: string): Promise<Notif[]> {
   } catch { return []; }
 }
 
-/** Map API DB notifications → local Notif shape for unified rendering. */
+/**
+ * Map API DB notifications → local Notif shape for unified rendering.
+ *
+ * RETENTION-003: Extended to handle room_live, room_ended, and new_follower.
+ *   - room_live     → "X is live" deep-link to the room
+ *   - room_ended    → "X's room has ended" (no action needed, just awareness)
+ *   - new_follower  → "X started following you" with link to their profile
+ *   - These are deduplicated by ID so live-follows query results don't double-show.
+ */
 function mapApiNotifs(data: ApiNotif[]): Notif[] {
   return data.flatMap<Notif>(n => {
     const actor = n.actor;
-    const name  = actor?.display_name ?? actor?.username ?? "Someone";
+    const name  = actor?.display_name ?? actor?.username ?? (n.data?.["host_name"] as string | undefined) ?? "Someone";
     const ini   = name.split(" ").map((w: string) => w[0]).slice(0, 2).join("").toUpperCase();
+
     switch (n.type) {
       case "direct_message":
         return [{
@@ -157,6 +184,7 @@ function mapApiNotifs(data: ApiNotif[]): Notif[] {
           avatar:      actor?.avatar_url ?? null,
           initials:    ini,
         }];
+
       case "friend_request":
         return [{
           id:          `api-${n.id}`,
@@ -170,6 +198,7 @@ function mapApiNotifs(data: ApiNotif[]): Notif[] {
           avatar:      actor?.avatar_url ?? null,
           initials:    ini,
         }];
+
       case "connection_accepted":
         return [{
           id:          `api-${n.id}`,
@@ -183,6 +212,56 @@ function mapApiNotifs(data: ApiNotif[]): Notif[] {
           avatar:      actor?.avatar_url ?? null,
           initials:    ini,
         }];
+
+      case "room_live": {
+        const roomTitle = (n.data?.["room_title"] as string | undefined) ?? "a room";
+        const roomId    = n.resource_id;
+        return [{
+          id:          `api-${n.id}`,
+          kind:        "room_invite" as const,
+          title:       `${name} is live`,
+          body:        roomTitle,
+          ts:          new Date(n.created_at).getTime(),
+          read:        n.read_at !== null,
+          action:      roomId ? `/rooms/${roomId}` : undefined,
+          actionLabel: "Join",
+          avatar:      actor?.avatar_url ?? null,
+          initials:    ini,
+        }];
+      }
+
+      case "room_ended": {
+        const roomTitle = (n.data?.["room_title"] as string | undefined) ?? "a room";
+        const hostName  = (n.data?.["host_name"] as string | undefined) ?? name;
+        return [{
+          id:       `api-${n.id}`,
+          kind:     "room_ended" as const,
+          title:    `${hostName}'s room ended`,
+          body:     roomTitle,
+          ts:       new Date(n.created_at).getTime(),
+          read:     n.read_at !== null,
+          avatar:   actor?.avatar_url ?? null,
+          initials: ini,
+        }];
+      }
+
+      case "new_follower": {
+        const followerName = (n.data?.["follower_name"] as string | undefined) ?? name;
+        const followerId   = n.resource_id ?? actor?.id;
+        return [{
+          id:          `api-${n.id}`,
+          kind:        "follow" as const,
+          title:       "New follower",
+          body:        `${followerName} started following you`,
+          ts:          new Date(n.created_at).getTime(),
+          read:        n.read_at !== null,
+          action:      followerId ? `/profile/${followerId}` : undefined,
+          actionLabel: followerId ? "View" : undefined,
+          avatar:      actor?.avatar_url ?? null,
+          initials:    followerName.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase(),
+        }];
+      }
+
       default:
         return [];
     }
@@ -250,8 +329,36 @@ export default function NotificationsPage() {
         });
       }
 
-      const all = [...mapApiNotifs(apiNotifs), ...liveRooms, ...followers, ...systemNotifs]
-        .sort((a, b) => b.ts - a.ts);
+      // Deduplicate: API new_follower notifications may overlap with the live
+      // follows query (fetchFollowerNotifs). API rows win since they carry read state.
+      const apiNotifMapped = mapApiNotifs(apiNotifs);
+      const apiFollowerIds = new Set(
+        apiNotifMapped
+          .filter(n => n.kind === "follow")
+          .map(n => n.action?.replace("/profile/", "") ?? "")
+          .filter(Boolean)
+      );
+      const deduplicatedFollowers = followers.filter(
+        n => !apiFollowerIds.has(n.id.replace("follow-", ""))
+      );
+
+      // Live rooms from API notifications may duplicate the fetchFollowingLiveRooms query.
+      // Live rooms in apiNotifMapped are room_live DB events (fire-once on room create).
+      // liveRooms are real-time from DB (is_live = true right now).
+      // Prefer real-time liveRooms for "join now" UX; API room_live events for history.
+      const liveRoomIds = new Set(liveRooms.map(r => r.id.replace("room-", "")));
+      const apiRoomLiveNotifs = apiNotifMapped.filter(n => {
+        if (n.kind !== "room_invite") return true;
+        const roomId = n.action?.replace("/rooms/", "") ?? "";
+        return !liveRoomIds.has(roomId);
+      });
+
+      const all = [
+        ...apiRoomLiveNotifs,
+        ...liveRooms,
+        ...deduplicatedFollowers,
+        ...systemNotifs,
+      ].sort((a, b) => b.ts - a.ts);
       setNotifs(all);
 
       // Clear badge: mark all DB notifications read (fire-and-forget)
@@ -264,7 +371,6 @@ export default function NotificationsPage() {
   }, [user, profile]);
 
   useEffect(() => { load(); }, [load]);
-  // Auth gate now handled by ProtectedRoute in App.tsx
 
   return (
     <AppShell>

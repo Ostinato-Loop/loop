@@ -1,13 +1,15 @@
 /**
  * Loop — Notifications API Client
  *
- * Typed wrapper for the three Loop API notification endpoints:
+ * Typed wrapper for the Loop API notification endpoints:
  *   GET  /api/notifications           — unread list (up to 50)
  *   GET  /api/notifications/count     — lightweight unread badge count
  *   POST /api/notifications/read      — mark read (ids[] or all:true)
  *
- * Types returned by the API: direct_message | friend_request | connection_accepted.
- * Follower/live-room/system notifications are synthesised client-side in the page.
+ * RETENTION-003 (2026-06-10): Extended ApiNotif type to include all notification
+ * types now stored in the DB:
+ *   direct_message | friend_request | connection_accepted
+ *   room_live | room_ended | new_follower  ← new
  *
  * Uses authFetch() so the Loop JWT is always sent and silent-refresh is handled.
  * LILCKY STUDIO LIMITED
@@ -16,9 +18,17 @@ import { authFetch } from "@/lib/api-fetch";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
 
+export type ApiNotifType =
+  | "direct_message"
+  | "friend_request"
+  | "connection_accepted"
+  | "room_live"
+  | "room_ended"
+  | "new_follower";
+
 export type ApiNotif = {
   id:            string;
-  type:          "direct_message" | "friend_request" | "connection_accepted";
+  type:          ApiNotifType;
   resource_id:   string | null;
   resource_type: string | null;
   data:          Record<string, unknown> | null;

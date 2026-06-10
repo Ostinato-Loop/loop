@@ -2,12 +2,16 @@
 // MOBILE-001 (2026-06-09): Safe area fix — bottom padding moved to outer nav so
 //   the 64px nav grid is never compressed on iPhone X+ / Dynamic Island devices.
 //   Inner grid always has full h-16 for touch targets; safe area expands nav outward.
+// RETENTION-005 (2026-06-10): Notification badge upgraded.
+//   - Was: dot badge + single fetch on pathname change
+//   - Now: count pill (1-9, "9+") + 60s polling via useNotificationCount hook
+//   - Badge clears immediately when user navigates to /notifications
 // LILCKY STUDIO LIMITED
 
 import { Link, useLocation } from "react-router-dom";
 import { Home, Compass, Plus, MessageCircle, User as UserIcon } from "lucide-react";
-import { useState, useEffect } from "react";
-import { fetchUnreadCount } from "@/lib/api/notifications";
+import { useState } from "react";
+import { useNotificationCount, formatBadgeCount } from "@/hooks/use-notification-count";
 import { CreateSheet } from "@/components/create-sheet";
 import { cn } from "@/lib/utils";
 
@@ -21,11 +25,10 @@ const navItems = [
 export function BottomNav() {
   const { pathname } = useLocation();
   const [createOpen, setCreateOpen] = useState(false);
-  const [unread, setUnread] = useState(0);
 
-  useEffect(() => {
-    fetchUnreadCount().then(setUnread).catch(() => {});
-  }, [pathname]);
+  // 60-second polling, auto-resets when user visits /notifications
+  const unread = useNotificationCount();
+  const badge  = formatBadgeCount(unread);
 
   return (
     <>
@@ -72,6 +75,8 @@ export function BottomNav() {
           {navItems.slice(2).map((item) => {
             const active = item.exact ? pathname === item.to : pathname.startsWith(item.to);
             const Icon = item.icon;
+            const showBadge = item.to === "/me" && badge !== null;
+
             return (
               <Link
                 key={item.to}
@@ -83,8 +88,18 @@ export function BottomNav() {
                     className={cn("h-[22px] w-[22px]", active ? "text-neon" : "text-muted-foreground")}
                     strokeWidth={active ? 2.4 : 2}
                   />
-                  {item.to === "/me" && unread > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-primary border border-background" />
+                  {showBadge && (
+                    <span
+                      className={cn(
+                        "absolute -top-1.5 -right-2 flex items-center justify-center",
+                        "min-w-[16px] h-4 px-0.5 rounded-full",
+                        "bg-primary text-primary-foreground border border-background",
+                        "text-[9px] font-bold leading-none",
+                      )}
+                      aria-label={`${unread} unread notifications`}
+                    >
+                      {badge}
+                    </span>
                   )}
                 </div>
                 <span className={cn("text-[10px]", active ? "text-foreground font-semibold" : "text-muted-foreground")}>
