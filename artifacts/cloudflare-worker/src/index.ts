@@ -15,6 +15,7 @@
  *     ↓ /api/moderation/*      → Trust & Safety — report user/room/message, block user
  *     ↓ /api/notifications/*   → Notification inbox — DMs, friend requests, connections
  *     ↓ /api/notify/dm         → Internal webhook from Messenger worker
+ *     ↓ /api/push/*            → Web Push subscriptions + room-live dispatch (PUSH-001)
  *     ↓ /api/analytics         → Event ingestion for DAU / retention tracking
  *     ↓ /api/*                 → Business logic, AI, civic data (Worker)
  *     ↓ Supabase               → DB, Realtime (via service role from Worker)
@@ -38,6 +39,7 @@ import { moderation } from "./routes/moderation.js";
 import { analytics } from "./routes/analytics.js";
 import { notifications, notifyRouter } from "./routes/notifications.js";
 import { friendRequests } from "./routes/friend-requests.js";
+import { push } from "./routes/push.js";
 import { RoomSession } from "./durable-objects/room-session.js";
 
 export { RoomSession };
@@ -59,56 +61,11 @@ app.route("/api/regions",           regions);
 app.route("/api/audio",             audio);
 app.route("/api/feedback",          feedback);
 app.route("/api/follows",           follows);
+app.route("/api/friend-requests",   friendRequests);
 app.route("/api/moderation",        moderation);
-app.route("/api/analytics",         analytics);
 app.route("/api/notifications",     notifications);
 app.route("/api/notify",            notifyRouter);
-app.route("/api/friend-requests",   friendRequests);
+app.route("/api/push",              push);
+app.route("/api/analytics",         analytics);
 
-// ── Shallow liveness probe (no dependency checks) ────────────────────
-app.get("/api/healthz", (c) => c.json({ ok: true, status: "live", service: "loop-api", ts: Date.now() }));
-app.get("/healthz",     (c) => c.json({ ok: true, status: "live", service: "loop-api", ts: Date.now() }));
-
-// ── 404 ───────────────────────────────────────────────────────────────
-app.notFound((c) =>
-  c.json({ error: "Not found", path: c.req.path }, 404),
-);
-
-// ── Error handler ─────────────────────────────────────────────────────
-app.onError((err, c) => {
-  console.error("[loop-api]", err);
-  return c.json(
-    { error: c.env.ENVIRONMENT === "production" ? "Internal error" : err.message },
-    500,
-  );
-});
-
-// ── Queue consumer ────────────────────────────────────────────────────
-async function handleQueue(
-  batch: MessageBatch<{ type: string; roomId: string }>,
-  env: CloudflareEnv,
-): Promise<void> {
-  for (const msg of batch.messages) {
-    console.log("[queue]", msg.body);
-    msg.ack();
-  }
-}
-
-export default {
-  async fetch(req: Request, env: CloudflareEnv, ctx: ExecutionContext): Promise<Response> {
-    // ── FAIL FAST — exit with 503 if critical secrets are absent ─────────
-    const missing: string[] = [];
-    if (!env.RALD_JWT_SECRET)           missing.push("RALD_JWT_SECRET");
-    if (!env.SUPABASE_URL)              missing.push("SUPABASE_URL");
-    if (!env.SUPABASE_SERVICE_ROLE_KEY) missing.push("SUPABASE_SERVICE_ROLE_KEY");
-    if (missing.length) {
-      console.error(`[FATAL] loop-api: missing required secrets: ${missing.join(", ")}`);
-      return new Response(
-        JSON.stringify({ error: "Service misconfigured", missing, service: "loop-api" }),
-        { status: 503, headers: { "Content-Type": "application/json" } },
-      );
-    }
-    return app.fetch(req, env, ctx);
-  },
-  queue: handleQueue,
-};
+export default app;
