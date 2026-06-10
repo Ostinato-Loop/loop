@@ -49,6 +49,8 @@ import { push } from "./routes/push.js";
 import { RoomSession } from "./durable-objects/room-session.js";
 
 export { RoomSession };
+import { CleanupCoordinator } from "./durable-objects/cleanup-coordinator.js";
+export { CleanupCoordinator };
 import { cleanupStaleRooms } from "./services/room-cleanup.js";
 import { generateRoomSummary } from "./services/commentary.js";
 import { moderateMessage } from "./services/moderation.js";
