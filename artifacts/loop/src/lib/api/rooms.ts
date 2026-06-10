@@ -1,4 +1,7 @@
 import { supabase, authedSupabase } from "@/integrations/supabase/client";
+import { authFetch } from "@/lib/api-fetch";
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "";
 
 // Phase H: Room types expanded to include all 7 Loop Room categories
 // Community, News, Commentary, Radio, DJ Session, Education, Business
@@ -185,3 +188,47 @@ export async function sendReaction(roomId: string, userId: string, emoji: string
     .insert({ room_id: roomId, user_id: userId, emoji });
   if (error) throw sanitiseRoomError(error, "sendReaction");
 }
+
+/**
+ * endRoom — host formally ends a live room.
+ *
+ * Calls DELETE /api/rooms/:roomId on the Loop Worker, which:
+ *   1. Verifies the caller is the host (403 if not)
+ *   2. Sets is_live = false, audience_count = 0
+ *   3. Removes all room_participants
+ *   4. Deletes the LiveKit room (kicks all audio)
+ *   5. Queues an AI summary task
+ *
+ * ROOM-END-001 (2026-06-10): Replaces the previous client-side setRoomLive call
+ * which had no host verification and left participants stranded in LiveKit.
+ */
+export async function endRoom(roomId: string): Promise<void> {
+  const res = await authFetch(`${API_BASE}/api/rooms/${roomId}`, { method: 'DELETE' });
+  if (res.status === 403) throw new Error('Only the host can end this room.');
+  if (res.status === 404) throw new Error('Room not found.');
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? 'Failed to end room. Please try again.');
+  }
+}
+
+/**
+ * updateRoom — host edits mutable room fields.
+ * Calls PATCH /api/rooms/:roomId on the Loop Worker.
+ */
+export async function updateRoom(
+  roomId: string,
+  patch: { title?: string; description?: string; visibility?: RoomVisibility },
+): Promise<void> {
+  const res = await authFetch(`${API_BASE}/api/rooms/${roomId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (res.status === 403) throw new Error('Only the host can edit this room.');
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? 'Failed to update room.');
+  }
+}
+
