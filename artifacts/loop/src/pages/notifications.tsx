@@ -27,6 +27,7 @@ import {
 import { cn } from "@/lib/utils";
 import { authedSupabase, supabase, getLoopToken } from "@/integrations/supabase/client";
 import { fetchNotifications, markNotificationsRead, type ApiNotif } from "@/lib/api/notifications";
+import { useFollow } from "@/lib/api/follows";
 
 
 type NotifKind =
@@ -52,6 +53,8 @@ type Notif = {
   actionLabel?: string;
   avatar?:      string | null;
   initials?:    string;
+  // RETENTION-011: actor user ID — used for inline follow-back on "follow" notifs
+  actorId?:     string;
 };
 
 function timeAgo(ts: number): string {
@@ -131,6 +134,7 @@ async function fetchFollowerNotifs(userId: string): Promise<Notif[]> {
         read:     false,
         avatar:   p?.avatar_url ?? null,
         initials: initials(name),
+        actorId:  row.follower_id,
       };
     });
   } catch { return []; }
@@ -263,6 +267,7 @@ function mapApiNotifs(data: ApiNotif[]): Notif[] {
           actionLabel: followerId ? "View" : undefined,
           avatar:      actor?.avatar_url ?? null,
           initials:    followerName.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase(),
+          actorId:     followerId ?? undefined,
         }];
       }
 
@@ -439,9 +444,40 @@ export default function NotificationsPage() {
   );
 }
 
+/**
+ * RETENTION-011: Inline follow-back button on "follow" notifications.
+ *
+ * Isolated component so that useFollow is only called when the notif
+ * carries an actorId — avoiding unnecessary API hits on other rows.
+ * Clicking the button stops propagation so the row tap (→ profile) still
+ * works independently. Once followed back, the button turns to "Following ✓"
+ * to give instant visual confirmation without a page reload.
+ */
+function FollowBackButton({ actorId }: { actorId: string }) {
+  const { following, loading, toggle } = useFollow(actorId);
+
+  return (
+    <button
+      type="button"
+      disabled={loading || following}
+      onClick={(e) => { e.stopPropagation(); void toggle(); }}
+      className={cn(
+        "shrink-0 h-7 rounded-full px-3 text-[11px] font-bold transition-all active:scale-95",
+        following
+          ? "bg-secondary text-muted-foreground border border-border cursor-default"
+          : "bg-primary text-primary-foreground neon-glow",
+        loading && "opacity-50 cursor-wait",
+      )}
+    >
+      {following ? "Following ✓" : "Follow back"}
+    </button>
+  );
+}
+
 function NotifRow({ notif, onNavigate }: { notif: Notif; onNavigate: (path: string) => void }) {
   const Icon  = kindIcon(notif.kind);
   const color = kindColor(notif.kind);
+  const isFollow = notif.kind === "follow" && !!notif.actorId;
 
   return (
     <button
@@ -465,12 +501,14 @@ function NotifRow({ notif, onNavigate }: { notif: Notif; onNavigate: (path: stri
         <p className="text-[10px] text-muted-foreground/60 mt-1">{timeAgo(notif.ts)}</p>
       </div>
 
-      {/* Action */}
-      {notif.action && notif.actionLabel && (
+      {/* Follow-back CTA — only for follow notifications with a known actor */}
+      {isFollow ? (
+        <FollowBackButton actorId={notif.actorId!} />
+      ) : notif.action && notif.actionLabel ? (
         <span className="shrink-0 text-xs font-bold text-primary mt-0.5 flex items-center gap-0.5">
           {notif.actionLabel} <ArrowRight className="h-3 w-3" />
         </span>
-      )}
+      ) : null}
     </button>
   );
 }
