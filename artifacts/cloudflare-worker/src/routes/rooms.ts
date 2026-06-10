@@ -115,4 +115,124 @@ rooms.post("/:roomId/queue-summary", requireAuth(), async (c) => {
   return c.json({ ok: true, queued: true, roomId });
 });
 
+
+/**
+ * DELETE /api/rooms/:roomId
+ * Host ends a live room.
+ *
+ * Effects (in order):
+ *   1. Verifies the caller is the room's host.
+ *   2. Sets is_live = false, audience_count = 0.
+ *   3. Deletes all room_participants rows.
+ *   4. If LiveKit credentials are present, deletes the LiveKit room (kicks all audio).
+ *   5. Queues an AI summary task.
+ *
+ * Returns 200 { ok, roomId } on success.
+ * Returns 403 if caller is not the host.
+ * Returns 404 if room not found.
+ */
+rooms.delete('/:roomId', requireAuth(), async (c) => {
+  const { roomId } = c.req.param();
+  const user    = c.get('user');
+  const sbUrl   = c.env.SUPABASE_URL;
+  const sbKey   = c.env.SUPABASE_SERVICE_ROLE_KEY;
+  const headers = { apikey: sbKey, Authorization: `Bearer ${sbKey}`, 'Content-Type': 'application/json', Accept: 'application/json' };
+
+  // 1. Fetch room and verify host
+  const roomResp = await fetch(`${sbUrl}/rest/v1/rooms?id=eq.${roomId}&select=id,host_id,is_live&limit=1`, { headers });
+  if (!roomResp.ok) return c.json({ error: 'Failed to fetch room' }, 500);
+  const rooms_ = await roomResp.json() as { id: string; host_id: string; is_live: boolean }[];
+  if (!rooms_.length) return c.json({ error: 'Room not found' }, 404);
+  const room = rooms_[0];
+  if (room.host_id !== user.id) return c.json({ error: 'Only the host can end this room' }, 403);
+
+  // 2. Mark room ended
+  const updateResp = await fetch(
+    `${sbUrl}/rest/v1/rooms?id=eq.${roomId}`,
+    { method: 'PATCH', headers, body: JSON.stringify({ is_live: false, audience_count: 0 }) },
+  );
+  if (!updateResp.ok) {
+    const body = await updateResp.text().catch(() => '');
+    console.error('[rooms/delete] update failed:', updateResp.status, body.slice(0, 200));
+    return c.json({ error: 'Failed to end room' }, 500);
+  }
+
+  // 3. Remove all participants (fire-and-forget — don't block response)
+  const cleanupPromise = fetch(
+    `${sbUrl}/rest/v1/room_participants?room_id=eq.${roomId}`,
+    { method: 'DELETE', headers },
+  ).catch((err) => console.error('[rooms/delete] participant cleanup failed:', err));
+
+  // 4. Delete LiveKit room if configured (kicks all audio connections)
+  const livekitPromise = (async () => {
+    const { LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL } = c.env;
+    if (!LIVEKIT_API_KEY || !LIVEKIT_API_SECRET || !LIVEKIT_URL) return;
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      const payload = { iss: LIVEKIT_API_KEY, sub: 'loop-server', nbf: now, exp: now + 60, video: { roomAdmin: true } };
+      const b64url = (obj: Record<string, unknown>) => btoa(unescape(encodeURIComponent(JSON.stringify(obj)))).replace(/+/g, '-').replace(///g, '_').replace(/=+$/, '');
+      const unsigned = `${b64url({ alg: 'HS256', typ: 'JWT' })}.${b64url(payload)}`;
+      const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(LIVEKIT_API_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+      const sig = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(unsigned))))).replace(/+/g, '-').replace(///g, '_').replace(/=+$/, '');
+      const token = `${unsigned}.${sig}`;
+      const wsBase = LIVEKIT_URL.replace(/^wss?:///, 'https://');
+      await fetch(`${wsBase}/twirp/livekit.RoomService/DeleteRoom`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ room: roomId }),
+      });
+    } catch (err) {
+      console.warn('[rooms/delete] LiveKit room delete failed (non-fatal):', err);
+    }
+  })();
+
+  // 5. Queue AI summary
+  const summaryPromise = c.env.TASK_QUEUE.send({ type: 'ai_summary', roomId, requestedBy: user.id, timestamp: Date.now() })
+    .catch((err) => console.warn('[rooms/delete] summary queue failed:', err));
+
+  await Promise.all([cleanupPromise, livekitPromise, summaryPromise]);
+
+  console.log(JSON.stringify({ level: 'info', event: 'room_ended', roomId, hostId: user.id, service: 'loop-api', timestamp: new Date().toISOString() }));
+  return c.json({ ok: true, roomId });
+});
+
+/**
+ * PATCH /api/rooms/:roomId
+ * Host updates mutable room fields (title, description, visibility).
+ * Only the host can modify their room.
+ */
+rooms.patch('/:roomId', requireAuth(), async (c) => {
+  const { roomId } = c.req.param();
+  const user    = c.get('user');
+  const sbUrl   = c.env.SUPABASE_URL;
+  const sbKey   = c.env.SUPABASE_SERVICE_ROLE_KEY;
+  const headers = { apikey: sbKey, Authorization: `Bearer ${sbKey}`, 'Content-Type': 'application/json', Accept: 'application/json' };
+
+  // Verify host
+  const roomResp = await fetch(`${sbUrl}/rest/v1/rooms?id=eq.${roomId}&select=id,host_id&limit=1`, { headers });
+  if (!roomResp.ok) return c.json({ error: 'Failed to fetch room' }, 500);
+  const rooms_ = await roomResp.json() as { id: string; host_id: string }[];
+  if (!rooms_.length) return c.json({ error: 'Room not found' }, 404);
+  if (rooms_[0].host_id !== user.id) return c.json({ error: 'Only the host can edit this room' }, 403);
+
+  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const allowed = ['title', 'description', 'visibility'] as const;
+  const patch: Record<string, unknown> = {};
+  for (const k of allowed) {
+    if (k in body && body[k] !== undefined) patch[k] = body[k];
+  }
+  if (!Object.keys(patch).length) return c.json({ error: 'No valid fields to update' }, 400);
+  if (typeof patch.title === 'string' && !patch.title.trim()) return c.json({ error: 'Title cannot be empty' }, 400);
+
+  const updateResp = await fetch(`${sbUrl}/rest/v1/rooms?id=eq.${roomId}`, {
+    method: 'PATCH', headers, body: JSON.stringify(patch),
+  });
+  if (!updateResp.ok) {
+    const errBody = await updateResp.text().catch(() => '');
+    console.error('[rooms/patch] failed:', updateResp.status, errBody.slice(0, 200));
+    return c.json({ error: 'Failed to update room' }, 500);
+  }
+  return c.json({ ok: true, roomId, updated: Object.keys(patch) });
+});
+
 export { rooms };
