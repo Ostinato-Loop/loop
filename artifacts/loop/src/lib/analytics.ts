@@ -24,6 +24,7 @@ export type LoopEvent =
   | "room_create"
   | "room_join"
   | "room_leave"
+  | "room_end"
   | "session_start"
   | "page_view";
 
