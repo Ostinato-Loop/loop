@@ -7,7 +7,11 @@
  * POST /api/notifications/read      — mark notifications as read (batch)
  * POST /api/notify/dm               — webhook: Messenger CF Worker posts here when DM arrives
  *
- * ENABLED types: direct_message | friend_request | connection_accepted
+ * HARDENING-001 (2026-06-10):
+ *   - Added room_live + new_follower to the notification type filter.
+ *   - These types were inserted into the DB via 009_push_subscriptions.sql but
+ *     were excluded from the query, making them invisible to clients.
+ *
  * LILCKY STUDIO LIMITED
  */
 
@@ -22,6 +26,15 @@ const notifications = new Hono<{
   Variables: { user: AuthUser };
 }>();
 
+/** All notification types the client should receive. */
+const NOTIFICATION_TYPES = [
+  "direct_message",
+  "friend_request",
+  "connection_accepted",
+  "room_live",
+  "new_follower",
+] as const;
+
 function sb(url: string, key: string) {
   return createClient(url, key, { auth: { persistSession: false } });
 }
@@ -31,6 +44,7 @@ notifications.get("/", requireAuth(), async (c) => {
   const user        = c.get("user");
   const limit       = Math.min(Number(c.req.query("limit") ?? 50), 100);
   const includeRead = c.req.query("include_read") === "true";
+  const typeFilter  = c.req.query("type");
 
   const supabase = sb(c.env.SUPABASE_URL, c.env.SUPABASE_SERVICE_ROLE_KEY);
   let q = supabase
@@ -42,9 +56,15 @@ notifications.get("/", requireAuth(), async (c) => {
       )
     `)
     .eq("recipient_id", user.id)
-    .in("type", ["direct_message", "friend_request", "connection_accepted"])
     .order("created_at", { ascending: false })
     .limit(limit);
+
+  // Type filter: accept a specific type from query param, else show all known types
+  if (typeFilter && NOTIFICATION_TYPES.includes(typeFilter as typeof NOTIFICATION_TYPES[number])) {
+    q = q.eq("type", typeFilter);
+  } else {
+    q = q.in("type", [...NOTIFICATION_TYPES]);
+  }
 
   if (!includeRead) q = q.is("read_at", null);
 
@@ -65,6 +85,7 @@ notifications.get("/count", requireAuth(), async (c) => {
     .from("notifications")
     .select("id", { count: "exact", head: true })
     .eq("recipient_id", user.id)
+    .in("type", [...NOTIFICATION_TYPES])
     .is("read_at", null);
 
   if (error) {
