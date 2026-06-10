@@ -1,10 +1,19 @@
-// Loop — LiveKit Audio Hook (P0-001)
+// Loop — LiveKit Audio Hook
 // Manages LiveKit connection lifecycle, mic mute state, and speaking indicators.
 //
 // Graceful degradation:
 //   - If VITE_LIVEKIT_URL is not set → UI-only mode (local mute state only)
 //   - If token fetch fails → audioState = "error", UI remains functional
-//   - If LiveKit disconnects → reconnect is handled automatically by the SDK
+//   - If LiveKit disconnects → reconnect handled automatically by the SDK
+//
+// COOKIE-001 FIX (2026-06-10): fetchLiveKitToken now uses authFetch.
+//   Prior version used localStorage.getItem("loop_token") — removed in COOKIE-001.
+//   Audio was silently broken for all users since that migration.
+//
+// TOKEN-REFRESH-001 (2026-06-10): Pass tokenProvider to lk.connect().
+//   LiveKit SDK v2.x calls tokenProvider() automatically before the token
+//   expires (~90% of TTL). This eliminates the 4-hour hard disconnect.
+//   No additional timers needed — the SDK handles the refresh lifecycle.
 //
 // Usage:
 //   const { muted, speakingIds, toggleMic, audioState } = useLiveKitRoom(roomId, userId, enabled);
@@ -12,7 +21,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Room as LiveKitRoom, RoomEvent, Track } from "livekit-client";
-import { fetchLiveKitToken, LIVEKIT_URL } from "@/lib/livekit";
+import { fetchLiveKitToken, createLiveKitTokenProvider, LIVEKIT_URL } from "@/lib/livekit";
 
 export type AudioState = "idle" | "connecting" | "connected" | "error";
 
@@ -41,12 +50,12 @@ export function useLiveKitRoom(
 
     const lk = new LiveKitRoom({
       audioCaptureDefaults: {
-        autoGainControl: true,
+        autoGainControl:  true,
         echoCancellation: true,
         noiseSuppression: true,
       },
       adaptiveStream: true,
-      dynacast: true,
+      dynacast:       true,
     });
     lkRef.current = lk;
     setAudioState("connecting");
@@ -80,10 +89,19 @@ export function useLiveKitRoom(
 
     void (async () => {
       try {
-        const token = await fetchLiveKitToken(roomId, userId);
-        await lk.connect(LIVEKIT_URL, token);
+        // TOKEN-REFRESH-001: Fetch initial token, then pass tokenProvider so the
+        // SDK refreshes automatically before expiry. No manual timer needed.
+        const token         = await fetchLiveKitToken(roomId, userId);
+        const tokenProvider = createLiveKitTokenProvider(roomId, userId);
+
+        await lk.connect(LIVEKIT_URL, token, {
+          // SDK calls tokenProvider() at ~90% of TTL elapsed — seamless refresh
+          tokenProvider,
+        });
+
         // Join muted — privacy-first
         await lk.localParticipant.setMicrophoneEnabled(false);
+
         // Attach any tracks already published before we joined
         lk.remoteParticipants.forEach((p) =>
           p.audioTrackPublications.forEach((pub) => {
@@ -92,6 +110,14 @@ export function useLiveKitRoom(
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Audio connection failed";
+
+        // LiveKit not configured — degrade silently (no error shown to user)
+        if (msg === "__livekit_not_configured__") {
+          setAudioState("idle");
+          lkRef.current = null;
+          return;
+        }
+
         setAudioError(msg);
         setAudioState("error");
         lkRef.current = null;
@@ -108,7 +134,7 @@ export function useLiveKitRoom(
   }, [enabled, roomId, userId]);
 
   const toggleMic = useCallback(async () => {
-    const lk = lkRef.current;
+    const lk   = lkRef.current;
     const next = !muted;
     setMuted(next);
 
