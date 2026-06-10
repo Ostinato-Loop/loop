@@ -2,13 +2,59 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- viewport-fit=cover enables content behind iOS safe area notch/home bar -->
+    <!-- viewport-fit=cover enables content behind iOS notch / Dynamic Island / home bar -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
 
     <!-- App identity -->
     <title>Loop</title>
     <meta name="description" content="Loop — live audio rooms for African communities. Find your people, join the conversation." />
     <meta name="robots" content="index, follow" />
+
+    <!-- PWA manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Theme colour — browser chrome, Android task switcher -->
+    <meta name="theme-color" content="#0A1F16" />
+    <meta name="color-scheme" content="dark" />
+
+    <!-- iOS standalone mode -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Loop" />
+
+    <!-- Android Chrome add-to-homescreen -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="Loop" />
+
+    <!-- Icons -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Apple Touch Icon: 180×180 PNG required for iOS home screen quality -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180.png" />
+    <!-- Fallback for browsers that don't support svg favicon -->
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png" />
+
+    <!-- iOS Splash Screens (standalone mode only) -->
+    <!-- iPhone 15 Pro Max / 14 Plus (430×932) -->
+    <link rel="apple-touch-startup-image"
+          media="screen and (device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+          href="/splash/splash-1290x2796.png" />
+    <!-- iPhone 15 / 14 Pro (393×852) -->
+    <link rel="apple-touch-startup-image"
+          media="screen and (device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+          href="/splash/splash-1179x2556.png" />
+    <!-- iPhone 13 / 14 (390×844) -->
+    <link rel="apple-touch-startup-image"
+          media="screen and (device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)"
+          href="/splash/splash-1170x2532.png" />
+    <!-- iPhone SE 3rd gen (375×667) -->
+    <link rel="apple-touch-startup-image"
+          media="screen and (device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+          href="/splash/splash-750x1334.png" />
+    <!-- iPad Pro 12.9" (1024×1366) -->
+    <link rel="apple-touch-startup-image"
+          media="screen and (device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)"
+          href="/splash/splash-2048x2732.png" />
 
     <!-- Open Graph -->
     <meta property="og:title" content="Loop — Live Audio Rooms" />
@@ -24,22 +70,17 @@
     <meta name="twitter:description" content="Live audio rooms for African communities." />
     <meta name="twitter:image" content="/opengraph.jpg" />
 
-    <!-- PWA / mobile chrome -->
-    <meta name="theme-color" content="#0d0d0d" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Loop" />
-
-    <!-- Icons -->
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
-
     <!-- Preconnect for faster loads on African networks -->
     <link rel="preconnect" href="https://auth.rald.cloud" />
     <link rel="preconnect" href="https://profiles.rald.cloud" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Sans:wght@400;500;600&family=Bricolage+Grotesque:wght@600;700;800&display=swap" rel="stylesheet" />
+
+    <!-- Inline critical: prevent flash of light background before CSS loads -->
+    <style>
+      html, body { background-color: #0A1F16; color: #ECFDF5; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
