@@ -425,6 +425,9 @@ export default function RoomPage() {
   const [raisedHandCount, setRaisedHandCount] = useState(0);
   const [entered, setEntered]             = useState(false);
   const [rtcChatOpen, setRtcChatOpen]     = useState(false);
+  // RETENTION-010: room-ended overlay for listeners
+  const [roomEnded, setRoomEnded]         = useState(false);
+  const [endCountdown, setEndCountdown]   = useState(10);
 
 
   // DISCONNECT-001: Host heartbeat — keeps the room alive while host is present.
@@ -514,6 +517,18 @@ export default function RoomPage() {
           prevParticipants.current = next as ParticipantRow[];
           setParticipants(next as ParticipantRow[]);
         })
+      // RETENTION-010: detect room-ended event for listeners.
+      // When the host ends the room, the server sets is_live=false on the rooms row.
+      // Listeners receive this UPDATE within ~200ms and see the overlay instead of
+      // a silent freeze. The host is already navigated away by endRoom() → navigate('/').
+      .on("postgres_changes",
+        { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${roomId}` },
+        (payload) => {
+          const updated = payload.new as { is_live: boolean };
+          if (!updated.is_live && myRole !== "host") {
+            setRoomEnded(true);
+          }
+        })
       .subscribe();
 
     const evtCh = supabase.channel(`room:${roomId}:events`)
@@ -532,6 +547,14 @@ export default function RoomPage() {
   }, [roomId, user, navigate, pushActivity]);
 
   useEffect(() => { msgEnd.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
+
+  // RETENTION-010: auto-navigate to home after countdown when room ends
+  useEffect(() => {
+    if (!roomEnded) return;
+    if (endCountdown <= 0) { navigate("/"); return; }
+    const t = setTimeout(() => setEndCountdown(n => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [roomEnded, endCountdown, navigate]);
 
   const send = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -617,6 +640,56 @@ export default function RoomPage() {
   return (
     <div className={cn("relative mx-auto flex min-h-screen w-full max-w-md flex-col bg-background transition-opacity duration-500", entered ? "opacity-100" : "opacity-0")}>
       <div className="pointer-events-none absolute inset-x-0 top-0 h-64 bg-gradient-to-b from-primary/10 via-primary/5 to-transparent" />
+
+      {/* ── RETENTION-010: Room ended overlay ───────────────────────
+           Shown to listeners/speakers when is_live flips false via
+           Supabase realtime. Hosts are navigated away by endRoom().   */}
+      {roomEnded && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/95 backdrop-blur-xl px-6 animate-in fade-in duration-300">
+          {/* Icon */}
+          <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-secondary border border-border">
+            <MicOff className="h-9 w-9 text-muted-foreground" />
+          </div>
+
+          {/* Copy */}
+          <h2 className="font-display text-2xl font-extrabold text-center leading-tight mb-2">
+            This room has ended
+          </h2>
+          {room?.title && (
+            <p className="text-sm text-muted-foreground text-center mb-1 font-medium">
+              "{room.title}"
+            </p>
+          )}
+          {room?.host?.display_name && (
+            <p className="text-xs text-muted-foreground/70 text-center mb-8">
+              hosted by {room.host.display_name}
+            </p>
+          )}
+
+          {/* Countdown */}
+          <p className="text-xs text-muted-foreground text-center mb-6">
+            Returning to home in{" "}
+            <span className="font-bold tabular-nums text-foreground">{endCountdown}s</span>
+            …
+          </p>
+
+          {/* CTAs */}
+          <div className="flex flex-col gap-3 w-full max-w-xs">
+            <button
+              onClick={() => navigate("/discover")}
+              className="w-full h-12 rounded-2xl bg-primary text-primary-foreground text-sm font-bold neon-glow active:scale-[0.98] transition-transform"
+            >
+              Find another room
+            </button>
+            <button
+              onClick={() => navigate("/")}
+              className="w-full h-12 rounded-2xl bg-secondary text-foreground text-sm font-semibold border border-border active:scale-[0.98] transition-transform"
+            >
+              Go home
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Header ─────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 border-b border-border bg-background/80 px-4 pb-3 pt-safe-top backdrop-blur-xl">
