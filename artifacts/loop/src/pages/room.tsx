@@ -729,6 +729,23 @@ export default function RoomPage() {
     try {
       await endRoomApi(roomId);
       track('room_end', { room_id: roomId });
+
+      // RETENTION-017: "You missed this" — notify followers when a room ends with
+      // a large audience (threshold enforced server-side: 500+). Fire-and-forget:
+      // failure here should never block the host from being navigated home.
+      if (room) {
+        authFetch(`${API_BASE}/api/notify/room-ended`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            room_id:        roomId,
+            title:          room.title,
+            audience_count: room.audience_count ?? 0,
+          }),
+        }).catch((e: unknown) =>
+          console.warn("[room] room-ended notify skipped:", e instanceof Error ? e.message : e)
+        );
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not end room');
       return;

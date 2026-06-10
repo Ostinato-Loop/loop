@@ -63,7 +63,14 @@ router.get("/", async (req: Request, res: Response) => {
         )
       `)
       .eq("recipient_id", userId)
-      .in("type", ["direct_message", "friend_request", "connection_accepted"])
+      .in("type", [
+        "direct_message",
+        "friend_request",
+        "connection_accepted",
+        "room_live",
+        "room_ended",
+        "new_follower",
+      ])
       .order("created_at", { ascending: false })
       .limit(limit);
 
@@ -133,6 +140,91 @@ router.post("/read", async (req: Request, res: Response) => {
   } catch (e) {
     console.error("[notifications] mark read failed:", String(e));
     res.status(500).json({ error: "Failed to mark notifications as read" });
+  }
+});
+
+// ── POST /api/notify/room-ended ─────────────────────────────────────────────
+// Called by the host's client immediately after endRoomApi() succeeds.
+// Authenticated with the host's RALD JWT — only the host can trigger this.
+//
+// Threshold: audience_count must be ≥ 500 to warrant notifying followers.
+// Below that, the room didn't generate enough engagement to be "missed".
+//
+// Body: { room_id: string, title: string, audience_count: number }
+// Response: { ok: true, notified: N } | { ok: true, skipped: "below_threshold" }
+//
+// Idempotent via error swallow: if the host somehow triggers this twice
+// (network retry), duplicate notification rows are suppressed.
+router.post("/room-ended", async (req: Request, res: Response) => {
+  const hostId = await requireAuth(req, res);
+  if (!hostId) return;
+
+  const { room_id, title, audience_count } =
+    (req.body ?? {}) as { room_id?: string; title?: string; audience_count?: number };
+
+  if (!room_id || !title) {
+    res.status(400).json({ error: "room_id and title are required" });
+    return;
+  }
+
+  const count = typeof audience_count === "number" ? audience_count : 0;
+
+  // Below-threshold guard: don't spam followers of quiet rooms.
+  if (count < 500) {
+    res.json({ ok: true, skipped: "below_threshold", threshold: 500 });
+    return;
+  }
+
+  try {
+    // Resolve host's display name for the notification body.
+    const { data: hostProfile } = await db()
+      .from("profiles")
+      .select("username, display_name")
+      .eq("id", hostId)
+      .single();
+
+    const hostName = hostProfile?.display_name ?? hostProfile?.username ?? "Host";
+
+    // Fetch all followers of the host (max 500 — prevents runaway inserts).
+    const { data: followers, error: fErr } = await db()
+      .from("follows")
+      .select("follower_id")
+      .eq("following_id", hostId)
+      .limit(500);
+
+    if (fErr) throw fErr;
+    if (!followers || followers.length === 0) {
+      res.json({ ok: true, notified: 0 });
+      return;
+    }
+
+    // Bulk-insert one room_ended notification per follower.
+    // On conflict the row already exists — ignore and move on.
+    const rows = followers.map((f: { follower_id: string }) => ({
+      recipient_id:  f.follower_id,
+      actor_id:      hostId,
+      type:          "room_ended",
+      resource_id:   room_id,
+      resource_type: "room",
+      data: {
+        room_title:     title,
+        host_name:      hostName,
+        audience_count: count,
+      },
+    }));
+
+    const { error: insertErr } = await db()
+      .from("notifications")
+      .insert(rows);
+
+    // Ignore "already exists" errors from accidental double-calls.
+    if (insertErr && !insertErr.message.includes("already exists")) throw insertErr;
+
+    console.log(`[notifications] room-ended: notified ${rows.length} followers of ${hostId} (room ${room_id})`);
+    res.json({ ok: true, notified: rows.length });
+  } catch (e) {
+    console.error("[notifications] room-ended failed:", String(e));
+    res.status(500).json({ error: "Failed to send room-ended notifications" });
   }
 });
 
