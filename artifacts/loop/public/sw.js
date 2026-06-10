@@ -9,6 +9,7 @@
  * and works fully offline for already-visited pages.
  *
  * MOBILE-001 (2026-06-09): Initial service worker for PWA installability and offline shell.
+ * PUSH-001   (2026-06-10): Full push event handler + notificationclick routing.
  */
 
 const CACHE_VERSION = "loop-v1";
@@ -43,7 +44,6 @@ function isImage(url) {
 }
 
 function isShellAsset(url) {
-  // Vite-built JS/CSS have hashes — cache them aggressively
   return /\.(js|css|woff2?|ttf)(\?.*)?$/.test(url);
 }
 
@@ -80,26 +80,152 @@ self.addEventListener("fetch", (event) => {
 
   const url = request.url;
 
-  // Always bypass auth, API, and realtime endpoints
   if (shouldBypass(url)) return;
 
   if (isImage(url)) {
-    // Images: cache first (30-day TTL via fetch headers already; SW just stores)
     event.respondWith(cacheFirst(IMAGE_CACHE, request));
     return;
   }
 
   if (isShellAsset(url)) {
-    // Hashed JS/CSS: cache first — hash changes = new URL = fresh fetch
     event.respondWith(cacheFirst(SHELL_CACHE, request));
     return;
   }
 
-  // Navigation (HTML) + anything else: network first, fall back to cached shell
   event.respondWith(networkFirstWithShellFallback(request));
 });
 
-// ── Strategies ─────────────────────────────────────────────────────────────
+// ── Push: handle incoming push messages ───────────────────────────────────
+/**
+ * PUSH-001: Receives encrypted Web Push payloads dispatched by Loop Worker
+ * /api/push/notify-room-live (and future notification types).
+ *
+ * Expected payload shape (JSON):
+ * {
+ *   title: string,
+ *   body:  string,
+ *   icon:  string,       // "/icons/icon-192.png"
+ *   badge: string,       // "/icons/badge-72.png"
+ *   tag:   string,       // deduplication key e.g. "room-live-<roomId>"
+ *   data:  {
+ *     url:  string,      // deep-link e.g. "/rooms/<roomId>"
+ *     type: string,      // "room_live" | "new_follower" | "direct_message"
+ *   }
+ * }
+ */
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+
+  let payload;
+  try {
+    payload = event.data.json();
+  } catch {
+    // Malformed payload — show a generic notification so the push isn't silently dropped
+    payload = {
+      title: "Loop",
+      body:  "Something's happening — tap to open.",
+      icon:  "/icons/icon-192.png",
+      badge: "/icons/badge-72.png",
+      tag:   "loop-generic",
+      data:  { url: "/" },
+    };
+  }
+
+  const {
+    title  = "Loop",
+    body   = "",
+    icon   = "/icons/icon-192.png",
+    badge  = "/icons/badge-72.png",
+    tag    = "loop-notification",
+    data   = {},
+  } = payload;
+
+  const options = {
+    body,
+    icon,
+    badge,
+    tag,
+    data,
+    // Show notification even when the app is in the foreground on Android
+    requireInteraction: false,
+    // Vibration pattern: short-long-short
+    vibrate: [100, 50, 100],
+    // Actions — only shown on Android / desktop (iOS ignores)
+    actions:
+      data.type === "room_live"
+        ? [{ action: "join",    title: "Join room" },
+           { action: "dismiss", title: "Dismiss"   }]
+        : [],
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+  );
+});
+
+// ── Notification click ─────────────────────────────────────────────────────
+/**
+ * Routes taps on push notifications to the correct in-app path.
+ * Works for both action button taps and body taps.
+ */
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+
+  const action = event.action;   // "join" | "dismiss" | "" (body tap)
+  const data   = event.notification.data ?? {};
+  const url    = data.url ?? "/";
+
+  // "dismiss" action — just close, don't navigate
+  if (action === "dismiss") return;
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clients) => {
+        // If Loop is already open, focus the existing window and navigate
+        const existing = clients.find((c) => {
+          try {
+            const u = new URL(c.url);
+            return u.pathname !== "/login";
+          } catch { return false; }
+        });
+
+        if (existing && "focus" in existing) {
+          return existing.focus().then((win) => {
+            if ("navigate" in win) win.navigate(url);
+          });
+        }
+
+        // Otherwise open a new window at the target path
+        if (self.clients.openWindow) {
+          return self.clients.openWindow(url);
+        }
+      })
+  );
+});
+
+// ── Push subscription change ───────────────────────────────────────────────
+/**
+ * Called by the browser when the push subscription is forcibly changed
+ * (e.g. browser rotates keys). Re-registers the new subscription with the API.
+ * This prevents silent push delivery failures after key rotation.
+ */
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    (async () => {
+      const subscription = await self.registration.pushManager.subscribe(
+        event.oldSubscription?.options ?? { userVisibleOnly: true }
+      );
+      // Notify all open clients to re-POST the new subscription
+      const clients = await self.clients.matchAll({ type: "window" });
+      clients.forEach((c) =>
+        c.postMessage({ type: "PUSH_SUBSCRIPTION_CHANGED", subscription: subscription.toJSON() })
+      );
+    })()
+  );
+});
+
+// ── Caching strategies ─────────────────────────────────────────────────────
 
 async function cacheFirst(cacheName, request) {
   const cached = await caches.match(request);
@@ -125,52 +251,19 @@ async function networkFirstWithShellFallback(request) {
     }
     return response;
   } catch {
-    // Network failed — try cache, then fall back to root (SPA shell)
     const cached = await caches.match(request);
     if (cached) return cached;
 
-    // SPA fallback: return the cached root HTML so React Router handles routing
     const shell = await caches.match("/");
     if (shell) return shell;
 
     return new Response(
       `<!DOCTYPE html><html><body>
-        <p style="font-family:sans-serif;padding:2rem;color:#5A9E76">
-          Loop is offline. Connect to the internet to continue.
+        <p style="font-family:sans-serif;padding:2rem;color:#888">
+          You're offline. Open Loop when you're back online.
         </p>
       </body></html>`,
       { headers: { "Content-Type": "text/html" } }
     );
   }
 }
-
-// ── Push notifications (stub — wired up in Sprint 2) ──────────────────────
-self.addEventListener("push", (event) => {
-  if (!event.data) return;
-  let data = {};
-  try { data = event.data.json(); } catch { return; }
-
-  const title   = data.title   ?? "Loop";
-  const options = {
-    body:    data.body    ?? "",
-    icon:    data.icon    ?? "/icons/icon-192.png",
-    badge:   data.badge   ?? "/icons/icon-192.png",
-    tag:     data.tag     ?? "loop-notification",
-    data:    data.data    ?? {},
-    vibrate: [100, 50, 100],
-  };
-
-  event.waitUntil(self.registration.showNotification(title, options));
-});
-
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-  const url = event.notification.data?.url ?? "/";
-  event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then((cs) => {
-      const existing = cs.find((c) => c.url.includes(self.location.origin));
-      if (existing) return existing.focus().then((c) => c.navigate(url));
-      return clients.openWindow(url);
-    })
-  );
-});
