@@ -28,7 +28,18 @@ const REQUIRED_SECRETS = [
 const health = new Hono<{ Bindings: CloudflareEnv }>();
 
 /* ── GET /api/health — liveness (shallow) ────────────────────────────── */
-health.get("/", (c) => {
+health.get("/", async (c) => {
+  // CRON-DISABLED-001: Arm the CleanupCoordinator DO so stale-room sweeps run
+  // even without a cron trigger. The call is idempotent — the DO only sets its
+  // alarm if one isn't already scheduled.
+  try {
+    const coordId   = c.env.CLEANUP_COORDINATOR.idFromName("global");
+    const coordStub = c.env.CLEANUP_COORDINATOR.get(coordId);
+    await coordStub.fetch(new Request("https://do/arm", { method: "POST" }));
+  } catch {
+    // Non-fatal — DO arm failures must never block the health response
+  }
+
   return c.json({
     ok:          true,
     service:     "loop-api",
