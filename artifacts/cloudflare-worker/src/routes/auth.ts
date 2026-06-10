@@ -683,3 +683,92 @@ auth.post("/revoke-device", requireAuth(), async (c) => {
 
   return c.json({ ok: true, device_id: body.device_id, message: "Device revoked." });
 });
+
+/* ── POST /api/auth/send-email-otp ──────────────────────────────────── */
+/**
+ * AUTH-RECOVERY-001: Email OTP sign-in — send step.
+ *
+ * Proxy to auth.rald.cloud (which owns Resend delivery).
+ * Rate limiting is enforced server-side by rald-auth-core.
+ *
+ * Body:    { email: string }
+ * Returns: { sessionToken: string, message: string }
+ */
+auth.post("/send-email-otp", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { email?: string } | null;
+  if (!body?.email?.trim()) return c.json({ error: "Email required" }, 400);
+
+  const res = await fetch("https://auth.rald.cloud/auth/send-login-email-otp", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ email: body.email.trim().toLowerCase() }),
+  }).catch(() => null);
+
+  if (!res) return c.json({ error: "Auth service unavailable. Try again." }, 503);
+  const data = await res.json().catch(() => null);
+  return new Response(JSON.stringify(data), {
+    status: res.status,
+    headers: { "Content-Type": "application/json" },
+  });
+});
+
+/* ── POST /api/auth/verify-email-otp ────────────────────────────────── */
+/**
+ * AUTH-RECOVERY-001: Email OTP sign-in — verify step.
+ *
+ * Verifies the 6-digit code via rald-auth-core. On success for an existing
+ * user, issues a Loop-scoped JWT (TTL_SSO_S) and sets the loop_session
+ * HttpOnly cookie — identical outcome to a RALD SSO exchange.
+ *
+ * Body:    { sessionToken: string, code: string }
+ * Returns: { access_token: string, user: object } + sets loop_session cookie
+ *          OR { newUser: true } if the email has no account yet (sign-up required)
+ */
+auth.post("/verify-email-otp", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    sessionToken?: string;
+    code?: string;
+  } | null;
+  if (!body?.sessionToken || !body?.code?.trim())
+    return c.json({ error: "sessionToken and code are required" }, 400);
+
+  const res = await fetch("https://auth.rald.cloud/auth/verify-login-email-otp", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ sessionToken: body.sessionToken, code: body.code.trim() }),
+  }).catch(() => null);
+
+  if (!res) return c.json({ error: "Auth service unavailable. Try again." }, 503);
+
+  const data = await res.json().catch(() => null) as {
+    token?:   string;
+    user?:    { id: string; email: string; role?: string; name?: string | null };
+    newUser?: boolean;
+    error?:   string;
+  } | null;
+
+  if (!res.ok || !data) return c.json(data ?? { error: "Verification failed" }, (res.status || 400) as 400);
+  if (data.newUser)      return c.json({ newUser: true });
+  if (!data.token || !data.user) return c.json({ error: "Unexpected auth response" }, 502);
+
+  // Exchange rald token for a Loop-scoped session — same pattern as /api/auth/rald-sso
+  const now = Math.floor(Date.now() / 1000);
+  const loopToken = await signJwt(
+    {
+      sub:    data.user.id,
+      id:     data.user.id,
+      email:  data.user.email,
+      role:   data.user.role ?? "user",
+      iss:    JWT_ISSUER,
+      aud:    JWT_AUDIENCE,
+      iat:    now,
+      exp:    now + TTL_SSO_S,
+      jti:    crypto.randomUUID(),
+      source: "email-otp",
+    },
+    c.env.RALD_JWT_SECRET,
+  );
+
+  c.header("Set-Cookie", buildSessionCookie(loopToken, TTL_SSO_S));
+  return c.json({ access_token: loopToken, user: data.user });
+});
