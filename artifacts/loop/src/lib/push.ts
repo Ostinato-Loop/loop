@@ -3,7 +3,7 @@
  * PUSH-001 (2026-06-10): Replaced VAPID with @onesignal/onesignal-web-sdk.
  * LILCKY STUDIO LIMITED
  */
-import OneSignal from "@onesignal/onesignal-web-sdk";
+import OneSignal from "react-onesignal";
 
 export type PushState =
   | "unsupported"   // Browser has no push support or OneSignal not initialised
