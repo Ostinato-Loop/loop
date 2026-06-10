@@ -14,6 +14,7 @@
  *  GET    /api/follows/suggestions      — "who to follow" recommendations (auth required)
  *
  * FOLLOWS-001 (2026-06-09): Added GET /suggestions endpoint.
+ * PUSH-001    (2026-06-10): Fire new-follower push notification via OneSignal on POST follow.
  * LILCKY STUDIO LIMITED · 2026-06-07
  */
 
@@ -22,6 +23,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { CloudflareEnv } from "../types/env.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { requireAuth } from "../middleware/auth.js";
+import { sendOneSignalNotification } from "../lib/push-crypto.js";
 
 const follows = new Hono<{
   Bindings:  CloudflareEnv;
@@ -54,8 +56,63 @@ follows.post("/:userId", requireAuth(), async (c) => {
     return c.json({ error: "Could not follow user" }, 500);
   }
 
+  // ── New-follower push notification (PUSH-001) ──────────────────────
+  // Non-blocking: fetch follower profile then notify the followed user.
+  // We use c.executionCtx.waitUntil so the Worker doesn't terminate
+  // before the notification completes, without delaying the response.
+  if (c.env.ONESIGNAL_APP_ID && c.env.ONESIGNAL_REST_API_KEY) {
+    c.executionCtx.waitUntil(
+      notifyNewFollower({
+        supabaseUrl:    c.env.SUPABASE_URL,
+        supabaseKey:    c.env.SUPABASE_SERVICE_ROLE_KEY,
+        appId:          c.env.ONESIGNAL_APP_ID,
+        restApiKey:     c.env.ONESIGNAL_REST_API_KEY,
+        followerId:     user.id,
+        followedUserId: targetId,
+      })
+    );
+  }
+
   return c.json({ ok: true, following: true }, 201);
 });
+
+/** Fetch follower profile name, then dispatch OneSignal notification to the followed user. */
+async function notifyNewFollower(opts: {
+  supabaseUrl:    string;
+  supabaseKey:    string;
+  appId:          string;
+  restApiKey:     string;
+  followerId:     string;
+  followedUserId: string;
+}): Promise<void> {
+  try {
+    const supabase = createClient(opts.supabaseUrl, opts.supabaseKey, {
+      auth: { persistSession: false },
+    });
+
+    // Fetch follower's display name for the notification body
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("display_name, username")
+      .eq("id", opts.followerId)
+      .maybeSingle();
+
+    const name = profile?.display_name || profile?.username || "Someone";
+
+    await sendOneSignalNotification(opts.appId, opts.restApiKey, {
+      externalIds: [opts.followedUserId],
+      headings:    { en: "New follower" },
+      contents:    { en: `${name} started following you` },
+      webUrl:      `/profile/${opts.followerId}`,
+      icon:        "/icons/icon-192.png",
+      // collapse_id: one notification per follower, not a flood if they re-follow
+      tag:         `new-follower-${opts.followerId}`,
+      data:        { type: "new_follower", followerId: opts.followerId },
+    });
+  } catch (err) {
+    console.error("[follows] new-follower notification failed:", err);
+  }
+}
 
 /* ── DELETE /api/follows/:userId ─────────────────────────────────────── */
 follows.delete("/:userId", requireAuth(), async (c) => {
@@ -229,15 +286,13 @@ follows.get("/suggestions", requireAuth(), async (c) => {
   ]);
 
   // Step 2: Fetch candidate profiles (verified creators first, then by follower count)
-  // Supabase doesn't support NOT IN with a JS array elegantly for large sets,
-  // so we over-fetch and filter in JS for the small exclude set.
   const { data: candidates } = await supabase
     .from("profiles")
     .select("id, username, display_name, avatar_url, is_verified, is_creator, follower_count, country, bio")
     .eq("onboarded", true)
     .order("is_verified",    { ascending: false })
     .order("follower_count", { ascending: false })
-    .limit(50); // over-fetch so we have candidates after filtering
+    .limit(50);
 
   // Step 3: Filter out already-followed and self, then score
   const filtered = (candidates ?? [])
@@ -261,7 +316,6 @@ follows.get("/suggestions", requireAuth(), async (c) => {
       is_creator:     p.is_creator,
       follower_count: p.follower_count ?? 0,
       bio:            p.bio,
-      // Boost same-country profiles
       _score:
         (p.is_verified    ? 100 : 0) +
         (p.is_creator     ?  50 : 0) +
@@ -274,7 +328,6 @@ follows.get("/suggestions", requireAuth(), async (c) => {
 
   const result = { suggestions: filtered };
 
-  // Cache for 5 minutes
   await c.env.CACHE.put(cacheKey, JSON.stringify(result), { expirationTtl: 300 });
 
   return c.json(result);
