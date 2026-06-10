@@ -70,6 +70,13 @@ RALD_AUTH_URL = "https://auth.rald.cloud"
 # LIVEKIT_API_KEY
 # LIVEKIT_API_SECRET
 # LIVEKIT_URL
+# ONESIGNAL_APP_ID
+# ONESIGNAL_REST_API_KEY
+
+# ── Scheduled triggers (cron) ─────────────────────────────
+# DISCONNECT-001: cleanup stale live rooms every 10 minutes
+[triggers]
+crons = ["*/10 * * * *"]
 
 [build]
 command = "pnpm install --no-frozen-lockfile"
@@ -112,6 +119,9 @@ binding = "AI"
 
 [env.production.observability]
 enabled = true
+
+[env.production.triggers]
+crons = ["*/10 * * * *"]
 
 [env.production.vars]
 ENVIRONMENT   = "production"
