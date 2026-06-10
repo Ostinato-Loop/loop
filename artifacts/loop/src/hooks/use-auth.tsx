@@ -267,7 +267,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSessionToken(null);
       // Attempt cookie-based silent restore
       try {
-        const silentRes = await fetch(`${API_BASE}/api/auth/silent`, { credentials: "include" });
+        const silentCtl = new AbortController();
+        const silentTid = setTimeout(() => silentCtl.abort(), 5000);
+        const silentRes = await fetch(`${API_BASE}/api/auth/silent`, {
+          credentials: "include",
+          signal:      silentCtl.signal,
+        });
+        clearTimeout(silentTid);
         if (silentRes.ok) {
           const silentData = await silentRes.json() as { valid: boolean; access_token?: string };
           if (silentData.valid && silentData.access_token) {
