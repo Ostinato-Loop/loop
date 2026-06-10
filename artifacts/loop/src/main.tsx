@@ -1,11 +1,13 @@
 // Loop — App entry point
-// MOBILE-001 (2026-06-09): Service worker registration for PWA installability and offline shell.
+// MOBILE-001 (2026-06-09): Service worker registration for PWA + offline shell.
+// PUSH-001   (2026-06-10): OneSignal init for push notifications.
 // P0-FIX-004: Global offline/online detection.
 // LILCKY STUDIO LIMITED
 
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import OneSignal from "@onesignal/onesignal-web-sdk";
 
 // ── Offline detection banner ──────────────────────────────────────────────
 let offlineBanner: HTMLDivElement | null = null;
@@ -40,27 +42,43 @@ function hideOfflineBanner() {
 
 window.addEventListener("offline", showOfflineBanner);
 window.addEventListener("online",  hideOfflineBanner);
-
 if (!navigator.onLine) showOfflineBanner();
 
 // ── React root ────────────────────────────────────────────────────────────
 createRoot(document.getElementById("root")!).render(<App />);
 
-// ── Service Worker registration (MOBILE-001) ──────────────────────────────
-// Register after render so it never delays first paint.
-// Scope: "/" — handles all Loop routes.
-// Update on reload: the SW checks for a new sw.js on every page load;
-// if found, it installs and activates on the next navigation.
+// ── OneSignal init (PUSH-001) ─────────────────────────────────────────────
+// Initialise after render so it never delays first paint.
+// App ID loaded from VITE_ONESIGNAL_APP_ID env var.
+// External user ID is set separately in usePush after auth (see use-push.tsx).
+const ONESIGNAL_APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID as string | undefined;
+
+if (ONESIGNAL_APP_ID) {
+  window.addEventListener("load", () => {
+    OneSignal.init({
+      appId:                        ONESIGNAL_APP_ID,
+      serviceWorkerPath:            "OneSignalSDKWorker.js",
+      serviceWorkerParam:           { scope: "/" },
+      // Don't show OneSignal's default bell widget — we use PushPromptBanner
+      notifyButton:                 { enable: false },
+      // Allow localhost during development
+      allowLocalhostAsSecureOrigin: import.meta.env.DEV,
+    }).catch(() => {
+      // OneSignal init failure is non-fatal — app works without push
+    });
+  });
+}
+
+// ── App shell service worker (MOBILE-001) ─────────────────────────────────
+// Registers sw.js for offline caching. OneSignalSDKWorker.js is registered
+// automatically by the OneSignal SDK above.
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
     navigator.serviceWorker
       .register("/sw.js", { scope: "/" })
       .then((reg) => {
-        // Background sync: check for SW update every 60s while app is open
         setInterval(() => reg.update().catch(() => {}), 60_000);
       })
-      .catch(() => {
-        // SW registration failure is non-fatal — app works without it
-      });
+      .catch(() => {});
   });
 }
