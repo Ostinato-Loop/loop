@@ -50,6 +50,19 @@ import { RoomSession } from "./durable-objects/room-session.js";
 
 export { RoomSession };
 import { cleanupStaleRooms } from "./services/room-cleanup.js";
+import { generateRoomSummary } from "./services/commentary.js";
+import { moderateMessage } from "./services/moderation.js";
+
+/** Shape of messages enqueued via env.TASK_QUEUE.send(...) */
+interface QueueTask {
+  type:          "ai_summary" | "moderation_review" | "notification";
+  roomId?:       string;
+  transcript?:   string;
+  text?:         string;
+  lang?:         string;
+  requestedBy?:  string;
+  timestamp?:    number;
+}
 
 const app = new Hono<{ Bindings: CloudflareEnv }>();
 
@@ -141,8 +154,38 @@ app.onError((err, c) => {
 // DISCONNECT-001: Export both fetch (HTTP) and scheduled (cron) handlers.
 // Cron fires every 10 min (wrangler.toml [triggers]) as DO-alarm fallback.
 export default {
-  fetch:     app.fetch.bind(app),
+  fetch: app.fetch.bind(app),
+
   scheduled: async (_event: ScheduledEvent, env: CloudflareEnv, ctx: ExecutionContext): Promise<void> => {
     ctx.waitUntil(cleanupStaleRooms(env));
+  },
+
+  // QUEUE-001: Process background tasks enqueued by route handlers.
+  // Cloudflare requires this export whenever a [[queues.consumers]] binding
+  // is declared in wrangler.toml (error 11001 if missing).
+  queue: async (batch: MessageBatch<QueueTask>, env: CloudflareEnv, _ctx: ExecutionContext): Promise<void> => {
+    await Promise.all(
+      batch.messages.map(async (msg) => {
+        const task = msg.body;
+        try {
+          if (task.type === "ai_summary" && task.roomId) {
+            await generateRoomSummary(env, task.roomId, task.transcript ?? "");
+          } else if (task.type === "moderation_review" && task.text) {
+            await moderateMessage(env, task.text, task.lang ?? "en");
+          }
+          // "notification" tasks are fire-and-forget (handled by push.ts inline)
+          msg.ack();
+        } catch (err) {
+          console.error(JSON.stringify({
+            level:     "error",
+            task,
+            error:     String(err),
+            service:   "loop-api",
+            timestamp: new Date().toISOString(),
+          }));
+          msg.retry();
+        }
+      }),
+    );
   },
 };
