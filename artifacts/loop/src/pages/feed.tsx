@@ -1,20 +1,23 @@
 // Loop — Feed Page (Regional Edition)
+// FOLLOWS-001 (2026-06-09): Added "Who to Follow" strip between location banner and categories.
 // Regional identity: location badge in header, regional rooms prioritised.
 // LILCKY STUDIO LIMITED
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Search, Bell, Radio, BadgeCheck, MapPin, RefreshCw } from "lucide-react";
+import { Search, Bell, Radio, BadgeCheck, MapPin, RefreshCw, UserPlus, X } from "lucide-react";
 import { listRooms, type Room as ApiRoom, type RoomCategory } from "@/lib/api/rooms";
 import { useAuth } from "@/hooks/use-auth";
 import { useLoop } from "@/lib/loop-store";
+import { authFetch } from "@/lib/api-fetch";
 import { LoopMark } from "@/components/loop-logo";
 import { AppShell } from "@/components/layout/app-shell";
+import { FollowButton } from "@/components/follow-button";
 import { cn } from "@/lib/utils";
 import { Link, useNavigate } from "react-router-dom";
 import { formatLocation } from "@/lib/regions-data";
 import { fetchUnreadCount } from "@/lib/api/notifications";
 
-const PTR_THRESHOLD = 72; // px — pull distance required to trigger refresh
+const PTR_THRESHOLD = 72;
 
 const CATEGORIES = [
   { label: "For you",    value: "" },
@@ -33,6 +36,154 @@ const INTEREST_TO_CATEGORY: Record<string, string> = {
   africa:"community", campus:"education", commentary:"commentary",
   news:"news", radio:"radio", "dj-session":"dj-session", general:"",
 };
+
+const AVATAR_COLORS = [
+  "from-emerald-500 to-teal-500","from-fuchsia-500 to-purple-500",
+  "from-amber-500 to-orange-500","from-sky-500 to-blue-500",
+  "from-rose-500 to-pink-500","from-primary to-primary/60",
+];
+function avatarColor(uid: string) {
+  let n = 0; for (let i = 0; i < uid.length; i++) n += uid.charCodeAt(i);
+  return AVATAR_COLORS[n % AVATAR_COLORS.length];
+}
+function initials(name: string | null | undefined) {
+  if (!name) return "?";
+  return name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+}
+
+/* ── Who to Follow strip ─────────────────────────────────────────────── */
+
+type SuggestedUser = {
+  id:             string;
+  username:       string | null;
+  display_name:   string | null;
+  avatar_url:     string | null;
+  is_verified:    boolean;
+  is_creator:     boolean;
+  follower_count: number;
+  bio:            string | null;
+};
+
+function WhoToFollow() {
+  const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+  const [users,     setUsers]     = useState<SuggestedUser[]>([]);
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [loading,   setLoading]   = useState(true);
+
+  useEffect(() => {
+    authFetch(`${API_BASE}/api/follows/suggestions`)
+      .then(r => r.ok ? r.json() as Promise<{ suggestions: SuggestedUser[] }> : Promise.reject())
+      .then(d => setUsers(d.suggestions ?? []))
+      .catch(() => setUsers([]))
+      .finally(() => setLoading(false));
+  }, [API_BASE]);
+
+  const visible = users.filter(u => !dismissed.has(u.id));
+
+  // Don't render the section if loading is done and there are no suggestions
+  if (!loading && visible.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between px-0.5">
+        <div className="flex items-center gap-1.5">
+          <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Who to follow
+          </span>
+        </div>
+      </div>
+
+      <div className="flex gap-3 overflow-x-auto scrollbar-none pb-1 -mx-4 px-4">
+        {loading
+          ? [1, 2, 3].map(i => (
+              <div key={i} className="shrink-0 w-36 h-44 rounded-2xl bg-surface border border-border animate-pulse" />
+            ))
+          : visible.map(u => (
+              <SuggestionCard
+                key={u.id}
+                user={u}
+                onDismiss={() => setDismissed(prev => new Set([...prev, u.id]))}
+              />
+            ))}
+      </div>
+    </div>
+  );
+}
+
+function SuggestionCard({
+  user,
+  onDismiss,
+}: {
+  user: SuggestedUser;
+  onDismiss: () => void;
+}) {
+  const color = avatarColor(user.id);
+  const name  = user.display_name ?? user.username ?? "Anonymous";
+
+  return (
+    <div className="shrink-0 w-36 rounded-2xl border border-border bg-surface p-3 flex flex-col items-center gap-2 relative">
+      {/* Dismiss */}
+      <button
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="absolute top-2 right-2 h-5 w-5 rounded-full bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <X className="h-3 w-3" />
+      </button>
+
+      {/* Avatar */}
+      {user.avatar_url ? (
+        <img
+          src={user.avatar_url}
+          alt={name}
+          className="h-14 w-14 rounded-2xl object-cover"
+        />
+      ) : (
+        <div className={cn(
+          "h-14 w-14 rounded-2xl bg-gradient-to-br flex items-center justify-center font-display text-lg font-bold text-white",
+          color,
+        )}>
+          {initials(name)}
+        </div>
+      )}
+
+      {/* Name + verified */}
+      <div className="text-center w-full">
+        <div className="flex items-center justify-center gap-1">
+          <p className="text-xs font-bold truncate max-w-[90px]">{name}</p>
+          {user.is_verified && (
+            <BadgeCheck className="h-3 w-3 text-primary shrink-0" />
+          )}
+        </div>
+        {user.follower_count > 0 && (
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            {user.follower_count.toLocaleString()} followers
+          </p>
+        )}
+        {user.is_creator && !user.is_verified && (
+          <p className="text-[10px] text-primary/70 mt-0.5">Creator</p>
+        )}
+      </div>
+
+      {/* Follow button */}
+      <FollowButton
+        userId={user.id}
+        initialFollowing={false}
+        size="sm"
+        onFollowChange={(following) => {
+          if (following) {
+            // Slide out after a brief delay so user sees "Following" state
+            setTimeout(onDismiss, 1200);
+          }
+        }}
+        className="w-full justify-center"
+      />
+    </div>
+  );
+}
+
+/* ── Feed page ────────────────────────────────────────────────────────── */
 
 export default function FeedPage() {
   const [activeCategory, setActiveCategory] = useState<string>("");
@@ -106,6 +257,7 @@ export default function FeedPage() {
   return (
     <AppShell>
       <FeedHeader location={location} />
+
       {/* Pull-to-refresh indicator */}
       {(pullDisplay > 4 || refreshing) && (
         <div
@@ -123,8 +275,9 @@ export default function FeedPage() {
           </div>
         </div>
       )}
-      <div className="px-4 pt-3 pb-6 space-y-3">
-        {/* Regional context banner — shown when user has region */}
+
+      <div className="px-4 pt-3 pb-6 space-y-4">
+        {/* Regional context banner */}
         {location && (
           <Link
             to="/discover"
@@ -138,6 +291,9 @@ export default function FeedPage() {
             <span className="text-xs text-primary font-semibold shrink-0">Near me →</span>
           </Link>
         )}
+
+        {/* Who to Follow — only shown on "For you" tab */}
+        {activeCategory === "" && <WhoToFollow />}
 
         <CategoryScroller active={activeCategory} onChange={setActiveCategory} />
         <LiveStrip category={activeCategory} interests={interests} profile={profile} refreshKey={refreshKey} />
@@ -272,7 +428,6 @@ function LiveStrip({
   if (state === "empty") {
     return (
       <div className="space-y-3">
-        {/* No-region nudge */}
         {!hasRegion && (
           <button
             type="button"
@@ -303,15 +458,12 @@ function LiveStrip({
 
   return (
     <div className="space-y-4">
-      {/* Interest rooms ("Picked for you") */}
       {category === "" && interestRooms.length > 0 && (
         <div className="space-y-2">
           <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-0.5">Picked for you</h2>
           {interestRooms.map(r => <RoomRow key={r.id} room={r} onClick={() => navigate(`/rooms/${r.id}`)} />)}
         </div>
       )}
-
-      {/* Main feed */}
       <div className="space-y-2">
         {category === "" && (
           <div className="flex items-center gap-1.5 pb-0.5">
