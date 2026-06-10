@@ -100,8 +100,10 @@ app.use("*", async (c, next) => {
 });
 
 // ── Routes ────────────────────────────────────────────────────────────
-app.route("/health",                health);
-app.route("/api/health",            health);
+app.route("/health",          health);
+app.route("/healthz",         health);
+app.route("/api/health",    health);
+app.route("/api/healthz",   health);
 app.route("/api/auth",              auth);
 app.route("/api/auth/rald-sso",     raldSso);
 app.route("/api/trending",          trending);
