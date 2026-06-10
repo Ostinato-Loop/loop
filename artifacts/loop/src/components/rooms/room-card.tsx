@@ -1,7 +1,9 @@
+// RETENTION-009 (2026-06-10): Live audience count via useLiveRoomCount.
 import { Link } from "react-router-dom";
 import { Users, BadgeCheck, Lock, Mic } from "lucide-react";
 import type { Room } from "@/lib/api/rooms";
 import { cn } from "@/lib/utils";
+import { useLiveRoomCount } from "@/hooks/use-live-room-count";
 
 const categoryGradient: Record<string, string> = {
   sports:        "from-emerald-500/25 via-teal-500/15 to-transparent",
@@ -18,6 +20,7 @@ const categoryEmoji: Record<string, string> = {
 };
 
 export function RoomCard({ room, compact = false }: { room: Room; compact?: boolean }) {
+  const { count, updated } = useLiveRoomCount(room.id, room.audience_count);
   return (
     <Link
       to={`/rooms/${room.id}`}
@@ -82,9 +85,12 @@ export function RoomCard({ room, compact = false }: { room: Room; compact?: bool
               )}
             </span>
           </div>
-          <div className="flex items-center gap-1 text-xs font-medium text-foreground/80">
+          <div className={cn(
+            "flex items-center gap-1 text-xs font-medium transition-colors duration-500",
+            updated ? "text-primary" : "text-foreground/80",
+          )}>
             <Users className="h-3.5 w-3.5" />
-            {room.audience_count.toLocaleString()}
+            {count.toLocaleString()}
           </div>
         </div>
       </div>

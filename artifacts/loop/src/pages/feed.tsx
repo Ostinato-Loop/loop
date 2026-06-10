@@ -9,13 +9,14 @@
 // LILCKY STUDIO LIMITED
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Search, Bell, Radio, BadgeCheck, MapPin, RefreshCw, UserPlus, X, ChevronRight } from "lucide-react";
+import { Search, Bell, Radio, BadgeCheck, MapPin, RefreshCw, UserPlus, X, ChevronRight, Users } from "lucide-react";
 import { listRooms, type Room as ApiRoom, type RoomCategory } from "@/lib/api/rooms";
 import { useAuth } from "@/hooks/use-auth";
 import { useLoop } from "@/lib/loop-store";
 import { authFetch } from "@/lib/api-fetch";
 import { PushPromptBanner } from "@/hooks/use-push";
 import { useNotificationCount, formatBadgeCount } from "@/hooks/use-notification-count";
+import { useLiveRoomCount } from "@/hooks/use-live-room-count";
 import { LoopMark } from "@/components/loop-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { FollowButton } from "@/components/follow-button";
@@ -546,6 +547,9 @@ function LiveStrip({
   );
 }
 
+// RETENTION-009: useLiveRoomCount wires each row to real-time audience_count
+// updates via postgres_changes, so the listener count ticks up/down within
+// ~200ms without any polling.
 function RoomRow({ room, onClick }: { room: ApiRoom; onClick: () => void }) {
   const CATEGORY_EMOJI: Record<string, string> = {
     community:"🏘️", news:"📡", commentary:"🎙️", radio:"📻",
@@ -553,6 +557,7 @@ function RoomRow({ room, onClick }: { room: ApiRoom; onClick: () => void }) {
   };
   const emoji = CATEGORY_EMOJI[room.category] ?? "🔊";
   const host  = (room as ApiRoom & { host?: { display_name?: string | null } }).host;
+  const { count, updated } = useLiveRoomCount(room.id, room.audience_count);
 
   return (
     <button
@@ -565,7 +570,12 @@ function RoomRow({ room, onClick }: { room: ApiRoom; onClick: () => void }) {
         <p className="text-sm font-semibold truncate">{room.title}</p>
         <div className="flex items-center gap-1.5 mt-0.5">
           <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-          <span className="text-[11px] text-muted-foreground">{room.audience_count} listening</span>
+          <span className={cn(
+            "text-[11px] transition-colors duration-500",
+            updated ? "text-primary font-semibold" : "text-muted-foreground",
+          )}>
+            {count.toLocaleString()} listening
+          </span>
           {host?.display_name && (
             <>
               <span className="text-muted-foreground/40">·</span>
@@ -574,7 +584,14 @@ function RoomRow({ room, onClick }: { room: ApiRoom; onClick: () => void }) {
           )}
         </div>
       </div>
-      <BadgeCheck className="h-4 w-4 text-muted-foreground/30 shrink-0" />
+      {/* Live listener count — flashes primary when someone joins */}
+      <div className={cn(
+        "flex items-center gap-1 text-xs font-medium shrink-0 transition-colors duration-500",
+        updated ? "text-primary" : "text-muted-foreground/50",
+      )}>
+        <Users className="h-3.5 w-3.5" />
+        {count.toLocaleString()}
+      </div>
     </button>
   );
 }
