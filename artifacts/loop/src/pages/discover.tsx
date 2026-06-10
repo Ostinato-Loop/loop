@@ -866,7 +866,9 @@ export default function DiscoverPage() {
                   Near {profile?.state_id ?? "you"}
                 </h2>
               </div>
-              {rooms === null ? <Skeleton /> : allRooms.length === 0 ? <EmptyState /> : (
+              {rooms === null ? <Skeleton /> : allRooms.length === 0
+                ? <NearMeEmptyState stateId={profile?.state_id ?? null} />
+                : (
                 <div className="space-y-3">
                   {allRooms.map((r) => <RoomCard key={r.id} room={r} />)}
                 </div>
@@ -902,6 +904,56 @@ function EmptyState() {
       </div>
       <h3 className="font-display text-base font-semibold">No rooms yet</h3>
       <p className="mt-1 text-sm text-muted-foreground">Be first — tap + below to start one.</p>
+    </div>
+  );
+}
+
+/* ── REGIONAL-001: Near Me empty state with global fallback ─────────── */
+function NearMeEmptyState({ stateId }: { stateId: string | null }) {
+  const navigate = useNavigate();
+  const [globalRooms, setGlobalRooms] = useState<Room[]>([]);
+  const [loading, setLoading]         = useState(true);
+
+  useEffect(() => {
+    listRooms({ limit: 5 })
+      .then(setGlobalRooms)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-dashed border-border p-6 text-center space-y-2">
+        <div className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-full bg-surface">
+          <MapPin className="h-5 w-5 text-primary/50" />
+        </div>
+        <p className="text-sm font-semibold">No rooms near {stateId ?? "you"} right now</p>
+        <p className="text-xs text-muted-foreground">Be the first to start one, or explore rooms from around Nigeria below.</p>
+      </div>
+
+      {/* Global fallback rooms */}
+      {loading
+        ? <div className="h-16 rounded-2xl bg-surface border border-border animate-pulse" />
+        : globalRooms.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-0.5">Rooms happening now</p>
+            <div className="space-y-2">
+              {globalRooms.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => navigate(`/rooms/${r.id}`)}
+                  className="w-full rounded-2xl border border-border bg-surface p-4 text-left transition-all active:scale-[0.98] hover:border-primary/30"
+                >
+                  <p className="font-semibold text-sm line-clamp-1">{r.title}</p>
+                  <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Users className="h-3 w-3" />
+                    {r.audience_count ?? 0} listening · {r.category}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
     </div>
   );
 }

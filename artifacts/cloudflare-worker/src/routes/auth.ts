@@ -772,3 +772,106 @@ auth.post("/verify-email-otp", async (c) => {
   c.header("Set-Cookie", buildSessionCookie(loopToken, TTL_SSO_S));
   return c.json({ access_token: loopToken, user: data.user });
 });
+
+// ── GET /api/auth/username/check/:username — proxy to rald-auth-core ─────────
+// Used by Loop onboarding to check username availability.
+// Tries rald-auth-core first; falls back to Supabase profiles table.
+auth.get("/username/check/:username", async (c) => {
+  const username = c.req.param("username").toLowerCase();
+
+  // Validate format locally (saves a network hop for obvious failures)
+  if (username.length < 2)  return c.json({ available: false, username, reason: "Username must be at least 2 characters" });
+  if (username.length > 20) return c.json({ available: false, username, reason: "Username must be 20 characters or fewer" });
+  if (!/^[a-z0-9_]+$/.test(username)) return c.json({ available: false, username, reason: "Letters, numbers, and underscores only" });
+  if (username.startsWith("_") || username.endsWith("_")) return c.json({ available: false, username, reason: "Cannot start or end with an underscore" });
+  if (/_{2,}/.test(username)) return c.json({ available: false, username, reason: "No consecutive underscores" });
+
+  const RESERVED = new Set(["admin","support","help","security","abuse","rald","loop","messenger","payrald","mail","api","auth","root","system","bot","null","undefined","official","staff","team","mod"]);
+  if (RESERVED.has(username)) return c.json({ available: false, username, reason: "This username is reserved" });
+
+  // Try rald-auth-core first
+  const authUrl = (c.env as unknown as Record<string, string>).RALD_AUTH_URL ?? "https://auth.rald.cloud";
+  try {
+    const r = await fetch(`${authUrl}/username/check/${encodeURIComponent(username)}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (r.ok) {
+      const data = await r.json() as { available: boolean; reason: string | null };
+      return c.json({ available: data.available, username, reason: data.reason });
+    }
+  } catch { /* fallback to Supabase */ }
+
+  // Fallback: check profiles table
+  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = c.env;
+  const sb = await fetch(
+    `${SUPABASE_URL}/rest/v1/profiles?username=eq.${encodeURIComponent(username)}&select=id&limit=1`,
+    { headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, Accept: "application/json" } },
+  );
+  if (sb.ok) {
+    const rows = await sb.json() as unknown[];
+    const taken = rows.length > 0;
+    return c.json({ available: !taken, username, reason: taken ? "Username is already taken" : null });
+  }
+
+  return c.json({ available: false, username, reason: "Availability check failed — please try again" }, 500);
+});
+
+// ── POST /api/auth/username/claim — proxy to rald-auth-core ──────────────────
+auth.post("/username/claim", requireAuth(), async (c) => {
+  const user    = c.get("user");
+  const body    = await c.req.json<{ username: string }>().catch(() => ({} as { username: string }));
+  const username = (body.username ?? "").toLowerCase();
+
+  if (!username) return c.json({ error: "username is required" }, 400);
+
+  const authUrl = (c.env as unknown as Record<string, string>).RALD_AUTH_URL ?? "https://auth.rald.cloud";
+  try {
+    const r = await fetch(`${authUrl}/username/claim`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ username, user_id: user.id }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (r.ok) {
+      const data = await r.json();
+      return c.json(data);
+    }
+    const err = await r.json().catch(() => ({})) as { error?: string };
+    return c.json({ error: err.error ?? "Could not claim username" }, r.status as 400 | 409 | 500);
+  } catch { /* non-fatal — Loop profiles is source of truth */ }
+
+  // Fallback: update profiles directly
+  const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = c.env;
+  const upd = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`, {
+    method: "PATCH",
+    headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify({ username }),
+  });
+  return upd.ok
+    ? c.json({ ok: true, username })
+    : c.json({ error: "Could not claim username — please try again" }, 500);
+});
+
+// ── GET /api/auth/messenger-status — cross-app session health ────────────────
+// Checks whether the current Loop session also has a valid Messenger session.
+// MESSENGER-INTEGRATION-001 (2026-06-10)
+auth.get("/messenger-status", requireAuth(), async (c) => {
+  const user = c.get("user");
+
+  // Try to get a handoff token to check Messenger session health
+  const authUrl = (c.env as unknown as Record<string, string>).RALD_AUTH_URL ?? "https://auth.rald.cloud";
+  try {
+    const r = await fetch(`${authUrl}/session/status?app_id=messenger&user_id=${encodeURIComponent(user.id)}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (r.ok) {
+      const data = await r.json() as { active: boolean; expires_at?: string };
+      return c.json({ user_id: user.id, messenger_session: data.active, expires_at: data.expires_at ?? null });
+    }
+  } catch { /* non-fatal */ }
+
+  // Fallback: report unknown (client will re-auth on next Messenger open)
+  return c.json({ user_id: user.id, messenger_session: null, note: "status unknown — will resolve on next Messenger open" });
+});

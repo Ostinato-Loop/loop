@@ -416,4 +416,67 @@ rooms.post('/:roomId/heartbeat', requireAuth(), async (c) => {
   return c.json({ ok: true });
 });
 
+// ── GET /api/rooms/:roomId/health — Room health check ─────────────────────
+/**
+ * Returns real-time health state of a room from both Supabase and the DO.
+ * Used by clients to detect orphan/stale rooms and by monitoring dashboards.
+ *
+ * ROOM-HEALTH-001 (2026-06-10)
+ */
+rooms.get('/:roomId/health', async (c) => {
+  const roomId  = c.req.param('roomId');
+  const sbUrl   = c.env.SUPABASE_URL;
+  const sbKey   = c.env.SUPABASE_SERVICE_ROLE_KEY;
+  const headers = {
+    apikey: sbKey, Authorization: `Bearer ${sbKey}`,
+    'Content-Type': 'application/json', Accept: 'application/json',
+  };
+
+  // 1. DB state
+  const dbResp = await fetch(
+    `${sbUrl}/rest/v1/rooms?id=eq.${roomId}&select=id,title,is_live,audience_count,last_heartbeat_at,created_at,host_id&limit=1`,
+    { headers },
+  ).catch(() => null);
+
+  if (!dbResp?.ok) return c.json({ error: 'Room not found' }, 404);
+
+  type RoomRow = { id: string; title: string; is_live: boolean; audience_count: number; last_heartbeat_at: string | null; created_at: string; host_id: string };
+  const rows = await dbResp.json() as RoomRow[];
+  if (!rows.length) return c.json({ error: 'Room not found' }, 404);
+  const room = rows[0];
+
+  // 2. Heartbeat freshness (5 min threshold)
+  const heartbeatAge = room.last_heartbeat_at
+    ? Date.now() - new Date(room.last_heartbeat_at).getTime()
+    : null;
+  const heartbeatStale = heartbeatAge !== null && heartbeatAge > 5 * 60 * 1000;
+
+  // 3. DO state — best-effort
+  let doState: string | null = null;
+  try {
+    const doId   = c.env.ROOM_SESSION.idFromName(roomId);
+    const doStub = c.env.ROOM_SESSION.get(doId);
+    const doResp = await doStub.fetch(new Request('https://do-internal/state', { method: 'GET' }));
+    if (doResp.ok) {
+      const doData = await doResp.json() as { state?: string };
+      doState = doData.state ?? null;
+    }
+  } catch { /* DO unavailable is non-fatal */ }
+
+  const healthy = room.is_live && !heartbeatStale;
+
+  return c.json({
+    roomId,
+    healthy,
+    is_live:         room.is_live,
+    audience_count:  room.audience_count,
+    heartbeat_age_ms: heartbeatAge,
+    heartbeat_stale: heartbeatStale,
+    do_state:        doState,
+    created_at:      room.created_at,
+    host_id:         room.host_id,
+    checked_at:      new Date().toISOString(),
+  });
+});
+
 export { rooms };
