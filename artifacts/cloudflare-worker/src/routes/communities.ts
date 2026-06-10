@@ -525,6 +525,11 @@ communities.get("/", async (c) => {
   if (type) {
     path += `&type=eq.${encodeURIComponent(type)}`;
   }
+  // HARDENING-001: push text search into DB (ilike) instead of client-side filter
+  if (q) {
+    const escaped = encodeURIComponent(`*${q}*`);
+    path += `&or=(name.ilike.${escaped},description.ilike.${escaped})`;
+  }
 
   const resp = await sbGet(sb, path);
   if (!resp.ok) {
@@ -534,18 +539,6 @@ communities.get("/", async (c) => {
   }
 
   let data = await resp.json() as unknown[];
-
-  // Client-side full-text filter when q is provided
-  if (q) {
-    const ql = q.toLowerCase();
-    data = data.filter((row) => {
-      const r = row as { name?: string; description?: string };
-      return (
-        r.name?.toLowerCase().includes(ql) ||
-        r.description?.toLowerCase().includes(ql)
-      );
-    });
-  }
 
   return c.json({ communities: data, count: data.length, offset, limit });
 });
