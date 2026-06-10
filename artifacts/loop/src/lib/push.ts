@@ -18,7 +18,7 @@ export async function getPushState(): Promise<PushState> {
   if (Notification.permission === "denied") return "denied";
 
   try {
-    const optedIn = OneSignal.User.PushSubscription.optedIn;
+    const optedIn = (OneSignal.User as any).PushSubscription.optedIn;
     if (optedIn) return "subscribed";
     if (Notification.permission === "granted") return "unsubscribed";
     return "prompt";
@@ -35,7 +35,7 @@ export async function subscribeToPush(): Promise<PushState> {
   if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
 
   try {
-    await OneSignal.Notifications.requestPermission();
+    await (OneSignal.Notifications as any).requestPermission();
   } catch {
     return "denied";
   }
@@ -43,7 +43,7 @@ export async function subscribeToPush(): Promise<PushState> {
   if (Notification.permission !== "granted") return "denied";
 
   try {
-    await OneSignal.User.PushSubscription.optIn();
+    await (OneSignal.User as any).PushSubscription.optIn();
     return "subscribed";
   } catch {
     return "unsubscribed";
@@ -53,7 +53,7 @@ export async function subscribeToPush(): Promise<PushState> {
 /** Opt the user out without revoking browser permission. */
 export async function unsubscribeFromPush(): Promise<void> {
   try {
-    await OneSignal.User.PushSubscription.optOut();
+    await (OneSignal.User as any).PushSubscription.optOut();
   } catch {
     // Non-fatal
   }
