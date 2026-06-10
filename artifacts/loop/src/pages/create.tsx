@@ -7,14 +7,17 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { createRoom, type RoomCategory, type RoomVisibility } from "@/lib/api/rooms";
+import { authFetch } from "@/lib/api-fetch";
 import { toast } from "sonner";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 import { Clock } from "lucide-react";
 
 // Phase H: All 7 Loop Room Types fully wired for room creation
-// Community, News, Commentary, Radio, DJ Session, Education, Business + General
+// PUSH-001 (2026-06-10): Notify followers via push when room goes live.
 // LILCKY STUDIO LIMITED
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
 
 const CATS: { key: RoomCategory; label: string; emoji: string; desc: string }[] = [
   { key: "community",  label: "Community",   emoji: "🏘️", desc: "Local voices, neighbourhood talk" },
@@ -33,7 +36,6 @@ const VIS: { key: RoomVisibility; label: string; sub: string }[] = [
   { key: "livestream",  label: "Livestream",  sub: "Broadcast-style" },
 ];
 
-// Create types not yet built — show honest coming-soon placeholder
 const COMING_SOON: Record<string, { label: string; desc: string }> = {
   discussion: { label: "Discussion",  desc: "Public threaded discussions are coming soon." },
   event:      { label: "Event",       desc: "Regional event scheduling is coming soon." },
@@ -41,6 +43,17 @@ const COMING_SOON: Record<string, { label: string; desc: string }> = {
   article:    { label: "Article",     desc: "Long-form publishing is coming soon." },
   community:  { label: "Community",   desc: "Community creation is coming in a future sprint." },
 };
+
+/** Fire-and-forget: notify followers that this host just went live. */
+function notifyRoomLive(hostId: string, roomId: string, roomTitle: string, category: string) {
+  authFetch(`${API_BASE}/api/push/notify-room-live`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ hostId, roomId, roomTitle, category }),
+  }).catch(() => {
+    // Non-critical — swallow silently; push delivery failure must never block room creation
+  });
+}
 
 export default function CreatePage() {
   const { user } = useAuth();
@@ -54,7 +67,6 @@ export default function CreatePage() {
 
   // Auth gate now handled by ProtectedRoute in App.tsx
 
-  // Non-room create types — show honest placeholder
   const comingSoon = kind && kind !== "room" ? COMING_SOON[kind] : null;
   if (comingSoon) {
     return (
@@ -95,6 +107,10 @@ export default function CreatePage() {
       if (!user) throw new Error("Not signed in");
       const room = await createRoom(user.id, { title: title.trim(), description, category, visibility });
       track("room_create", { room_id: room.id, category, visibility });
+
+      // Notify followers — non-blocking, must not delay navigation
+      notifyRoomLive(user.id, room.id, title.trim(), category);
+
       toast.success("Room started");
       navigate(`/rooms/${room.id}`);
     } catch (err) {
