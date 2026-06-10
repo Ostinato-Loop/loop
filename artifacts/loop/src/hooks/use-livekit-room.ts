@@ -144,7 +144,8 @@ export function useLiveKitRoom(
         const token         = await fetchLiveKitToken(roomId, userId);
         const tokenProvider = createLiveKitTokenProvider(roomId, userId);
 
-        await lk.connect(LIVEKIT_URL, token, { tokenProvider });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await lk.connect(LIVEKIT_URL, token, { tokenProvider } as any);
 
         // Join muted — privacy-first. Track stays published so PTT can unmute quickly.
         await lk.localParticipant.setMicrophoneEnabled(true);
