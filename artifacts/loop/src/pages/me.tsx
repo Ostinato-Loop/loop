@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { formatLocation } from "@/lib/regions-data";
 import { useNotificationCount, formatBadgeCount } from "@/hooks/use-notification-count";
+import { useRoomStreak } from "@/hooks/use-room-streak";
 
 const AVATAR_COLORS = [
   "from-emerald-500 to-teal-500","from-fuchsia-500 to-purple-500",
@@ -51,6 +52,8 @@ export default function MePage() {
   const [counts, setCounts] = useState<ProfileCounts>({ followers: 0, following: 0 });
   const notifCount = useNotificationCount();
   const notifBadge = formatBadgeCount(notifCount);
+  // RETENTION-014: consecutive days in rooms
+  const streak = useRoomStreak(user?.id ?? null);
 
   // Auth gate now handled by ProtectedRoute in App.tsx
 
@@ -130,17 +133,40 @@ export default function MePage() {
           </div>
         </div>
 
-        {/* Stats row — tappable to navigate to followers/following lists when built */}
-        <div className="mt-5 grid grid-cols-2 divide-x divide-border overflow-hidden rounded-2xl bg-surface">
-          {([
-            [counts.followers, "Followers"],
-            [counts.following, "Following"],
-          ] as [number, string][]).map(([v, l]) => (
-            <div key={l} className="py-3 text-center">
-              <p className="font-display text-xl font-bold">{v}</p>
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{l}</p>
-            </div>
-          ))}
+        {/* Stats row */}
+        <div className="mt-5 grid grid-cols-3 divide-x divide-border overflow-hidden rounded-2xl bg-surface">
+          <div className="py-3 text-center">
+            <p className="font-display text-xl font-bold">{counts.followers}</p>
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Followers</p>
+          </div>
+          <div className="py-3 text-center">
+            <p className="font-display text-xl font-bold">{counts.following}</p>
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Following</p>
+          </div>
+          {/* RETENTION-014: Room streak — consecutive days in rooms */}
+          <div className="py-3 text-center">
+            {streak > 0 ? (
+              <>
+                <p className={cn(
+                  "font-display text-xl font-bold",
+                  streak >= 7 && "text-amber-400",
+                )}>
+                  🔥{streak}
+                </p>
+                <p className={cn(
+                  "text-[10px] uppercase tracking-wider",
+                  streak >= 7 ? "text-amber-400 font-bold" : "text-muted-foreground",
+                )}>
+                  {streak >= 7 ? "On fire!" : "Day streak"}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-display text-xl font-bold text-muted-foreground/40">—</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Streak</p>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Push notification prompt — shown if not yet enabled */}

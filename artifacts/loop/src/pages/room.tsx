@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useLiveKitRoom, type ChatMessage } from "@/hooks/use-livekit-room";
 import { useFollow } from "@/lib/api/follows";
+import { updateStreak } from "@/hooks/use-room-streak";
 
 /* ─── types ──────────────────────────────────────────────────────────── */
 type ParticipantRow = {
@@ -586,6 +587,7 @@ export default function RoomPage() {
         prevParticipants.current = p as ParticipantRow[];
         setMessages(m as MessageRow[]);
         await joinRoom(roomId, user.id);
+        updateStreak(user.id); // RETENTION-014: record daily room activity for streak tracking
         track("room_join", { room_id: roomId, category: r?.category ?? null, is_live: r?.is_live ?? false });
         setTimeout(() => setEntered(true), 80);
       } catch (e) { toast.error(e instanceof Error ? e.message : "Could not load room"); }
