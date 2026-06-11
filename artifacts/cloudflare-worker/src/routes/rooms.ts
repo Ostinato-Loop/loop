@@ -60,6 +60,11 @@ rooms.post("/", requireAuth(), async (c) => {
     Prefer:         "return=representation",
   };
 
+  // Validate and extract room_type (Civic Engine Phase 1)
+  const VALID_ROOM_TYPES = new Set(["SOCIAL", "CREATOR", "CIVIC"]);
+  const rawRoomType = typeof body.room_type === "string" ? (body.room_type as string).toUpperCase() : "SOCIAL";
+  const room_type = VALID_ROOM_TYPES.has(rawRoomType) ? rawRoomType : "SOCIAL";
+
   // ── Insert room row ───────────────────────────────────────────────────
   const createResp = await fetch(`${sbUrl}/rest/v1/rooms`, {
     method:  "POST",
@@ -73,6 +78,7 @@ rooms.post("/", requireAuth(), async (c) => {
       host_id:        user.id,
       is_live:        true,
       audience_count: 1,
+      room_type,
     }),
   });
 
@@ -131,6 +137,7 @@ rooms.get("/quota", requireAuth(), async (c) => {
  * Query params:
  *   category     — filter by room category
  *   community_id — filter to a specific community (V2)
+ *   room_type    — filter by engine type: SOCIAL | CREATOR | CIVIC
  *   limit        — max rooms to return (default: 20, max: 100)
  *   offset       — pagination offset (default: 0)
  *
@@ -146,6 +153,7 @@ rooms.get("/", async (c) => {
   const offset  = Math.max(Number(c.req.query("offset") ?? 0),  0);
   const category    = c.req.query("category");
   const communityId = c.req.query("community_id");
+  const roomType    = c.req.query("room_type"); // SOCIAL | CREATOR | CIVIC
 
   const select = "*";
 
@@ -158,6 +166,9 @@ rooms.get("/", async (c) => {
   });
   if (category)    qs.set("category",     `eq.${category}`);
   if (communityId) qs.set("community_id", `eq.${communityId}`);
+  if (roomType && ["SOCIAL","CREATOR","CIVIC"].includes(roomType.toUpperCase())) {
+    qs.set("room_type", `eq.${roomType.toUpperCase()}`);
+  }
 
   let resp: Response;
   try {
