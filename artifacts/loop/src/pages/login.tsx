@@ -32,7 +32,7 @@ import { Button } from "@/components/ui/button";
 
 const PROFILES_URL    = import.meta.env.VITE_RALD_AUTH_URL ?? "https://profiles.rald.cloud";
 const API_BASE        = import.meta.env.VITE_API_BASE_URL  ?? "";
-const INTERSTITIAL_MS = 2200;
+const INTERSTITIAL_MS = 300;
 
 export default function LoginPage() {
   const { user, loading } = useAuth();

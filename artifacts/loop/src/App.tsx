@@ -55,7 +55,14 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="flex flex-col items-center gap-4">
+          <div style={{display:"flex",gap:2,alignItems:"center"}}>
+            <span style={{fontSize:26,fontWeight:900,letterSpacing:-1,color:"#FFFFFF",fontFamily:"system-ui"}}>L</span>
+            <span style={{fontSize:26,fontWeight:900,letterSpacing:-1,color:"#2ECFA3",fontFamily:"system-ui"}}>O</span>
+            <span style={{fontSize:26,fontWeight:900,letterSpacing:-1,color:"#FFFFFF",fontFamily:"system-ui"}}>OP</span>
+          </div>
+          <Loader2 className="h-5 w-5 animate-spin" style={{color:"#2ECFA3"}} />
+        </div>
       </div>
     );
   }

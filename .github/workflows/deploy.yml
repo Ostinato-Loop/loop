@@ -168,6 +168,44 @@ jobs:
           echo "$MESSENGER_WEBHOOK_KEY" | pnpm exec wrangler secret put MESSENGER_WEBHOOK_KEY --env production
 
 
+
+      # ── Cross-worker: sync critical secrets to rald-auth ─────────────
+      # rald-auth-core CI billing failures prevent its own deploy.
+      # Piggyback here to keep RALD_JWT_SECRET in sync (SSO breaks if diverged)
+      # and push RESEND_API_KEY (email OTPs) + TERMII creds (SMS OTPs).
+      - name: Sync RALD_JWT_SECRET → rald-auth worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          RALD_JWT_SECRET: ${{ secrets.RALD_JWT_SECRET }}
+        run: |
+          if [ -z "$RALD_JWT_SECRET" ]; then
+            echo "WARNING: RALD_JWT_SECRET not set — skipping rald-auth sync" && exit 0
+          fi
+          echo "$RALD_JWT_SECRET" | pnpm exec wrangler secret put RALD_JWT_SECRET --name rald-auth 2>/dev/null \
+            && echo "RALD_JWT_SECRET synced to rald-auth" \
+            || echo "WARNING: Could not sync RALD_JWT_SECRET to rald-auth (non-fatal)"
+
+      - name: Sync RESEND_API_KEY → rald-auth worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          if [ -z "$RESEND_API_KEY" ]; then
+            echo "WARNING: RESEND_API_KEY not in org secrets — email OTPs disabled on auth.rald.cloud" && exit 0
+          fi
+          echo "$RESEND_API_KEY" | pnpm exec wrangler secret put RESEND_API_KEY --name rald-auth 2>/dev/null \
+            && echo "RESEND_API_KEY synced to rald-auth" \
+            || echo "WARNING: Could not sync RESEND_API_KEY to rald-auth (non-fatal)"
+
+      - name: Sync TERMII creds → rald-auth worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          TERMII_API_KEY: ${{ secrets.TERMII_API_KEY }}
+          TERMII_SENDER_ID: ${{ secrets.TERMII_SENDER_ID }}
+        run: |
+          [ -n "$TERMII_API_KEY" ] && echo "$TERMII_API_KEY" | pnpm exec wrangler secret put TERMII_API_KEY --name rald-auth 2>/dev/null && echo "TERMII_API_KEY synced to rald-auth" || true
+          [ -n "$TERMII_SENDER_ID" ] && echo "$TERMII_SENDER_ID" | pnpm exec wrangler secret put TERMII_SENDER_ID --name rald-auth 2>/dev/null && echo "TERMII_SENDER_ID synced to rald-auth" || true
+
       - name: Post-deploy smoke test (Worker)
         run: |
           sleep 5

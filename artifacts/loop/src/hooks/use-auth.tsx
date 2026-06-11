@@ -268,7 +268,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Attempt cookie-based silent restore
       try {
         const silentCtl = new AbortController();
-        const silentTid = setTimeout(() => silentCtl.abort(), 5000);
+        const silentTid = setTimeout(() => silentCtl.abort(), 1500);
         const silentRes = await fetch(`${API_BASE}/api/auth/silent`, {
           credentials: "include",
           signal:      silentCtl.signal,
