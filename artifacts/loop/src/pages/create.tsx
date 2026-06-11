@@ -6,13 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { createRoom, type RoomCategory, type RoomVisibility } from "@/lib/api/rooms";
+import { createRoom, type RoomCategory, type RoomVisibility, type RoomType } from "@/lib/api/rooms";
 import { authFetch } from "@/lib/api-fetch";
 import { useRoomQuota } from "@/hooks/use-room-quota";
 import { toast } from "sonner";
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
-import { Clock } from "lucide-react";
+import { Clock, Shield, Star, Users } from "lucide-react";
 
 // Phase H: All 7 Loop Room Types fully wired for room creation
 // PUSH-001 (2026-06-10): Notify followers via push when room goes live.
@@ -64,6 +64,7 @@ export default function CreatePage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<RoomCategory>("community");
+  const [roomType, setRoomType] = useState<RoomType>("SOCIAL");
   const [visibility, setVisibility] = useState<RoomVisibility>("public");
   const [busy, setBusy] = useState(false);
 
