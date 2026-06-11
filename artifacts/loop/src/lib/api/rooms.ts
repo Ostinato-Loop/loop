@@ -7,6 +7,15 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? ""
 // Community, News, Commentary, Radio, DJ Session, Education, Business
 // LILCKY STUDIO LIMITED
 
+// Civic Engine Phase 1 — three independent room classifications
+export type RoomType = "SOCIAL" | "CREATOR" | "CIVIC";
+
+export type VerificationLevel =
+  | "UNVERIFIED"
+  | "WITNESSED"
+  | "LOCALLY_VERIFIED"
+  | "OFFICIALLY_CONFIRMED";
+
 export type RoomCategory =
   | "community"
   | "news"
