@@ -762,6 +762,23 @@ export default function SettingsPage() {
               );
             })}
           </div>
+
+          {/* TRUST-004 (2026-06-11): Trust & Privacy Center link from settings menu */}
+          <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+            <button
+              onClick={() => navigate("/trust-center")}
+              className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-surface-elev active:bg-surface-elev"
+            >
+              <div className="h-8 w-8 shrink-0 rounded-xl bg-primary/10 flex items-center justify-center">
+                <Shield className="h-4 w-4 text-primary" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">Trust & Privacy Center</p>
+                <p className="text-xs text-muted-foreground truncate">Reports, policies, data export, recovery codes</p>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+            </button>
+          </div>
         </div>
       )}
 

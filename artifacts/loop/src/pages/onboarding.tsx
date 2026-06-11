@@ -443,6 +443,15 @@ export default function OnboardingPage() {
                 Skip — explore on my own
               </button>
             )}
+
+            {/* TRUST-003 (2026-06-11): Trust & privacy links on final onboarding step */}
+            <div className="flex items-center justify-center gap-3 pt-1">
+              <a href="/trust-center" className="text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors">Privacy Policy</a>
+              <span className="text-muted-foreground/30 text-[11px]">·</span>
+              <a href="/trust-center" className="text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors">Trust Center</a>
+              <span className="text-muted-foreground/30 text-[11px]">·</span>
+              <a href="/trust-center?section=community-standards" className="text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors">Community Standards</a>
+            </div>
           </div>
         </div>
       )}

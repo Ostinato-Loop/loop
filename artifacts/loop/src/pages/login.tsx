@@ -271,6 +271,33 @@ export default function LoginPage() {
         >
           Can't access your phone? Sign in with email instead
         </button>
+
+        {/* TRUST-002 (2026-06-11): Privacy & Trust links visible from login screen */}
+        <div className="flex items-center justify-center gap-4 pt-2">
+          <button
+            type="button"
+            onClick={() => navigate("/trust-center")}
+            className="text-[11px] text-muted-foreground/70 hover:text-muted-foreground transition-colors"
+          >
+            Privacy Policy
+          </button>
+          <span className="text-muted-foreground/30 text-[11px]">·</span>
+          <button
+            type="button"
+            onClick={() => navigate("/trust-center")}
+            className="text-[11px] text-muted-foreground/70 hover:text-muted-foreground transition-colors"
+          >
+            Trust Center
+          </button>
+          <span className="text-muted-foreground/30 text-[11px]">·</span>
+          <button
+            type="button"
+            onClick={() => navigate("/trust-center?section=community-standards")}
+            className="text-[11px] text-muted-foreground/70 hover:text-muted-foreground transition-colors"
+          >
+            Community Standards
+          </button>
+        </div>
       </div>
     </div>
   );
