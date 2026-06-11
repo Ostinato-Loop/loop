@@ -5,7 +5,10 @@
  * GET /api/metrics/retention — D1/D7 retention estimates
  * GET /api/metrics/auth      — OTP success rate, session counts
  *
- * Access: authenticated. In production, restrict to operator role.
+ * Access: operator role only (OPERATOR-001, 2026-06-11).
+ *   JWT role === "operator"  OR  profiles.is_operator = true in Supabase.
+ *   Non-operators receive 403 { error: "Forbidden", hint: "Operator access required" }.
+ *   See middleware/auth.ts requireOperator() for grant instructions.
  * OBSERVABILITY-001 (2026-06-10)
  * LILCKY STUDIO LIMITED
  */
@@ -13,12 +16,12 @@
 import { Hono } from "hono";
 import type { CloudflareEnv } from "../types/env.js";
 import type { AuthUser } from "../middleware/auth.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireOperator } from "../middleware/auth.js";
 
 const metrics = new Hono<{ Bindings: CloudflareEnv; Variables: { user: AuthUser } }>();
 
 // ── GET /api/metrics/overview ─────────────────────────────────────────────────
-metrics.get("/overview", requireAuth(), async (c) => {
+metrics.get("/overview", requireOperator(), async (c) => {
   const sbUrl   = c.env.SUPABASE_URL;
   const sbKey   = c.env.SUPABASE_SERVICE_ROLE_KEY;
   const headers = { apikey: sbKey, Authorization: `Bearer ${sbKey}`, "Content-Type": "application/json", Accept: "application/json" };
@@ -69,7 +72,7 @@ metrics.get("/overview", requireAuth(), async (c) => {
 });
 
 // ── GET /api/metrics/rooms ────────────────────────────────────────────────────
-metrics.get("/rooms", requireAuth(), async (c) => {
+metrics.get("/rooms", requireOperator(), async (c) => {
   const sbUrl   = c.env.SUPABASE_URL;
   const sbKey   = c.env.SUPABASE_SERVICE_ROLE_KEY;
   const headers = { apikey: sbKey, Authorization: `Bearer ${sbKey}`, "Content-Type": "application/json", Accept: "application/json" };
@@ -125,7 +128,7 @@ metrics.get("/rooms", requireAuth(), async (c) => {
 });
 
 // ── GET /api/metrics/retention ────────────────────────────────────────────────
-metrics.get("/retention", requireAuth(), async (c) => {
+metrics.get("/retention", requireOperator(), async (c) => {
   const sbUrl   = c.env.SUPABASE_URL;
   const sbKey   = c.env.SUPABASE_SERVICE_ROLE_KEY;
   const headers = { apikey: sbKey, Authorization: `Bearer ${sbKey}`, "Content-Type": "application/json", Accept: "application/json" };
@@ -177,7 +180,7 @@ metrics.get("/retention", requireAuth(), async (c) => {
 });
 
 // ── GET /api/metrics/auth ─────────────────────────────────────────────────────
-metrics.get("/auth", requireAuth(), async (c) => {
+metrics.get("/auth", requireOperator(), async (c) => {
   const sbUrl   = c.env.SUPABASE_URL;
   const sbKey   = c.env.SUPABASE_SERVICE_ROLE_KEY;
   const headers = { apikey: sbKey, Authorization: `Bearer ${sbKey}`, "Content-Type": "application/json", Accept: "application/json" };
