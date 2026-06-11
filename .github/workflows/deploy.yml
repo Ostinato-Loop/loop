@@ -167,8 +167,6 @@ jobs:
           fi
           echo "$MESSENGER_WEBHOOK_KEY" | pnpm exec wrangler secret put MESSENGER_WEBHOOK_KEY --env production
 
-
-
       # ── Cross-worker: sync critical secrets to rald-auth ─────────────
       # rald-auth-core CI billing failures prevent its own deploy.
       # Piggyback here to keep RALD_JWT_SECRET in sync (SSO breaks if diverged)
@@ -185,17 +183,20 @@ jobs:
             && echo "RALD_JWT_SECRET synced to rald-auth" \
             || echo "WARNING: Could not sync RALD_JWT_SECRET to rald-auth (non-fatal)"
 
-      - name: Sync RESEND_API_KEY → rald-auth worker
+      - name: Sync RESEND_API_KEY → rald-auth + rald-notify workers
         working-directory: artifacts/cloudflare-worker
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           if [ -z "$RESEND_API_KEY" ]; then
-            echo "WARNING: RESEND_API_KEY not in org secrets — email OTPs disabled on auth.rald.cloud" && exit 0
+            echo "WARNING: RESEND_API_KEY not in repo secrets — email OTPs + email notifications disabled" && exit 0
           fi
           echo "$RESEND_API_KEY" | pnpm exec wrangler secret put RESEND_API_KEY --name rald-auth 2>/dev/null \
-            && echo "RESEND_API_KEY synced to rald-auth" \
+            && echo "RESEND_API_KEY → rald-auth ✓" \
             || echo "WARNING: Could not sync RESEND_API_KEY to rald-auth (non-fatal)"
+          echo "$RESEND_API_KEY" | pnpm exec wrangler secret put RESEND_API_KEY --name rald-notify 2>/dev/null \
+            && echo "RESEND_API_KEY → rald-notify ✓" \
+            || echo "WARNING: Could not sync RESEND_API_KEY to rald-notify (non-fatal)"
 
       - name: Sync TERMII creds → rald-auth worker
         working-directory: artifacts/cloudflare-worker
@@ -203,8 +204,47 @@ jobs:
           TERMII_API_KEY: ${{ secrets.TERMII_API_KEY }}
           TERMII_SENDER_ID: ${{ secrets.TERMII_SENDER_ID }}
         run: |
-          [ -n "$TERMII_API_KEY" ] && echo "$TERMII_API_KEY" | pnpm exec wrangler secret put TERMII_API_KEY --name rald-auth 2>/dev/null && echo "TERMII_API_KEY synced to rald-auth" || true
-          [ -n "$TERMII_SENDER_ID" ] && echo "$TERMII_SENDER_ID" | pnpm exec wrangler secret put TERMII_SENDER_ID --name rald-auth 2>/dev/null && echo "TERMII_SENDER_ID synced to rald-auth" || true
+          [ -n "$TERMII_API_KEY" ] && echo "$TERMII_API_KEY" | pnpm exec wrangler secret put TERMII_API_KEY --name rald-auth 2>/dev/null && echo "TERMII_API_KEY → rald-auth ✓" || true
+          [ -n "$TERMII_SENDER_ID" ] && echo "$TERMII_SENDER_ID" | pnpm exec wrangler secret put TERMII_SENDER_ID --name rald-auth 2>/dev/null && echo "TERMII_SENDER_ID → rald-auth ✓" || true
+
+      # ── Cross-worker: sync LiveKit credentials to rald-realtime ──────────
+      # rald-realtime returns 503 without at least one provider key set.
+      # LiveKit secrets live in loop repo; push them here on every deploy.
+      - name: Sync LIVEKIT_API_KEY → rald-realtime worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+        run: |
+          if [ -z "$LIVEKIT_API_KEY" ]; then
+            echo "WARNING: LIVEKIT_API_KEY not set — skipping rald-realtime sync" && exit 0
+          fi
+          echo "$LIVEKIT_API_KEY" | pnpm exec wrangler secret put LIVEKIT_API_KEY --name rald-realtime 2>/dev/null \
+            && echo "LIVEKIT_API_KEY → rald-realtime ✓" \
+            || echo "WARNING: Could not sync LIVEKIT_API_KEY to rald-realtime (non-fatal)"
+
+      - name: Sync LIVEKIT_API_SECRET → rald-realtime worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+        run: |
+          if [ -z "$LIVEKIT_API_SECRET" ]; then
+            echo "WARNING: LIVEKIT_API_SECRET not set — skipping rald-realtime sync" && exit 0
+          fi
+          echo "$LIVEKIT_API_SECRET" | pnpm exec wrangler secret put LIVEKIT_API_SECRET --name rald-realtime 2>/dev/null \
+            && echo "LIVEKIT_API_SECRET → rald-realtime ✓" \
+            || echo "WARNING: Could not sync LIVEKIT_API_SECRET to rald-realtime (non-fatal)"
+
+      - name: Sync LIVEKIT_URL → rald-realtime worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          LIVEKIT_URL: ${{ secrets.LIVEKIT_URL }}
+        run: |
+          if [ -z "$LIVEKIT_URL" ]; then
+            echo "WARNING: LIVEKIT_URL not set — skipping rald-realtime sync" && exit 0
+          fi
+          echo "$LIVEKIT_URL" | pnpm exec wrangler secret put LIVEKIT_URL --name rald-realtime 2>/dev/null \
+            && echo "LIVEKIT_URL → rald-realtime ✓" \
+            || echo "WARNING: Could not sync LIVEKIT_URL to rald-realtime (non-fatal)"
 
       - name: Post-deploy smoke test (Worker)
         run: |
@@ -245,14 +285,8 @@ jobs:
           BASE_PATH: "/"
           NODE_ENV: production
           VITE_COMMIT_SHA: ${{ github.sha }}
-          # B0 FIX 2026-06-07: correct env var names so client.ts receives the anon key
-          # client.ts reads VITE_SUPABASE_PUBLISHABLE_KEY (not VITE_SUPABASE_ANON_KEY)
-          # Org secret is SUPABASE_ANON_KEY (not prefixed with VITE_)
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          # Supabase project URL — org secret SUPABASE_URL
           VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          # Loop API base URL — hardcoded public endpoint (no secret required)
-          # Required so AuthProvider sends requests to loop-api.rald.cloud, not the SPA router
           VITE_API_BASE_URL: https://loop-api.rald.cloud
 
       - name: Ensure Cloudflare Pages project exists (idempotent)
