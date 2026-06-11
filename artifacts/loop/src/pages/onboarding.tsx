@@ -195,12 +195,15 @@ export default function OnboardingPage() {
         room_id:      roomId ?? null,
         username,
       });
-      await refreshProfile();
-      navigate(roomId ? `/rooms/${roomId}` : "/");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not continue");
+      toast.error(err instanceof Error ? err.message : "Could not save profile — try again");
       setBusy(false);
+      return;
     }
+    // refreshProfile is non-fatal: profile already saved in DB.
+    // If it fails (network blip), navigate anyway — AuthProvider will re-fetch on mount.
+    try { await refreshProfile(); } catch { /* non-fatal */ }
+    navigate(roomId ? `/rooms/${roomId}` : "/");
   };
 
   return (
