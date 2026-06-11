@@ -17,6 +17,8 @@
  *     ↓ /api/notify/dm         → Internal webhook from Messenger worker
  *     ↓ /api/push/*            → Web Push subscriptions + room-live dispatch (PUSH-001)
  *     ↓ /api/analytics         → Event ingestion for DAU / retention tracking
+ *     ↓ /api/civic/*           → Civic Engine — witness confirmations, verification levels
+ *     ↓ /api/creator/*         → Creator Engine — velocity rankings, trending feeds
  *     ↓ /api/*                 → Business logic, AI, civic data (Worker)
  *     ↓ Supabase               → DB, Realtime (via service role from Worker)
  *
@@ -48,6 +50,8 @@ import { friendRequests } from "./routes/friend-requests.js";
 import { push } from "./routes/push.js";
 import { retention } from "./routes/retention.js";
 import { metrics } from "./routes/metrics.js";
+import { civic } from "./routes/civic.js";
+import { creator } from "./routes/creator.js";
 import { RoomSession } from "./durable-objects/room-session.js";
 
 export { RoomSession };
