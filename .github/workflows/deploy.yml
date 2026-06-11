@@ -246,6 +246,53 @@ jobs:
             && echo "LIVEKIT_URL → rald-realtime ✓" \
             || echo "WARNING: Could not sync LIVEKIT_URL to rald-realtime (non-fatal)"
 
+      # ── Cross-worker: Tencent RTC + Cloudflare Calls (voice rooms fallback) ──
+      # Add TENCENT_SDK_APP_ID + TENCENT_SECRET_KEY + CALLS_APP_ID + CALLS_APP_SECRET
+      # to loop repo secrets to enable these providers automatically.
+      - name: Sync TENCENT_SDK_APP_ID → rald-realtime worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          TENCENT_SDK_APP_ID: ${{ secrets.TENCENT_SDK_APP_ID }}
+        run: |
+          [ -n "$TENCENT_SDK_APP_ID" ] && echo "$TENCENT_SDK_APP_ID" | pnpm exec wrangler secret put TENCENT_SDK_APP_ID --name rald-realtime 2>/dev/null && echo "TENCENT_SDK_APP_ID → rald-realtime ✓" || echo "ℹ️  TENCENT_SDK_APP_ID not set — Tencent RTC unavailable (non-fatal)"
+
+      - name: Sync TENCENT_SECRET_KEY → rald-realtime worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+        run: |
+          [ -n "$TENCENT_SECRET_KEY" ] && echo "$TENCENT_SECRET_KEY" | pnpm exec wrangler secret put TENCENT_SECRET_KEY --name rald-realtime 2>/dev/null && echo "TENCENT_SECRET_KEY → rald-realtime ✓" || echo "ℹ️  TENCENT_SECRET_KEY not set (non-fatal)"
+
+      - name: Sync CALLS_APP_ID + CALLS_APP_SECRET → rald-realtime worker
+        working-directory: artifacts/cloudflare-worker
+        env:
+          CALLS_APP_ID:     ${{ secrets.CALLS_APP_ID }}
+          CALLS_APP_SECRET: ${{ secrets.CALLS_APP_SECRET }}
+        run: |
+          [ -n "$CALLS_APP_ID" ] && echo "$CALLS_APP_ID" | pnpm exec wrangler secret put CALLS_APP_ID --name rald-realtime 2>/dev/null && echo "CALLS_APP_ID → rald-realtime ✓" || echo "ℹ️  CALLS_APP_ID not set (non-fatal)"
+          [ -n "$CALLS_APP_SECRET" ] && echo "$CALLS_APP_SECRET" | pnpm exec wrangler secret put CALLS_APP_SECRET --name rald-realtime 2>/dev/null && echo "CALLS_APP_SECRET → rald-realtime ✓" || echo "ℹ️  CALLS_APP_SECRET not set (non-fatal)"
+
+      # ── Cross-worker: VAPID web push keys → rald-realtime + rald-notify ────
+      # Add VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT to loop secrets
+      # to enable Web Push notifications from room events.
+      - name: Sync VAPID keys → rald-realtime + rald-notify
+        working-directory: artifacts/cloudflare-worker
+        env:
+          VAPID_PUBLIC_KEY:  ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT:     ${{ secrets.VAPID_SUBJECT }}
+        run: |
+          if [ -n "$VAPID_PUBLIC_KEY" ]; then
+            echo "$VAPID_PUBLIC_KEY"  | pnpm exec wrangler secret put VAPID_PUBLIC_KEY  --name rald-realtime 2>/dev/null && echo "VAPID_PUBLIC_KEY → rald-realtime ✓"
+            echo "$VAPID_PRIVATE_KEY" | pnpm exec wrangler secret put VAPID_PRIVATE_KEY --name rald-realtime 2>/dev/null && echo "VAPID_PRIVATE_KEY → rald-realtime ✓"
+            echo "$VAPID_SUBJECT"     | pnpm exec wrangler secret put VAPID_SUBJECT     --name rald-realtime 2>/dev/null && echo "VAPID_SUBJECT → rald-realtime ✓"
+            echo "$VAPID_PUBLIC_KEY"  | pnpm exec wrangler secret put VAPID_PUBLIC_KEY  --name rald-notify 2>/dev/null && echo "VAPID_PUBLIC_KEY → rald-notify ✓"
+            echo "$VAPID_PRIVATE_KEY" | pnpm exec wrangler secret put VAPID_PRIVATE_KEY --name rald-notify 2>/dev/null && echo "VAPID_PRIVATE_KEY → rald-notify ✓"
+            echo "$VAPID_SUBJECT"     | pnpm exec wrangler secret put VAPID_SUBJECT     --name rald-notify 2>/dev/null && echo "VAPID_SUBJECT → rald-notify ✓"
+          else
+            echo "ℹ️  VAPID keys not set — Web Push unavailable (add VAPID_PUBLIC_KEY/PRIVATE_KEY/SUBJECT to loop secrets)"
+          fi
+
       - name: Post-deploy smoke test (Worker)
         run: |
           sleep 5
