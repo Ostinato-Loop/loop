@@ -111,7 +111,7 @@ export default function CreatePage() {
     setBusy(true);
     try {
       if (!user) throw new Error("Not signed in");
-      const room = await createRoom(user.id, { title: title.trim(), description, category, visibility });
+      const room = await createRoom(user.id, { title: title.trim(), description, category, visibility, room_type: roomType });
       track("room_create", { room_id: room.id, category, visibility });
 
       // Sync quota counter then notify followers — both non-blocking
@@ -136,9 +136,64 @@ export default function CreatePage() {
         <p className="text-sm text-muted-foreground">Go live in seconds. You can change settings later.</p>
       </header>
       <form onSubmit={submit} className="space-y-5 px-5 py-4 pb-8">
+        {/* Room Engine selector — Social / Creator / Civic */}
+        <div className="space-y-2">
+          <Label className="text-sm font-bold">Room Engine</Label>
+          <p className="text-xs text-muted-foreground">
+            Choose how this room will be classified and ranked.
+          </p>
+          <div className="flex flex-col gap-2">
+            {([
+              { key: "SOCIAL"  as RoomType, icon: Users,  label: "Social",  desc: "General conversation — no algorithm." },
+              { key: "CREATOR" as RoomType, icon: Star,   label: "Creator", desc: "Entertainment. Ranked by local velocity." },
+              { key: "CIVIC"   as RoomType, icon: Shield, label: "Civic",   desc: "Public interest — ranked by witness confirmations." },
+            ] as const).map(({ key, icon: Icon, label, desc }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setRoomType(key)}
+                className={cn(
+                  "flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-all",
+                  roomType === key
+                    ? key === "CREATOR"
+                      ? "border-amber-500/60 bg-amber-500/10"
+                      : key === "CIVIC"
+                        ? "border-emerald-500/60 bg-emerald-500/10"
+                        : "border-primary/50 bg-primary/10"
+                    : "border-border bg-surface",
+                )}
+              >
+                <div className={cn(
+                  "h-9 w-9 rounded-xl flex items-center justify-center shrink-0",
+                  roomType === key
+                    ? key === "CREATOR" ? "bg-amber-500/20" : key === "CIVIC" ? "bg-emerald-500/20" : "bg-primary/15"
+                    : "bg-secondary",
+                )}>
+                  <Icon className={cn(
+                    "h-[18px] w-[18px]",
+                    roomType === key
+                      ? key === "CREATOR" ? "text-amber-500" : key === "CIVIC" ? "text-emerald-500" : "text-primary"
+                      : "text-muted-foreground",
+                  )} />
+                </div>
+                <div>
+                  <p className={cn("text-sm font-semibold",
+                    roomType === key
+                      ? key === "CREATOR" ? "text-amber-700 dark:text-amber-300"
+                      : key === "CIVIC" ? "text-emerald-700 dark:text-emerald-300"
+                      : "text-primary"
+                      : ""
+                  )}>{label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Room Type */}
         <div className="space-y-2">
-          <Label>Room Type</Label>
+          <Label>Category</Label>
           <div className="grid grid-cols-2 gap-2">
             {CATS.map((c) => (
               <button
