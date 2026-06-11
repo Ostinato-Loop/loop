@@ -479,4 +479,104 @@ rooms.get('/:roomId/health', async (c) => {
   });
 });
 
+/**
+ * GET /api/rooms/regional
+ * Returns public rooms sorted by regional proximity of the host.
+ * REGION-001 (2026-06-11): African-First UX — Nearby → Same State → Same Country → Trending
+ *
+ * Sort order within each bucket: audience_count desc
+ *
+ * Requires auth so we can read the caller's profile state_id/country_id.
+ * Falls back gracefully — if the user has no region set, returns global trending.
+ *
+ * Query params:
+ *   tags[]    — optional tag filter (AND'd)
+ *   limit     — max rooms (default: 40, max: 100)
+ */
+rooms.get("/regional", requireAuth(), async (c) => {
+  const user  = c.get("user");
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
+  const limit = Math.min(Number(c.req.query("limit") ?? 40), 100);
+  const tags  = c.req.queries("tags[]") ?? [];
+
+  const headers = {
+    apikey:        sbKey,
+    Authorization: `Bearer ${sbKey}`,
+    "Content-Type": "application/json",
+    Accept:        "application/json",
+  };
+
+  // ── 1. Fetch caller's region from profile ────────────────────────────────
+  let userStateId:   string | null = null;
+  let userCountryId: string | null = null;
+  try {
+    const pr = await fetch(
+      `${sbUrl}/rest/v1/profiles?user_id=eq.${user.id}&select=state_id,country_id&limit=1`,
+      { headers },
+    );
+    if (pr.ok) {
+      const pd = await pr.json() as Array<{ state_id: string | null; country_id: string | null }>;
+      if (pd[0]) { userStateId = pd[0].state_id; userCountryId = pd[0].country_id; }
+    }
+  } catch { /* non-fatal — fall back to global sort */ }
+
+  // ── 2. Fetch live public rooms with embedded host region ─────────────────
+  // PostgREST embeds host profile fields via the rooms.host_id FK → profiles.user_id
+  const qs = new URLSearchParams({
+    select:     "*,hp:profiles!host_id(state_id,country_id)",
+    visibility: "eq.public",
+    is_live:    "eq.true",
+    order:      "audience_count.desc",
+    limit:      String(limit),
+  });
+  if (tags.length) qs.set("tags", `cs.{${tags.join(",")}}`);
+
+  let raw: unknown[] = [];
+  try {
+    const resp = await fetch(`${sbUrl}/rest/v1/rooms?${qs.toString()}`, { headers });
+    if (resp.ok) raw = await resp.json() as unknown[];
+  } catch { /* non-fatal */ }
+
+  // ── 3. Sort into buckets ─────────────────────────────────────────────────
+  type RoomRow = Record<string, unknown> & {
+    host_id: string;
+    audience_count: number;
+    hp?: { state_id: string | null; country_id: string | null } | null;
+  };
+
+  const rows = raw as RoomRow[];
+
+  let sorted: RoomRow[];
+
+  if (userStateId || userCountryId) {
+    const sameState:   RoomRow[] = [];
+    const sameCountry: RoomRow[] = [];
+    const rest:        RoomRow[] = [];
+
+    for (const r of rows) {
+      if (userStateId && r.hp?.state_id === userStateId) {
+        sameState.push(r);
+      } else if (userCountryId && r.hp?.country_id === userCountryId) {
+        sameCountry.push(r);
+      } else {
+        rest.push(r);
+      }
+    }
+
+    sorted = [...sameState, ...sameCountry, ...rest];
+  } else {
+    sorted = rows;
+  }
+
+  // ── 4. Strip embedded hp before returning (keep payload lean) ───────────
+  const rooms_ = sorted.map(({ hp: _hp, ...r }) => r);
+
+  return c.json({
+    rooms: rooms_,
+    region: { state_id: userStateId, country_id: userCountryId },
+    count:  rooms_.length,
+  });
+});
+
 export { rooms };
