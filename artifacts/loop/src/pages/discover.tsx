@@ -28,7 +28,7 @@ import {
   searchRelatedPeople, getPeopleSuggestions, hasRaldIdentity,
   type PersonResult, type PersonSuggestion,
 } from "@/lib/api/people";
-import { Search, Sparkles, Radio, Globe2, TrendingUp, Calendar, Briefcase, Newspaper, ChevronRight, Users, BadgeCheck, Check, UserPlus, MapPin, Loader2, ChevronDown, Mic, , Shield } from "lucide-react";
+import { Search, Sparkles, Radio, Globe2, TrendingUp, Calendar, Briefcase, Newspaper, ChevronRight, Users, BadgeCheck, Check, UserPlus, MapPin, Loader2, ChevronDown, Mic, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFollow } from "@/hooks/use-follow";
 import { useRoomQuota } from "@/hooks/use-room-quota";
