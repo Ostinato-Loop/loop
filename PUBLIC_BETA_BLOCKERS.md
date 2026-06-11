@@ -1,43 +1,69 @@
-# Loop Public Beta — Remaining Blockers
-**Updated:** 2026-06-10 | **Sprint:** G.10
+# Loop Public Beta — Active Blockers
 
-## P0 — Must Resolve Before Beta Launch
+**Last updated:** 2026-06-11 (session G.13 — CTO agent run)
 
-### BLOCKER-001: GitHub Actions Billing
-- **Symptom**: CI jobs fail to start with billing error
-- **Repos affected**: messenger, rald-auth-core, loop (any PR)
-- **Fix**: GitHub.com → Org Settings → Billing & Plans → resolve payment / increase spending limit
+## 🔴 P0 — Must Fix Before Beta Launch
 
-### BLOCKER-002: RALD_JWT_SECRET not in org secrets
-- **Symptom**: notification.rald.cloud → 503; auth JWT validation fails without it
-- **Current location**: messenger repo secrets only
-- **Fix option A**: Add `RALD_JWT_SECRET` as org-level GitHub secret
-- **Fix option B**: Fix billing → merge messenger PR#15 → run sync-worker-secrets workflow
+### P0-001: `realtime.rald.cloud` — Missing provider secret
+**Status:** 503 — `{"error":"Service misconfigured","missing":["CALLS_APP_SECRET or LIVEKIT_API_SECRET or TENCENT_SECRET_KEY (at least one provider)"]}`
+**Fix:** Add ONE of the following to GitHub org secrets (Ostinato-Loop → Settings → Secrets → Actions):
+- `CALLS_APP_SECRET` (Cloudflare Calls)
+- `LIVEKIT_API_SECRET` + `LIVEKIT_API_KEY` + `LIVEKIT_URL` (LiveKit)
+- `TENCENT_SECRET_KEY` + `TENCENT_SDK_APP_ID` (Tencent TRTC)
 
-### BLOCKER-003: No real-time provider secret in org
-- **Symptom**: realtime.rald.cloud → 503 (needs CALLS_APP_SECRET or LIVEKIT_API_SECRET or TENCENT_SECRET_KEY)
-- **Fix option A**: Add one of those three as org-level GitHub secret, then re-trigger rald-realtime deploy
-- **Fix option B**: Merge messenger PR#15 (syncs TENCENT_SDKAPPID + TENCENT_SECRETKEY from messenger repo)
+Then trigger: `gh workflow run deploy.yml -R Ostinato-Loop/rald-realtime`
 
-## P1 — Should Fix for Quality Beta
+**Owner:** CTO / ops — requires secret from provider dashboard.
 
-### BLOCKER-004: loop-mobile production build config
-- `eas.json` has placeholder values for Apple Team ID, Expo project ID
-- `EXPO_PUBLIC_ONESIGNAL_APP_ID` not set — push notifications won't work
-- Fix: Add real EAS + App Store credentials
+---
 
-### BLOCKER-005: Supabase migrations (messenger)
-- `apply-migrations.yml` may fail if pooler host is wrong
-- Current host: `aws-0-eu-west-1.pooler.supabase.com`
-- Fix: Verify this matches your Supabase project region
+### P0-002: `rald-auth-core` — Deploy CI fails with 0 steps (billing)
+**Status:** Every deploy run fails in <5 seconds with 0 steps executed (GitHub Actions billing quota exceeded).
+**Impact:** Auth worker IS live and healthy (`auth.rald.cloud` → 200). But automated deploys can't run.
+**Fix:** GitHub org → Settings → Billing & Plans → add/update payment method, or increase Actions spending limit.
 
-### BLOCKER-006: OpenObserve logging endpoint missing
-- `OPEN_OBSERVE_API_KEY` exists but no endpoint configured
-- Fix: Add `OPEN_OBSERVE_ENDPOINT` org secret (e.g. `https://cloud.openobserve.ai/api/{org}/logs/_json`)
+**Workaround:** `wrangler deploy` can be run manually from the rald-auth-core repo with a CF API token.
 
-## One-Click Actions After Billing Fixed
+---
 
-1. GitHub: Merge messenger PR#15 (`feat/sync-worker-secrets`)
-2. GitHub: Actions → Sync Worker Secrets → Run workflow (workflow_dispatch)
-3. Cloudflare Dashboard: Workers → rald-notify → Triggers → Add cron `*/5 * * * *`
-4. GitHub: Add `RALD_JWT_SECRET` to org secrets (if not done via PR#15)
+## 🟡 P1 — Self-Healing / In Progress
+
+### P1-001: `identity.rald.cloud` — Cloudflare Pages SSL cert provisioning
+**Status:** 522 (connection timeout). `rald-identity.pages.dev` returns 200 (origin is healthy).
+**Cause:** Pages custom domain SSL cert takes 10-30 minutes to provision after registration.
+**Fix:** Wait — auto-heals. Custom domain `identity.rald.cloud` is registered on the Pages project. CNAME DNS record exists.
+
+---
+
+### P1-002: `inbox.rald.cloud` — No `/health` route (404)
+**Status:** Worker is deployed and reachable. API endpoints work. `/health` returns 404.
+**Impact:** Monitoring only. Core inbox API is functional.
+**Fix (nice-to-have):** Add `app.get('/health', ...)` to rald-inbox.
+
+---
+
+## ✅ Resolved This Session
+
+| Service | Was | Now | Fix Applied |
+|---------|-----|-----|-------------|
+| notification.rald.cloud | 503 (RALD_JWT_SECRET) | **200** | RALD_JWT_SECRET pushed to org + worker |
+| search.rald.cloud | 503 (RALD_JWT_SECRET) | **200** | RALD_JWT_SECRET pushed to org + worker |
+| inbox.rald.cloud | NXDOMAIN | **404** (worker up) | DNS AAAA 100:: proxied created; deploy.yml restored+fixed |
+| auth.rald.cloud | deploy failures (SUPABASE_URL) | **200 live** | SUPABASE_URL in wrangler.toml vars |
+| identity.rald.cloud | Error 1016 | Pages SSL provisioning | deploy.yml fixed; Pages is CF Pages not Workers |
+| notification.rald.cloud | cron + SUPABASE_URL | **200** | cron removed from wrangler.toml; SUPABASE_URL pushed |
+| loop.rald.cloud | — | **200** | PR#15 merged |
+| loop-api.rald.cloud | — | **200** | PR#15 merged |
+| messenger.rald.cloud | — | **200** | PR#15 merged |
+| auth.rald.cloud | — | **200** | PR#15 merged |
+
+## Actions Required from You
+
+1. **[CRITICAL] Add one provider secret** to org secrets:
+   - `CALLS_APP_SECRET` (from Cloudflare Calls dashboard) — simplest option
+   - OR `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_URL` (LiveKit dashboard)
+   - Then re-trigger `rald-realtime` deploy
+
+2. **[HIGH] Fix GitHub Actions billing** — deploys failing for rald-auth-core specifically. Go to Ostinato-Loop org → Settings → Billing & Plans.
+
+3. **[OPTIONAL] Merge messenger PR#16** — scorecard docs PR (no code change).
