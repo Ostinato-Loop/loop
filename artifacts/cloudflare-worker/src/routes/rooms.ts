@@ -579,6 +579,250 @@ rooms.get("/regional", requireAuth(), async (c) => {
   });
 });
 
+// ── HANDSHAKE-001: Hand-raise speaker request flow ────────────────────────
+//
+// Five routes power the full raise-hand → approve/deny → on-stage loop:
+//
+//  POST /:roomId/hand-raise       Listener signals intent to speak
+//  POST /:roomId/hand-lower       Listener cancels / host clears
+//  POST /:roomId/hand-deny        Host declines the request
+//  POST /:roomId/speakers         Host approves → promote to speaker role
+//  POST /:roomId/speakers/remove  Host demotes speaker back to listener
+//
+// All writes update the Durable Object handQueue (in-memory, fast) AND the
+// Supabase room_participants role column (durable).
+// Push notifications (OneSignal) are fire-and-forget via waitUntil.
+
+/** Shared Supabase header builder */
+function sbHeaders(key: string) {
+  return {
+    apikey:         key,
+    Authorization:  `Bearer ${key}`,
+    "Content-Type": "application/json",
+    Accept:         "application/json",
+  };
+}
+
+/** Proxy a request to a room's Durable Object */
+async function callDO(
+  env: CloudflareEnv,
+  roomId: string,
+  path: string,
+  body?: unknown,
+): Promise<Response> {
+  const doId   = env.ROOM_SESSION.idFromName(roomId);
+  const doStub = env.ROOM_SESSION.get(doId);
+  return doStub.fetch(new Request(`https://do-internal${path}`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    body ? JSON.stringify(body) : undefined,
+  }));
+}
+
+// ── POST /api/rooms/:roomId/hand-raise ──────────────────────────────────────
+rooms.post("/:roomId/hand-raise", requireAuth(), async (c) => {
+  const { roomId } = c.req.param();
+  const user = c.get("user");
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // 1. Add to DO hand queue
+  await callDO(c.env, roomId, "/raise-hand", { userId: user.id }).catch(() => {});
+
+  // 2. Fetch room (need host_id + title for notification)
+  const rr = await fetch(
+    `${sbUrl}/rest/v1/rooms?id=eq.${roomId}&select=host_id,title&limit=1`,
+    { headers: sbHeaders(sbKey) },
+  ).catch(() => null);
+  const rooms_ = rr?.ok ? (await rr.json()) as Array<{ host_id: string; title: string | null }> : [];
+  const hostId    = rooms_[0]?.host_id;
+  const roomTitle = rooms_[0]?.title ?? "A room";
+  if (!hostId) return c.json({ ok: true }); // room not found — non-fatal
+
+  // 3. Fetch requester display name
+  const pr = await fetch(
+    `${sbUrl}/rest/v1/profiles?id=eq.${user.id}&select=display_name,username&limit=1`,
+    { headers: sbHeaders(sbKey) },
+  ).catch(() => null);
+  const profiles = pr?.ok ? (await pr.json()) as Array<{ display_name: string | null; username: string | null }> : [];
+  const displayName = profiles[0]?.display_name || profiles[0]?.username || "Someone";
+
+  // 4. Push to host (device + in-app) — fire-and-forget
+  c.executionCtx.waitUntil((async () => {
+    // OneSignal push
+    if (c.env.ONESIGNAL_APP_ID && c.env.ONESIGNAL_REST_API_KEY) {
+      const { sendOneSignalNotification } = await import("../lib/push-crypto.js");
+      await sendOneSignalNotification(
+        c.env.ONESIGNAL_APP_ID,
+        c.env.ONESIGNAL_REST_API_KEY,
+        {
+          externalIds: [hostId],
+          headings:    { en: "✋ Hand raised" },
+          contents:    { en: `${displayName} wants to speak in "${roomTitle}"` },
+          tag:         `hand-raise-${roomId}-${user.id}`,
+          data:        { type: "hand_raise_request", roomId },
+        },
+      ).catch(() => {});
+    }
+    // In-app notification
+    await fetch(`${sbUrl}/rest/v1/notifications`, {
+      method:  "POST",
+      headers: { ...sbHeaders(sbKey), Prefer: "return=minimal" },
+      body: JSON.stringify([{
+        recipient_id:  hostId,
+        actor_id:      user.id,
+        type:          "hand_raise_request",
+        resource_id:   roomId,
+        resource_type: "room",
+        data: { room_title: roomTitle, requester_name: displayName },
+      }]),
+    }).catch(() => {});
+  })());
+
+  return c.json({ ok: true });
+});
+
+// ── POST /api/rooms/:roomId/hand-lower ─────────────────────────────────────
+rooms.post("/:roomId/hand-lower", requireAuth(), async (c) => {
+  const { roomId } = c.req.param();
+  const user = c.get("user");
+  await callDO(c.env, roomId, "/lower-hand", { userId: user.id }).catch(() => {});
+  return c.json({ ok: true });
+});
+
+// ── POST /api/rooms/:roomId/hand-deny ──────────────────────────────────────
+// Host denies a hand-raiser: remove from DO queue, no role change needed.
+rooms.post("/:roomId/hand-deny", requireAuth(), async (c) => {
+  const { roomId } = c.req.param();
+  const user = c.get("user");
+  let body: { user_id?: string } = {};
+  try { body = await c.req.json(); } catch { /* no body */ }
+
+  const targetUserId = body.user_id;
+  if (!targetUserId) return c.json({ error: "user_id required" }, 400);
+
+  // Verify caller is the host
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
+  const rr = await fetch(
+    `${sbUrl}/rest/v1/rooms?id=eq.${roomId}&select=host_id&limit=1`,
+    { headers: sbHeaders(sbKey) },
+  ).catch(() => null);
+  const rows = rr?.ok ? (await rr.json()) as Array<{ host_id: string }> : [];
+  if (!rows.length || rows[0].host_id !== user.id) {
+    return c.json({ error: "Only the host can deny hand raises" }, 403);
+  }
+
+  await callDO(c.env, roomId, "/lower-hand", { userId: targetUserId }).catch(() => {});
+  return c.json({ ok: true });
+});
+
+// ── POST /api/rooms/:roomId/speakers ───────────────────────────────────────
+// Host approves a hand-raiser: promote to speaker role + push approved user.
+rooms.post("/:roomId/speakers", requireAuth(), async (c) => {
+  const { roomId } = c.req.param();
+  const user = c.get("user");
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  let body: { user_id?: string } = {};
+  try { body = await c.req.json(); } catch { /* no body */ }
+  const targetUserId = body.user_id;
+  if (!targetUserId) return c.json({ error: "user_id required" }, 400);
+
+  // Verify caller is the host
+  const rr = await fetch(
+    `${sbUrl}/rest/v1/rooms?id=eq.${roomId}&select=host_id,title&limit=1`,
+    { headers: sbHeaders(sbKey) },
+  ).catch(() => null);
+  const rooms_ = rr?.ok ? (await rr.json()) as Array<{ host_id: string; title: string | null }> : [];
+  if (!rooms_.length || rooms_[0].host_id !== user.id) {
+    return c.json({ error: "Only the host can add speakers" }, 403);
+  }
+  const roomTitle = rooms_[0].title ?? "A room";
+
+  // Promote to speaker in DB
+  await fetch(
+    `${sbUrl}/rest/v1/room_participants?room_id=eq.${roomId}&user_id=eq.${targetUserId}`,
+    {
+      method:  "PATCH",
+      headers: { ...sbHeaders(sbKey), Prefer: "return=minimal" },
+      body:    JSON.stringify({ role: "speaker" }),
+    },
+  ).catch(() => {});
+
+  // Remove from DO hand queue
+  await callDO(c.env, roomId, "/lower-hand", { userId: targetUserId }).catch(() => {});
+
+  // Notify the approved listener — fire-and-forget
+  c.executionCtx.waitUntil((async () => {
+    if (c.env.ONESIGNAL_APP_ID && c.env.ONESIGNAL_REST_API_KEY) {
+      const { sendOneSignalNotification } = await import("../lib/push-crypto.js");
+      await sendOneSignalNotification(
+        c.env.ONESIGNAL_APP_ID,
+        c.env.ONESIGNAL_REST_API_KEY,
+        {
+          externalIds: [targetUserId],
+          headings:    { en: "🎙️ You're on stage!" },
+          contents:    { en: `The host approved your request in "${roomTitle}"` },
+          tag:         `hand-approved-${roomId}-${targetUserId}`,
+          data:        { type: "hand_raise_approved", roomId },
+        },
+      ).catch(() => {});
+    }
+    await fetch(`${sbUrl}/rest/v1/notifications`, {
+      method:  "POST",
+      headers: { ...sbHeaders(sbKey), Prefer: "return=minimal" },
+      body: JSON.stringify([{
+        recipient_id:  targetUserId,
+        actor_id:      user.id,
+        type:          "hand_raise_approved",
+        resource_id:   roomId,
+        resource_type: "room",
+        data: { room_title: roomTitle },
+      }]),
+    }).catch(() => {});
+  })());
+
+  return c.json({ ok: true });
+});
+
+// ── POST /api/rooms/:roomId/speakers/remove ────────────────────────────────
+// Host demotes a speaker back to listener role.
+rooms.post("/:roomId/speakers/remove", requireAuth(), async (c) => {
+  const { roomId } = c.req.param();
+  const user = c.get("user");
+  const sbUrl = c.env.SUPABASE_URL;
+  const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  let body: { user_id?: string } = {};
+  try { body = await c.req.json(); } catch { /* no body */ }
+  const targetUserId = body.user_id;
+  if (!targetUserId) return c.json({ error: "user_id required" }, 400);
+
+  // Verify caller is host
+  const rr = await fetch(
+    `${sbUrl}/rest/v1/rooms?id=eq.${roomId}&select=host_id&limit=1`,
+    { headers: sbHeaders(sbKey) },
+  ).catch(() => null);
+  const rows = rr?.ok ? (await rr.json()) as Array<{ host_id: string }> : [];
+  if (!rows.length || rows[0].host_id !== user.id) {
+    return c.json({ error: "Only the host can remove speakers" }, 403);
+  }
+
+  // Demote back to listener
+  await fetch(
+    `${sbUrl}/rest/v1/room_participants?room_id=eq.${roomId}&user_id=eq.${targetUserId}`,
+    {
+      method:  "PATCH",
+      headers: { ...sbHeaders(sbKey), Prefer: "return=minimal" },
+      body:    JSON.stringify({ role: "listener" }),
+    },
+  ).catch(() => {});
+
+  return c.json({ ok: true });
+});
+
 /**
  * GET /api/rooms/:roomId/summary
  * Returns the AI-generated post-room summary for a given room.
