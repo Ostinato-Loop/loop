@@ -40,6 +40,9 @@ export type Room = {
   language: string | null;
   is_live: boolean;
   audience_count: number;
+  room_type: RoomType;
+  verification_level: VerificationLevel | null;
+  confirmation_count: number;
   tags: string[] | null;
   ai_summary: string | null;
   created_at: string;
@@ -61,14 +64,15 @@ function sanitiseRoomError(error: { code?: string; message?: string }, context: 
 
 // ── Public reads — anon client, no auth token required ──────────────────────
 
-export async function listRooms(opts?: { category?: RoomCategory; limit?: number }): Promise<Room[]> {
+export async function listRooms(opts?: { category?: RoomCategory; limit?: number; room_type?: RoomType }): Promise<Room[]> {
   let q = supabase
     .from("rooms")
     .select("*, host:profiles!rooms_host_id_fkey(username, display_name, avatar_url, is_verified)")
     .eq("is_live", true)
     .order("audience_count", { ascending: false })
     .limit(opts?.limit ?? 50);
-  if (opts?.category) q = q.eq("category", opts.category);
+  if (opts?.category)   q = q.eq("category",  opts.category);
+  if (opts?.room_type)  q = q.eq("room_type", opts.room_type);
   const { data, error } = await q;
   if (error) {
     if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
@@ -129,6 +133,7 @@ export async function createRoom(
     category: RoomCategory;
     visibility: RoomVisibility;
     tags?: string[];
+    room_type?: RoomType;
   },
 ): Promise<Room> {
   const res = await authFetch(`${API_BASE}/api/rooms`, {
