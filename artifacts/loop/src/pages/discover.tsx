@@ -28,17 +28,13 @@ import {
   searchRelatedPeople, getPeopleSuggestions, hasRaldIdentity,
   type PersonResult, type PersonSuggestion,
 } from "@/lib/api/people";
-import {
-  Search, Sparkles, Radio, Globe2, TrendingUp,
-  Calendar, Briefcase, Newspaper, ChevronRight,
-  Users, BadgeCheck, Check, UserPlus, MapPin, Loader2, ChevronDown, Mic,
-} from "lucide-react";
+import { Search, Sparkles, Radio, Globe2, TrendingUp, Calendar, Briefcase, Newspaper, ChevronRight, Users, BadgeCheck, Check, UserPlus, MapPin, Loader2, ChevronDown, Mic, , Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFollow } from "@/hooks/use-follow";
 import { useRoomQuota } from "@/hooks/use-room-quota";
 
 /* ── Feed tab types ─────────────────────────────────────────────────── */
-type FeedTab = "all" | "live" | "near" | "trending" | "events" | "people";
+type FeedTab = "all" | "live" | "near" | "trending" | "events" | "people" | "creator" | "civic" | "communities";
 
 const FEED_TABS: { key: FeedTab; label: string; icon: typeof Radio }[] = [
   { key: "all",      label: "All",      icon: Globe2 },
@@ -571,7 +567,7 @@ function TopRoomsThisWeek({ rooms }: { rooms: Room[] }) {
 }
 
 /* ── Main page ──────────────────────────────────────────────────────── */
-const VALID_TABS: FeedTab[] = ["all", "live", "near", "trending", "events", "people"];
+const VALID_TABS: FeedTab[] = ["all", "live", "near", "trending", "events", "people", "creator", "civic", "communities"];
 
 export default function DiscoverPage() {
   const { user, loading, profile, refreshProfile } = useAuth();
@@ -593,9 +589,14 @@ export default function DiscoverPage() {
   // Auth + onboarding gate now handled by ProtectedRoute in App.tsx
 
   useEffect(() => {
-    if (!user || feedTab === "people") return;
+    if (!user || feedTab === "people" || feedTab === "communities") return;
     setRooms(null);
-    listRooms({ category: category === "all" ? undefined : category })
+    // Civic Engine: CIVIC rooms. Creator Engine: CREATOR rooms. Default: SOCIAL + all
+    const room_type =
+      feedTab === "civic"   ? "CIVIC" as const :
+      feedTab === "creator" ? "CREATOR" as const :
+      undefined;
+    listRooms({ category: category === "all" ? undefined : category, room_type })
       .then(setRooms)
       .catch((e: Error) => {
         console.error("[discover] listRooms:", e.message);
@@ -690,7 +691,7 @@ export default function DiscoverPage() {
         </div>
 
         {/* Category chips — hidden on People tab */}
-        {feedTab !== "people" && (
+        {feedTab !== "people" && feedTab !== "communities" && (
           <div className="hide-scrollbar flex gap-1.5 overflow-x-auto px-5 pb-3">
             {CATEGORIES.map((c) => (
               <button
@@ -753,6 +754,97 @@ export default function DiscoverPage() {
 
         {/* ── People tab ── */}
         {feedTab === "people" && <PeopleTab />}
+
+        {/* ── Creator Engine tab ── */}
+        {feedTab === "creator" && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 flex items-start gap-3">
+              <div className="h-9 w-9 rounded-xl bg-amber-500/15 flex items-center justify-center shrink-0">
+                <Radio className="h-5 w-5 text-amber-500" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-amber-700 dark:text-amber-400">Creator Engine</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Ranked by local velocity — 500 listeners in 10 min beats 5,000 in 2 hours.
+                </p>
+              </div>
+            </div>
+            <section>
+              <div className="flex items-center gap-1.5 mb-3">
+                <Radio className="h-3.5 w-3.5 text-amber-500" />
+                <h2 className="font-display text-sm font-bold uppercase tracking-wider">Creator Rooms</h2>
+              </div>
+              {rooms === null ? <Skeleton /> : allRooms.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+                  <Radio className="h-8 w-8 text-amber-500/40 mx-auto mb-2" />
+                  <p className="text-sm font-semibold">No Creator rooms live yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">Start the first — select "Creator" when creating a room.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {allRooms.map((r) => <RoomCard key={r.id} room={r} />)}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+
+        {/* ── Civic Engine tab ── */}
+        {feedTab === "civic" && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex items-start gap-3">
+              <div className="h-9 w-9 rounded-xl bg-emerald-500/15 flex items-center justify-center shrink-0">
+                <Shield className="h-5 w-5 text-emerald-500" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-emerald-700 dark:text-emerald-400">Civic Engine</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Witness confirmations — not likes or followers — determine what rises.
+                  Engagement never determines truth.
+                </p>
+              </div>
+            </div>
+            <section>
+              <div className="flex items-center gap-1.5 mb-3">
+                <Shield className="h-3.5 w-3.5 text-emerald-500" />
+                <h2 className="font-display text-sm font-bold uppercase tracking-wider">Civic Rooms</h2>
+              </div>
+              {rooms === null ? <Skeleton /> : allRooms.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+                  <Shield className="h-8 w-8 text-emerald-500/40 mx-auto mb-2" />
+                  <p className="text-sm font-semibold">No Civic rooms yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">Start a Civic room for floods, elections, or local alerts.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {allRooms.map((r) => <RoomCard key={r.id} room={r} />)}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+
+        {/* ── Communities tab ── */}
+        {feedTab === "communities" && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-border bg-surface p-5 flex items-start gap-3">
+              <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                <Users className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-bold">Communities</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Persistent spaces for neighbourhoods, organisations, and interest groups.
+                </p>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-dashed border-border p-8 text-center">
+              <Users className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
+              <p className="text-sm font-semibold">Communities coming soon</p>
+              <p className="text-xs text-muted-foreground mt-1">Create and join local communities in the next update.</p>
+            </div>
+          </div>
+        )}
 
         {/* ── Live strip ── */}
         {(feedTab === "all" || feedTab === "live") && liveRooms.length > 0 && (
