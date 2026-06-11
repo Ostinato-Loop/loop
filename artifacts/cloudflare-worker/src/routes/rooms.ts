@@ -579,4 +579,57 @@ rooms.get("/regional", requireAuth(), async (c) => {
   });
 });
 
+/**
+ * GET /api/rooms/:roomId/summary
+ * Returns the AI-generated post-room summary for a given room.
+ *
+ * REPLAY-001 (2026-06-11): Replay notification deep-link destination.
+ * Fast path: read from KV cache (summary:{roomId}) set by the Queue consumer.
+ * Fallback:  read ai_summary column from rooms table if KV has expired.
+ *
+ * Response:
+ *   { roomId, title, summary, ready: true }   — summary available
+ *   { roomId, title, summary: null, ready: false } — still processing
+ *
+ * No authentication required — summary is public after room ends.
+ */
+rooms.get("/:roomId/summary", async (c) => {
+  const { roomId } = c.req.param();
+  const sbUrl   = c.env.SUPABASE_URL;
+  const sbKey   = c.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  // 1. Fast path: KV cache (set by generateRoomSummary)
+  const cached = await c.env.CACHE.get(`summary:${roomId}`).catch(() => null);
+
+  // 2. Fetch room metadata (title + ai_summary fallback)
+  const roomResp = await fetch(
+    `${sbUrl}/rest/v1/rooms?id=eq.${roomId}&select=title,ai_summary&limit=1`,
+    {
+      headers: {
+        apikey:        sbKey,
+        Authorization: `Bearer ${sbKey}`,
+        Accept:        "application/json",
+      },
+    },
+  ).catch(() => null);
+
+  const roomRows = (roomResp?.ok)
+    ? (await roomResp.json()) as Array<{ title: string | null; ai_summary: string | null }>
+    : [];
+
+  if (roomRows.length === 0) {
+    return c.json({ error: "Room not found" }, 404);
+  }
+
+  const { title, ai_summary } = roomRows[0];
+  const summary = cached ?? ai_summary ?? null;
+
+  return c.json({
+    roomId,
+    title:   title ?? "Room",
+    summary,
+    ready:   summary !== null,
+  });
+});
+
 export { rooms };
