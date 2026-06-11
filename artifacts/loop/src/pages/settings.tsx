@@ -14,7 +14,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import {
   ChevronLeft, ChevronRight, Bell, Shield, UserCircle, MapPin, Trash2,
   Download, Sun, Moon, Monitor, BellOff, BellRing, Volume2, Check,
-  Loader2, Lock, Smartphone, LogOut, ShieldAlert, Globe,
+  Loader2, Lock, Smartphone, LogOut, ShieldAlert, Globe, Activity,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -775,6 +775,23 @@ export default function SettingsPage() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold">Trust & Privacy Center</p>
                 <p className="text-xs text-muted-foreground truncate">Reports, policies, data export, recovery codes</p>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+            </button>
+          </div>
+
+          {/* OBSERVABILITY-003 (2026-06-11): Metrics dashboard link from settings */}
+          <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+            <button
+              onClick={() => navigate("/metrics")}
+              className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-surface-elev active:bg-surface-elev"
+            >
+              <div className="h-8 w-8 shrink-0 rounded-xl bg-secondary flex items-center justify-center">
+                <Activity className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">Metrics</p>
+                <p className="text-xs text-muted-foreground truncate">DAU, rooms, OTP rates, retention</p>
               </div>
               <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
             </button>
