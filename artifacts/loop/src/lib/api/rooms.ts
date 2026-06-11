@@ -72,7 +72,8 @@ export async function listRooms(opts?: { category?: RoomCategory; limit?: number
     .order("audience_count", { ascending: false })
     .limit(opts?.limit ?? 50);
   if (opts?.category)   q = q.eq("category",  opts.category);
-  if (opts?.room_type)  q = q.eq("room_type", opts.room_type);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (opts?.room_type)  q = (q as any).eq("room_type", opts.room_type);
   const { data, error } = await q;
   if (error) {
     if (error.code === "PGRST205" || error.message?.includes("schema cache")) {
@@ -81,7 +82,7 @@ export async function listRooms(opts?: { category?: RoomCategory; limit?: number
     }
     throw sanitiseRoomError(error, "listRooms");
   }
-  return (data ?? []) as Room[];
+  return (data ?? []) as unknown as Room[];
 }
 
 export async function getRoom(id: string): Promise<Room | null> {
