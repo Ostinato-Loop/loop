@@ -618,7 +618,7 @@ export default function DiscoverPage() {
       .limit(5)
       .then(({ data, error: err }) => {
         if (err) { console.error("[discover] topRooms:", err.message); return; }
-        setTopRooms((data as Room[]) ?? []);
+        setTopRooms((data as unknown as Room[]) ?? []);
       });
   }, [user]);
 
