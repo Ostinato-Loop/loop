@@ -15,6 +15,7 @@ import { authedSupabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/layout/app-shell";
 import { useNavigate } from "react-router-dom";
 import { NotificationPrompt } from "@/components/notification-prompt";
+import { getMyFollowCounts } from "@/lib/api/follows";
 
 type Tab = "activity" | "followers" | "following" | "saved";
 
@@ -34,6 +35,8 @@ export default function MeLaunchPage() {
   const [editBio, setEditBio]       = useState("");
   const [editHandle, setEditHandle] = useState("");
   const [editBusy, setEditBusy]     = useState(false);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [followingCount, setFollowingCount]  = useState(0);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -44,6 +47,16 @@ export default function MeLaunchPage() {
       root.classList.add(theme);
     }
   }, [theme]);
+  useEffect(() => {
+    if (!user?.id) return;
+    getMyFollowCounts()
+      .then(({ followers_count, following_count }) => {
+        setFollowersCount(followers_count);
+        setFollowingCount(following_count);
+      })
+      .catch(() => {}); // fail silently — counts stay at 0 if API unavailable
+  }, [user?.id]);
+
 
   const displayName = profile?.display_name ?? user?.phone ?? "You";
   const handle      = profile?.username ?? "";
@@ -227,11 +240,11 @@ export default function MeLaunchPage() {
         {/* Stats */}
         <div className="grid grid-cols-3 gap-2 mt-4">
           <button onClick={() => setTab("followers")} className={`rounded-2xl p-3 text-center transition ${tab === "followers" ? "bg-secondary ring-2 ring-neon/40" : "bg-secondary"}`}>
-            <div className="text-lg font-extrabold">0</div>
+            <div className="text-lg font-extrabold">{followersCount}</div>
             <div className="text-[10px] text-muted-foreground">Followers</div>
           </button>
           <button onClick={() => setTab("following")} className={`rounded-2xl p-3 text-center transition ${tab === "following" ? "bg-secondary ring-2 ring-neon/40" : "bg-secondary"}`}>
-            <div className="text-lg font-extrabold">0</div>
+            <div className="text-lg font-extrabold">{followingCount}</div>
             <div className="text-[10px] text-muted-foreground">Following</div>
           </button>
           <div className="rounded-2xl p-3 text-center bg-neon/10 border border-neon/40">
