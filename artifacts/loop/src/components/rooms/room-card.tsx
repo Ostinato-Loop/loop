@@ -1,5 +1,6 @@
 // RETENTION-009 (2026-06-10): Live audience count via useLiveRoomCount.
 // RETENTION-015 (2026-06-10): LiveWaveform replaces the static live-dot.
+// P0-CAT-001 (2026-06-11): Category gradient/emoji maps updated to match actual DB categories.
 import { Link } from "react-router-dom";
 import { Users, BadgeCheck, Lock, Mic } from "lucide-react";
 import type { Room } from "@/lib/api/rooms";
@@ -51,18 +52,28 @@ export function LiveWaveform({ className }: { className?: string }) {
   );
 }
 
+// P0-CAT-001: Maps updated to match actual room categories in the DB.
+// Old keys (sports/civic/music/entertainment) removed — not in DB enum.
 const categoryGradient: Record<string, string> = {
-  sports:        "from-emerald-500/25 via-teal-500/15 to-transparent",
-  civic:         "from-amber-500/20 via-orange-500/10 to-transparent",
-  music:         "from-fuchsia-500/25 via-purple-500/15 to-transparent",
-  entertainment: "from-pink-500/25 via-rose-500/15 to-transparent",
-  news:          "from-sky-500/20 via-blue-500/10 to-transparent",
-  general:       "from-primary/20 via-primary/10 to-transparent",
+  community:    "from-violet-500/20 via-violet-500/10 to-transparent",
+  commentary:   "from-amber-500/20 via-orange-500/10 to-transparent",
+  news:         "from-sky-500/20 via-blue-500/10 to-transparent",
+  radio:        "from-rose-500/20 via-pink-500/10 to-transparent",
+  "dj-session": "from-fuchsia-500/25 via-purple-500/15 to-transparent",
+  education:    "from-teal-500/20 via-emerald-500/10 to-transparent",
+  business:     "from-emerald-500/20 via-green-500/10 to-transparent",
+  general:      "from-primary/20 via-primary/10 to-transparent",
 };
 
 const categoryEmoji: Record<string, string> = {
-  sports: "⚽", civic: "🏛️", music: "🎧",
-  entertainment: "🎬", news: "📡", general: "🎙️",
+  community:    "🏘️",
+  commentary:   "🎙️",
+  news:         "📡",
+  radio:        "📻",
+  "dj-session": "🎧",
+  education:    "📚",
+  business:     "💼",
+  general:      "🔊",
 };
 
 export function RoomCard({ room, compact = false }: { room: Room; compact?: boolean }) {
