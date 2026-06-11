@@ -29,6 +29,7 @@ import TrustCenterPage   from "@/pages/trust-center";
 import NotificationsPage from "@/pages/notifications";
 import SearchPage        from "@/pages/search";
 import CommunitiesPage   from "@/pages/communities";
+import MetricsPage       from "@/pages/metrics";
 import NotFound          from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -145,9 +146,10 @@ export default function App() {
                 <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
                 <Route path="/communities"   element={<ProtectedRoute><CommunitiesPage /></ProtectedRoute>} />
 
-                {/* ── Settings & Trust Center ───────────────────────── */}
+                {/* ── Settings, Trust Center & Metrics ─────────────── */}
                 <Route path="/settings"      element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
                 <Route path="/trust-center"  element={<ProtectedRoute><TrustCenterPage /></ProtectedRoute>} />
+                <Route path="/metrics"       element={<ProtectedRoute><MetricsPage /></ProtectedRoute>} />
 
                 {/* ── Catch-all ─────────────────────────────────────── */}
                 <Route path="*" element={<NotFound />} />
