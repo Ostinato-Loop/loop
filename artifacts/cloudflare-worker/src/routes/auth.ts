@@ -217,28 +217,51 @@ const sendOtpHandler = async (c: Context<{ Bindings: CloudflareEnv; Variables: {
     return c.json({ error: "Service temporarily unavailable", resetAtSec: globalCheck.resetAtSec }, 429);
   }
 
-  const resp = await fetch("https://api.ng.termii.com/api/sms/otp/send", {
+  const termiiBase = {
+    api_key:        c.env.TERMII_API_KEY,
+    message_type:   "NUMERIC",
+    to:             phone,
+    pin_attempts:   3,
+    pin_time_to_live: 10,
+    pin_length:     6,
+    pin_placeholder: "< 1234 >",
+    message_text:   "Your Loop verification code is < 1234 >",
+    pin_type:       "NUMERIC",
+  };
+
+  let resp = await fetch("https://api.ng.termii.com/api/sms/otp/send", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      api_key:  c.env.TERMII_API_KEY,
-      message_type: "NUMERIC",
-      to:       phone,
-      from:     c.env.TERMII_SENDER_ID,
-      channel:  phone.startsWith("+234") ? "dnd" : "generic",
-      pin_attempts: 3,
-      pin_time_to_live: 10,
-      pin_length: 6,
-      pin_placeholder: "< 1234 >",
-      message_text: "Your Loop verification code is < 1234 >",
-      pin_type: "NUMERIC",
+      ...termiiBase,
+      from:    c.env.TERMII_SENDER_ID,
+      channel: phone.startsWith("+234") ? "dnd" : "generic",
     }),
   });
 
+  // TERMII-FALLBACK: if the configured sender ID is not approved on Termii (HTTP 5xx),
+  // retry once with the generic channel and the default N-Alert sender.
+  // This ensures OTPs still reach users even if the custom sender needs re-approval.
   if (!resp.ok) {
-    const err = await resp.text().catch(() => "");
-    console.error("[auth/send-otp] Termii error:", resp.status, err.slice(0, 400));
-    return c.json({ error: "Failed to send OTP", _debug: { termii_status: resp.status, termii_body: err.slice(0, 400) } }, 502);
+    const errBody = await resp.text().catch(() => "");
+    const isSenderError = errBody.includes("ApplicationSenderId") || errBody.includes("senderName");
+    if (isSenderError) {
+      console.warn("[auth/send-otp] sender ID not approved — retrying with generic/N-Alert");
+      resp = await fetch("https://api.ng.termii.com/api/sms/otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...termiiBase,
+          from:    "N-Alert",
+          channel: "generic",
+        }),
+      });
+    }
+    if (!resp.ok) {
+      const err2 = await resp.text().catch(() => errBody);
+      console.error("[auth/send-otp] Termii error:", resp.status, err2.slice(0, 400));
+      return c.json({ error: "Failed to send OTP", _debug: { termii_status: resp.status, termii_body: err2.slice(0, 400) } }, 502);
+    }
   }
 
   const data = (await resp.json()) as { pinId?: string };
