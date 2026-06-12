@@ -76,16 +76,14 @@ const categoryEmoji: Record<string, string> = {
   general:      "🔊",
 };
 
-export function RoomCard({ room, compact = false }: { room: Room; compact?: boolean }) {
+export function RoomCard({ room, compact = false, onClick }: { room: Room; compact?: boolean; onClick?: () => void }) {
   const { count, updated } = useLiveRoomCount(room.id, room.audience_count);
-  return (
-    <Link
-      to={`/rooms/${room.id}`}
-      className={cn(
-        "group relative block overflow-hidden rounded-2xl border border-border bg-surface transition-transform active:scale-[0.98]",
-        compact ? "min-w-[220px] p-3" : "w-full p-4",
-      )}
-    >
+  const wrapCls = cn(
+    "group relative block overflow-hidden rounded-2xl border border-border bg-surface transition-transform active:scale-[0.98] text-left w-full",
+    compact ? "min-w-[220px] p-3" : "p-4",
+  );
+  return onClick ? (
+    <button type="button" onClick={onClick} className={wrapCls}>
       {/* category glow */}
       <div
         className={cn(
@@ -127,6 +125,67 @@ export function RoomCard({ room, compact = false }: { room: Room; compact?: bool
         )}
 
         {/* footer */}
+        <div className="flex items-center justify-between pt-0.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className={cn(
+              "shrink-0 rounded-full bg-gradient-mint flex items-center justify-center",
+              compact ? "h-6 w-6" : "h-7 w-7",
+            )}>
+              <Mic className={cn("text-primary-foreground", compact ? "h-3 w-3" : "h-3.5 w-3.5")} />
+            </div>
+            <span className="truncate text-[11px] text-muted-foreground">
+              {room.host?.display_name ?? "Host"}
+              {room.host?.is_verified && (
+                <BadgeCheck className="ml-1 inline h-3 w-3 text-primary" />
+              )}
+            </span>
+          </div>
+          <div className={cn(
+            "flex items-center gap-1 text-xs font-medium transition-colors duration-500",
+            updated ? "text-primary" : "text-foreground/80",
+          )}>
+            <Users className="h-3.5 w-3.5" />
+            {count.toLocaleString()}
+          </div>
+        </div>
+      </div>
+    </button>
+  ) : (
+    <Link to={`/rooms/${room.id}`} className={wrapCls}>
+      {/* same inner content via onClick-less path */}
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-70",
+          categoryGradient[room.category] ?? categoryGradient.general,
+        )}
+      />
+
+      <div className="relative flex flex-col gap-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1 rounded-full bg-background/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground backdrop-blur">
+            {room.visibility === "private" ? (
+              <Lock className="h-3 w-3" />
+            ) : (
+              <span className="mr-0.5">{categoryEmoji[room.category] ?? "🎙️"}</span>
+            )}
+            {room.category}
+          </span>
+          {room.is_live && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold uppercase text-primary">
+              <LiveWaveform className="text-primary" />
+              Live
+            </span>
+          )}
+        </div>
+        <h3 className={cn(
+          "font-display font-bold leading-tight text-foreground",
+          compact ? "text-sm line-clamp-2 min-h-[2.4rem]" : "text-base line-clamp-2",
+        )}>
+          {room.title}
+        </h3>
+        {room.ai_summary && !compact && (
+          <p className="text-xs text-muted-foreground line-clamp-2">{room.ai_summary}</p>
+        )}
         <div className="flex items-center justify-between pt-0.5">
           <div className="flex items-center gap-2 min-w-0">
             <div className={cn(
