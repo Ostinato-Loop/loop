@@ -19,6 +19,21 @@
  *
  * IDN-001 (2026-06-07): Loop token is a re-signed copy, not the raw RALD token.
  * PHD-001 (2026-06-07): jti claim included for per-token revocation.
+ *
+ * USN-001 (2026-06-12): Username propagation fixes
+ *   - upsertProfile NO LONGER derives username from email slug.
+ *     Username is taken only from the rald.username JWT claim.
+ *   - issueLoopToken includes username in the re-signed Loop JWT.
+ *   - Fallback remote verification: if local RALD_JWT_SECRET verify fails
+ *     (possible during secret rotation or mismatch), the worker falls back
+ *     to calling auth.rald.cloud/sso/verify server-side. This prevents
+ *     hard login failures caused by a transient secret mismatch.
+ *
+ * SSO-AUD-FIX-001 (2026-06-10):
+ *   verifyJwt called with null expectedAud for incoming RALD SSO tokens.
+ *
+ * SSO-VERIFY-FALLBACK-001 (2026-06-12):
+ *   Fallback path to auth.rald.cloud/sso/verify when local verify fails.
  */
 
 import { Hono } from "hono";
@@ -37,14 +52,15 @@ export const raldSso = new Hono<{ Bindings: CloudflareEnv }>();
 /* ── Types ───────────────────────────────────────────────────────────── */
 
 interface RaldPayload {
-  id:     string;
-  email?: string;
-  phone?: string;
-  name?:  string | null;
-  role?:  string;
-  appId?: string;
-  iat?:   number;
-  exp?:   number;
+  id:        string;
+  email?:    string;
+  phone?:    string;
+  name?:     string | null;
+  username?: string | null;  // USN-001: cross-app username propagation
+  role?:     string;
+  appId?:    string;
+  iat?:      number;
+  exp?:      number;
 }
 
 /* ── Device registration (Sprint 2) ──────────────────────────────────── */
@@ -136,17 +152,37 @@ async function provisionSupabaseAuthUser(sbUrl: string, sbKey: string, rald: Ral
   } catch { /* non-fatal */ }
 }
 
+/**
+ * USN-001: Upsert the Loop profile row for this user.
+ *
+ * CRITICAL FIX: username is NEVER derived from the email address.
+ * Deriving a slug from the email (old behaviour) overwrote any real username
+ * the user had claimed via /username/claim on every subsequent SSO login.
+ *
+ * Rules:
+ *   • display_name — always updated from rald.name or rald.email prefix
+ *   • username — set ONLY if rald.username is non-null (comes from the JWT claim
+ *     that rald-auth-core now populates via USN-001 in sso/exchange).
+ *     If the JWT carries no username (null), the existing profile.username is
+ *     left untouched — the field is simply absent from the upsert payload so
+ *     Supabase merge-duplicates does not touch it.
+ */
 async function upsertProfile(sbUrl: string, sbKey: string, rald: RaldPayload): Promise<void> {
   const profile: Record<string, unknown> = { id: rald.id };
+
   if (rald.name) {
     profile.display_name = rald.name;
   } else if (rald.email) {
     profile.display_name = rald.email.split("@")[0];
   }
-  if (rald.email) {
-    const slug = rald.email.split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 20);
-    if (slug.length >= 3) profile.username = slug;
+
+  // USN-001: Only propagate username from the JWT claim — NEVER from email slug.
+  // Supabase merge-duplicates only touches columns present in the payload,
+  // so omitting username here means an existing profile.username is preserved.
+  if (rald.username) {
+    profile.username = rald.username;
   }
+
   try {
     await sbAdmin(sbUrl, sbKey, "POST", "/rest/v1/profiles", profile,
       { Prefer: "resolution=merge-duplicates,return=minimal" });
@@ -158,15 +194,16 @@ async function issueLoopToken(
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   return signJwt({
-    sub:    rald.id,
-    email:  rald.email ?? null,
-    role:   rald.role  ?? "user",
-    iss:    JWT_ISSUER,
-    aud:    JWT_AUDIENCE,
-    iat:    now,
-    exp:    now + TTL_SSO_S,
-    jti:    crypto.randomUUID(),
-    id:     rald.id,
+    sub:      rald.id,
+    email:    rald.email    ?? null,
+    role:     rald.role     ?? "user",
+    username: rald.username ?? null,  // USN-001: carry username in the Loop-scoped token
+    iss:      JWT_ISSUER,
+    aud:      JWT_AUDIENCE,
+    iat:      now,
+    exp:      now + TTL_SSO_S,
+    jti:      crypto.randomUUID(),
+    id:       rald.id,
     source,
   }, secret);
 }
@@ -180,9 +217,9 @@ async function issueLoopToken(
  */
 function decodeJwtClaims(token: string): Record<string, unknown> {
   try {
-    const [, body] = token.split('.');
+    const [, body] = token.split(".");
     if (!body) return {};
-    return JSON.parse(atob(body.replace(/-/g, '+').replace(/_/g, '/'))) as Record<string, unknown>;
+    return JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/"))) as Record<string, unknown>;
   } catch { return {}; }
 }
 
@@ -193,32 +230,56 @@ raldSso.post("/", async (c) => {
   if (!body.rald_token) return c.json({ error: "rald_token is required" }, 400);
 
   // SSO-AUD-FIX-001 + SSO-LOG-001: Decode claims BEFORE verification for observability.
-  // This tells us exactly what arrived (aud, iss, exp) when auth fails.
   const incomingClaims = decodeJwtClaims(body.rald_token);
   const logCtx = {
     incoming_aud: incomingClaims.aud ?? null,
     incoming_iss: incomingClaims.iss ?? null,
     incoming_exp: incomingClaims.exp ?? null,
     incoming_sub: incomingClaims.sub ?? incomingClaims.id ?? null,
-    token_age_s:  typeof incomingClaims.iat === 'number'
+    token_age_s:  typeof incomingClaims.iat === "number"
       ? Math.floor(Date.now() / 1000) - (incomingClaims.iat as number)
       : null,
     timestamp: new Date().toISOString(),
   };
 
   // SSO-AUD-FIX-001: Pass null as expectedAud — incoming RALD SSO token is a
-  // cross-system token from profiles.rald.cloud. Its aud claim is set by RALD
-  // (e.g. "sso" or the app_id), not "loop". Enforcing aud:"loop" here breaks SSO.
-  // The Loop-scoped token we re-sign below WILL have aud:"loop".
-  const rald = await verifyJwt(body.rald_token, c.env.RALD_JWT_SECRET, null) as RaldPayload | null;
-  if (!rald || !rald.id) {
-    console.warn('[rald-sso] token rejected', JSON.stringify({
-      level: 'warn',
-      reason: 'invalid_or_expired_rald_token',
-      service: 'loop-api',
+  // cross-system token from profiles.rald.cloud. Its aud claim may be "sso",
+  // the app_id, or absent. Enforcing aud:"loop" here breaks SSO.
+  let rald = await verifyJwt(body.rald_token, c.env.RALD_JWT_SECRET, null) as RaldPayload | null;
+
+  // SSO-VERIFY-FALLBACK-001: If local verification fails (e.g. transient
+  // RALD_JWT_SECRET mismatch between CF Workers during secret rotation),
+  // fall back to server-side verification at auth.rald.cloud. This prevents
+  // hard login failures caused by a secret that has not yet propagated.
+  if (!rald?.id) {
+    try {
+      const authUrl = (c.env as unknown as Record<string, string>).RALD_AUTH_URL ?? "https://auth.rald.cloud";
+      const verifyRes = await fetch(`${authUrl}/sso/verify`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ token: body.rald_token }),
+        signal:  AbortSignal.timeout(3000),
+      });
+      if (verifyRes.ok) {
+        const verifyData = await verifyRes.json() as { valid: boolean; user?: Record<string, unknown> };
+        if (verifyData?.valid && verifyData.user?.id) {
+          rald = verifyData.user as unknown as RaldPayload;
+          console.log("[rald-sso] fallback verify succeeded", JSON.stringify({
+            level: "info", service: "loop-api", userId: rald.id, ...logCtx,
+          }));
+        }
+      }
+    } catch { /* fallback failed — will reject below */ }
+  }
+
+  if (!rald?.id) {
+    console.warn("[rald-sso] token rejected", JSON.stringify({
+      level: "warn",
+      reason: "invalid_or_expired_rald_token",
+      service: "loop-api",
       ...logCtx,
     }));
-    return c.json({ error: 'Invalid or expired RALD token' }, 401);
+    return c.json({ error: "Invalid or expired RALD token" }, 401);
   }
 
   const sbUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
@@ -236,17 +297,19 @@ raldSso.post("/", async (c) => {
   // COOKIE-001: Set HttpOnly session cookie — no localStorage from browser
   c.header("Set-Cookie", buildSessionCookie(loopToken, TTL_SSO_S));
 
-  console.log('[rald-sso] exchange ok', JSON.stringify({
-    level: 'info',
-    service: 'loop-api',
+  console.log("[rald-sso] exchange ok", JSON.stringify({
+    level: "info",
+    service: "loop-api",
     userId: rald.id,
-    source: 'rald-sso',
+    has_username: !!rald.username,
+    source: "rald-sso",
     ...logCtx,
   }));
 
   return c.json({
     access_token: loopToken,
     user: { id: rald.id, email: rald.email ?? null, phone: rald.phone ?? null, role: rald.role ?? "user" },
+    has_username: !!rald.username,  // USN-001: client shows username setup if false
   });
 });
 
@@ -271,6 +334,7 @@ raldSso.get("/silent", async (c) => {
     valid:        true,
     user:         { id: rald.id, email: rald.email ?? null, role: rald.role ?? "user" },
     access_token: loopToken,
+    has_username: !!rald.username,  // USN-001
   });
 });
 
@@ -300,13 +364,14 @@ raldSso.post("/handoff", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { app_id?: string; redirect_to?: string };
   if (!body.app_id) return c.json({ error: "app_id required" }, 400);
 
-  // 5-minute handoff token — aud is the target app so it's scoped correctly
+  // 5-minute handoff token — aud is the target app so it is scoped correctly
   const now = Math.floor(Date.now() / 1000);
   const handoffToken = await signJwt({
     sub:          payload.id,
     id:           payload.id,
-    email:        payload.email ?? null,
-    role:         payload.role  ?? "user",
+    email:        payload.email    ?? null,
+    role:         payload.role     ?? "user",
+    username:     payload.username ?? null,  // USN-001: carry username across apps
     iss:          JWT_ISSUER,
     aud:          body.app_id,   // Target app audience
     iat:          now,
