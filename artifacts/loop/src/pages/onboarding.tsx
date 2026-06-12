@@ -4,6 +4,14 @@
  * IDENTITY-001 (2026-06-10): @username is now the primary Loop identity.
  *   Replaces the old "display name first" flow.
  *
+ * IDENTITY-002 (2026-06-12): Smart pre-fill from RALD Identity Intelligence.
+ *   Calls auth.rald.cloud/identity/intelligence on mount. If RALD already
+ *   knows the user's username or display name, the fields are pre-filled and
+ *   the username is marked "available" without an API round-trip.
+ *   Records the current step via /identity/memory/step for cross-product
+ *   onboarding resumption (e.g. picking up in Loop after signing in via
+ *   profiles.rald.cloud).
+ *
  * Flow:
  *   Step 1 — @username: Pick your handle. Live availability check.
  *             Persists username in profiles. Calls /api/auth/username/check.
@@ -27,9 +35,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { listRooms, type Room } from "@/lib/api/rooms";
+import { getIdentityIntelligence, recordOnboardingStep } from "@/lib/api/identity";
 import {
   AtSign, ArrowRight, BadgeCheck, CheckCircle2, Loader2,
-  Mic, Users, XCircle,
+  Mic, Sparkles, Users, XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -56,16 +65,20 @@ export default function OnboardingPage() {
   const [stepIdx, setStepIdx]     = useState(0);
   const step: Step                = STEPS[stepIdx];
 
-  const [username,     setUsername]     = useState("");
-  const [displayName,  setDisplayName]  = useState("");
-  const [availability, setAvailability] = useState<AvailabilityState>("idle");
-  const [availReason,  setAvailReason]  = useState<string | null>(null);
-  const [busy,         setBusy]         = useState(false);
-  const [rooms,        setRooms]        = useState<Room[]>([]);
+  const [username,      setUsername]      = useState("");
+  const [displayName,   setDisplayName]   = useState("");
+  const [availability,  setAvailability]  = useState<AvailabilityState>("idle");
+  const [availReason,   setAvailReason]   = useState<string | null>(null);
+  const [busy,          setBusy]          = useState(false);
+  const [rooms,         setRooms]         = useState<Room[]>([]);
+
+  // True when username was pre-filled from RALD intelligence (not typed by user).
+  // Used to show the "From your RALD profile" badge and skip the API availability check.
+  const [raldPrefilled, setRaldPrefilled] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* ── Already-onboarded redirect ────────────────────────────────────── */
+  /* ── Already-onboarded redirect + loop-profile pre-fill ───────────── */
   useEffect(() => {
     if (profile) {
       if (profile.onboarded) navigate("/");
@@ -73,6 +86,41 @@ export default function OnboardingPage() {
       if (profile.display_name) setDisplayName(profile.display_name);
     }
   }, [profile, navigate]);
+
+  /* ── IDENTITY-002: Pre-fill from RALD Identity Intelligence ─────────
+   *
+   * Called once after the user session is confirmed. Pulls the cross-
+   * product identity snapshot. If RALD already has a username or
+   * display_name, we pre-fill the fields so the user never re-enters
+   * data they already provided in another RALD product.
+   *
+   * Priority: Loop profile (already set above) > RALD intelligence.
+   * We only pre-fill a field if the Loop profile doesn't have it yet.
+   * ────────────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    if (!user) return;
+    getIdentityIntelligence()
+      .then((intel) => {
+        if (!intel) return;
+
+        // Pre-fill username from RALD if the loop profile doesn't have one
+        if (intel._values.username && !profile?.username) {
+          const lower = intel._values.username.toLowerCase().replace(/[^a-z0-9_]/g, "");
+          if (!validateUsernameFormat(lower)) {
+            // Valid format — treat as available (it's already theirs in the RALD ecosystem)
+            setUsername(lower);
+            setAvailability("available");
+            setRaldPrefilled(true);
+          }
+        }
+
+        // Pre-fill display name from RALD if the loop profile doesn't have one
+        if (intel._values.display_name && !profile?.display_name) {
+          setDisplayName(intel._values.display_name);
+        }
+      })
+      .catch(() => null); // non-fatal — degraded to manual entry
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Fetch live rooms when on Enter step ────────────────────────────── */
   useEffect(() => {
@@ -101,7 +149,6 @@ export default function OnboardingPage() {
         setAvailability(data.available ? "available" : "taken");
         setAvailReason(data.reason ?? null);
       } catch {
-        // Fallback: check Supabase profiles directly
         try {
           const { data: rows } = await authedSupabase()
             .from("profiles")
@@ -121,6 +168,8 @@ export default function OnboardingPage() {
   const handleUsernameChange = (raw: string) => {
     const lower = raw.toLowerCase().replace(/[^a-z0-9_]/g, "");
     setUsername(lower);
+    // User is now editing manually — drop the RALD pre-fill badge
+    if (raldPrefilled) setRaldPrefilled(false);
     if (lower.length < 2) {
       setAvailability("idle");
       setAvailReason(null);
@@ -136,21 +185,22 @@ export default function OnboardingPage() {
     if (!usernameValid || busy || !user) return;
     setBusy(true);
     try {
-      // Try to claim via auth endpoint (non-fatal if unavailable)
       await authFetch(`${API_BASE}/api/auth/username/claim`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username }),
       }).catch(() => null);
 
-      // Always persist to Loop profiles (primary UI source of truth)
       const { error } = await authedSupabase()
         .from("profiles")
         .update({ username })
         .eq("id", user.id);
       if (error) throw new Error(error.message);
 
-      track("username_claimed", { username });
+      // Record onboarding step in RALD memory for cross-product resumption
+      void recordOnboardingStep("username_claimed");
+
+      track("username_claimed", { username, prefilled_from_rald: raldPrefilled });
       setStepIdx(1);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not claim — try again");
@@ -174,6 +224,8 @@ export default function OnboardingPage() {
         .update({ display_name: finalName })
         .eq("id", user.id);
       setDisplayName(finalName);
+
+      void recordOnboardingStep("display_name_set");
       setStepIdx(2);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save — try again");
@@ -190,18 +242,18 @@ export default function OnboardingPage() {
         .from("profiles")
         .update({ onboarded: true })
         .eq("id", user!.id);
+      void recordOnboardingStep("onboarding_complete");
       track("onboarding_complete", {
         entered_room: !!roomId,
         room_id:      roomId ?? null,
         username,
+        prefilled_from_rald: raldPrefilled,
       });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save profile — try again");
       setBusy(false);
       return;
     }
-    // refreshProfile is non-fatal: profile already saved in DB.
-    // If it fails (network blip), navigate anyway — AuthProvider will re-fetch on mount.
     try { await refreshProfile(); } catch { /* non-fatal */ }
     navigate(roomId ? `/rooms/${roomId}` : "/");
   };
@@ -235,13 +287,23 @@ export default function OnboardingPage() {
             </p>
           </div>
 
+          {/* IDENTITY-002: RALD pre-fill notice */}
+          {raldPrefilled && availability === "available" && (
+            <div className="flex items-center gap-2 rounded-xl bg-primary/8 px-4 py-3 border border-primary/15">
+              <Sparkles className="h-4 w-4 text-primary shrink-0" />
+              <p className="text-xs text-primary font-medium">
+                Pre-filled from your RALD profile — edit below if you&apos;d prefer a different handle.
+              </p>
+            </div>
+          )}
+
           <div className="space-y-3">
             <div className="relative">
               <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-1 text-muted-foreground pointer-events-none">
                 <AtSign className="h-5 w-5" />
               </div>
               <Input
-                autoFocus
+                autoFocus={!raldPrefilled}
                 value={username}
                 onChange={(e) => handleUsernameChange(e.target.value)}
                 placeholder="yourhandle"
@@ -328,6 +390,16 @@ export default function OnboardingPage() {
               This is what others see when you speak. Optional — defaults to @{username}.
             </p>
           </div>
+
+          {/* IDENTITY-002: RALD pre-fill notice for display name */}
+          {displayName.trim().length > 0 && !profile?.display_name && (
+            <div className="flex items-center gap-2 rounded-xl bg-primary/8 px-4 py-3 border border-primary/15">
+              <Sparkles className="h-4 w-4 text-primary shrink-0" />
+              <p className="text-xs text-primary font-medium">
+                From your RALD profile — edit or continue.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-3">
             <Input
