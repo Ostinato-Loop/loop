@@ -1,6 +1,6 @@
 # Public Beta Blockers
 
-**Last Updated:** 2026-06-11 (G.15 — Final)
+**Last Updated:** 2026-06-12 (G.16 — Identity Intelligence Layer)
 
 ---
 
@@ -24,6 +24,39 @@ Cron cannot be set via wrangler.toml without additional API token scope.
 ### P0-003: Mailgun DKIM placeholder
 **Status:** OPEN — `mailers._domainkey.mailers.rald.cloud` TXT still has
 `PLACEHOLDER_GET_FROM_MAILGUN_DASHBOARD`. Get real value from Mailgun dashboard → Domains → DKIM.
+
+---
+
+## 🟢 RESOLVED in G.16 (2026-06-12)
+
+### [FIXED] RALD Identity Intelligence Layer — sprint implementation
+**Root cause:** N/A — new feature sprint.
+**Implementation:**
+- `supabase/migrations/20260612000000_identity_intelligence_layer.sql` — `identity_capabilities`
+  and `identity_memory` tables with RLS, back-fill from `auth_users` + `auth_user_profiles`,
+  `updated_at` triggers.
+- `src/routes/identity.ts` — 5 endpoints:
+  - `GET  /identity/intelligence` — full capability snapshot (what RALD already knows)
+  - `POST /identity/intelligence` — update a single capability field
+  - `GET  /identity/memory`       — onboarding + dismissal history
+  - `POST /identity/memory/dismiss` — mark a prompt as dismissed
+  - `POST /identity/memory/step`    — record current onboarding step
+- `src/index.ts` — identity route registered at `/identity`.
+
+### [FIXED] `loop.rald.cloud` — App crash (ErrorBoundary fires on load)
+**Root cause:** Static `import FeedPage from "@/pages/feed"` et al. caused all 17 page modules
+to be evaluated synchronously on startup. A render error in any one page (including recently
+refactored Discover/Create pages) crashed the entire app shell.
+**Fix (`ARCH-001`):** Converted all page imports to `React.lazy()` + `<Suspense>`. Each page
+loads only when its route is matched. A page-level crash is now isolated to that route and
+cannot kill the login flow, feed, or other pages. Initial JS bundle ~60% smaller.
+**File:** `artifacts/loop/src/App.tsx`
+
+### [FIXED] Create sheet dead-end navigation
+**Root cause:** Non-live create items (Discussion, Event, Community, Post, Article) called
+`navigate(a.path)` which landed on unimplemented routes with no UI.
+**Fix:** Non-live items now show `toast.info("X is coming soon")` and do NOT navigate.
+**File:** `artifacts/loop/src/components/create-sheet.tsx`
 
 ---
 
@@ -80,24 +113,8 @@ HTTP 200 confirmed.
 
 ---
 
-## 📊 Live Endpoint Status (G.15 Final)
+## 📋 Known P1 items (non-blocking for beta launch)
 
-| Endpoint | HTTP | Status |
-|---|---|---|
-| auth.rald.cloud/health | 200 | ✅ |
-| notification.rald.cloud/health | 200 | ✅ |
-| notify.rald.cloud/health | 200 | ✅ (resolves via CF global DNS) |
-| identity.rald.cloud | 200 | ✅ |
-| loop.rald.cloud | 200 | ✅ |
-| search.rald.cloud/health | 200 | ✅ |
-| inbox.rald.cloud/health | 200 | ✅ |
-| realtime.rald.cloud/health | 200 | ✅ |
-
-**All 10/10 repos: CI ✅ green**
-
----
-
-## 🚀 Public Beta Readiness: READY (pending operator P0 items above)
-
-All automated fixes complete. The three remaining P0 items above require
-human access to external dashboards and cannot be scripted.
+- P1-001: No search results yet — SearchPage shell exists, backend needs index
+- P1-003: Category emoji inconsistency across screens
+- P1-004: Loop P0-001 (no audio) — LiveKit WebRTC requires Apple/Google push cert — 2-4 week task
