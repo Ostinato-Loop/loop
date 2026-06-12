@@ -9,15 +9,6 @@
  * Shown in-context when a user triggers a feature that benefits from
  * the missing field. Never a blocker — always dismissible.
  *
- * Usage:
- *   <IdentityPromptSheet
- *     field={promptField}          // "bio" | "country" | "display_name" | null
- *     raldValues={raldValues}      // pre-fill from RALD intelligence
- *     onSaved={refreshProfile}     // called after successful save
- *     onDismiss={() => dismissField(promptField)}
- *     onOpenChange={(open) => { if (!open) closePrompt(); }}
- *   />
- *
  * LILCKY STUDIO LIMITED · 2026-06-12
  */
 
@@ -49,7 +40,15 @@ interface Props {
   onOpenChange:   (open: boolean) => void;
 }
 
-const COPY: Record<string, { title: string; description: string; placeholder: string; raldKey: keyof NonNullable<RaldValues>; dbColumn: string; multiline?: boolean; maxLen: number }> = {
+const COPY: Record<string, {
+  title:       string;
+  description: string;
+  placeholder: string;
+  raldKey:     keyof NonNullable<RaldValues>;
+  dbColumn:    "bio" | "display_name" | "country";
+  multiline?:  boolean;
+  maxLen:      number;
+}> = {
   bio: {
     title:       "Add a bio",
     description: "Help people in rooms understand who you are and what you stand for.",
@@ -77,6 +76,18 @@ const COPY: Record<string, { title: string; description: string; placeholder: st
   },
 };
 
+/** Build a strictly-typed Supabase patch object — avoids computed-key typing issues. */
+function buildPatch(
+  column: "bio" | "display_name" | "country",
+  value:  string,
+): { bio: string } | { display_name: string } | { country: string } {
+  switch (column) {
+    case "bio":          return { bio:          value };
+    case "display_name": return { display_name: value };
+    case "country":      return { country:      value };
+  }
+}
+
 export function IdentityPromptSheet({ field, raldValues, onSaved, onDismiss, onOpenChange }: Props) {
   const { user } = useAuth();
   const [value, setValue]   = useState("");
@@ -98,17 +109,18 @@ export function IdentityPromptSheet({ field, raldValues, onSaved, onDismiss, onO
 
     setBusy(true);
     try {
-      // 1. Write to Supabase profiles (Loop source of truth)
+      // 1. Write to Supabase profiles with a strictly-typed patch (no computed keys)
+      const patch = buildPatch(meta.dbColumn, trimmed);
       const { error } = await authedSupabase()
         .from("profiles")
-        .update({ [meta.dbColumn]: trimmed })
+        .update(patch)
         .eq("id", user.id);
       if (error) throw new Error(error.message);
 
       // 2. Sync to RALD Identity Intelligence (non-fatal)
       void updateIdentityField(meta.dbColumn, trimmed);
 
-      toast.success(`${meta.title.replace("Add a ", "").replace("Where are you based?", "Location")} saved`);
+      toast.success(`${meta.title.replace("Add a ", "").replace("Add ", "").replace("Where are you based?", "Location")} saved`);
       await onSaved();
       onOpenChange(false);
     } catch (err) {
