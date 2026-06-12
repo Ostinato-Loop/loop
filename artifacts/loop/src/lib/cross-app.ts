@@ -71,3 +71,60 @@ export const openMessenger = (path = "/chats") => openRaldApp("messenger", path)
 export const openProfiles  = (path = "/")      => openRaldApp("profiles",  path);
 export const openBusiness  = (path = "/")      => openRaldApp("business",  path);
 export const openPayRald   = (path = "/")      => openRaldApp("payrald",   path);
+
+/**
+ * Navigate the user to profiles.rald.cloud for a specific identity action.
+ * Uses cross-app SSO handoff so they land already authenticated.
+ * Falls back to a direct redirect with return_to context preserved.
+ *
+ * ONE RALD (Sprint 3): all identity actions must route through canonical-redirect.
+ */
+export function openIdentityPortal(
+  action:   "profile" | "username" | "security" | "sessions" | "devices"
+          | "verification" | "recovery" | "developer" | "privacy"
+          | "country" | "delete" = "profile",
+  returnTo?: string,
+): void {
+  const pathMap: Record<string, string> = {
+    profile:      "/account",
+    username:     "/account",
+    country:      "/account",
+    verification: "/account",
+    workspace:    "/account",
+    security:     "/security",
+    sessions:     "/security",
+    devices:      "/security",
+    privacy:      "/privacy",
+    delete:       "/privacy",
+    recovery:     "/login",
+    developer:    "/developer",
+  };
+  const path  = pathMap[action] ?? "/account";
+  const rt    = returnTo ?? window.location.href;
+  const token = getSessionToken();
+
+  if (token) {
+    fetch(`${API_BASE}/api/auth/rald-sso/handoff`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({
+        app_id:      "profiles",
+        redirect_to: `${path}?app_id=loop&return_to=${encodeURIComponent(rt)}`,
+      }),
+    })
+      .then(res => (res.ok ? res.json() : Promise.reject()) as Promise<{ handoff_token?: string }>)
+      .then(data => {
+        if (data.handoff_token) {
+          window.location.href = `${RALD_APPS.profiles}${path}?rald_token=${encodeURIComponent(data.handoff_token)}&app_id=loop&return_to=${encodeURIComponent(rt)}`;
+          return;
+        }
+        throw new Error("no token");
+      })
+      .catch(() => {
+        window.location.href = `${RALD_APPS.profiles}${path}?app_id=loop&return_to=${encodeURIComponent(rt)}`;
+      });
+  } else {
+    window.location.href = `${RALD_APPS.profiles}${path}?app_id=loop&return_to=${encodeURIComponent(rt)}`;
+  }
+}
+

@@ -339,241 +339,61 @@ function PrivacySettings() {
 
 /* ── SecuritySettings — Device Center ────────────────────────────────── */
 
-type Device = {
-  id:            string;
-  device_name:   string;
-  device_type:   string;
-  os:            string;
-  browser:       string;
-  ip_address:    string | null;
-  city:          string | null;
-  country:       string | null;
-  last_seen_at:  string;
-  is_trusted:    boolean;
-};
-
-function relativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 2)   return "Just now";
-  if (mins < 60)  return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24)   return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days === 1) return "Yesterday";
-  return `${days} days ago`;
-}
-
-/** Best-effort current device detection by comparing navigator.userAgent */
-function detectCurrentDevice(devices: Device[]): string | null {
-  const ua = navigator.userAgent;
-  const browser =
-    /Edg\//.test(ua)     ? "Edge"    :
-    /Chrome\//.test(ua)  ? "Chrome"  :
-    /Safari\//.test(ua)  ? "Safari"  :
-    /Firefox\//.test(ua) ? "Firefox" : "Unknown";
-  const os =
-    /iPhone/.test(ua)    ? "iOS"     :
-    /Android/.test(ua)   ? "Android" :
-    /Macintosh/.test(ua) ? "macOS"   :
-    /Windows/.test(ua)   ? "Windows" : "Other";
-
-  // First match wins (list is sorted by last_seen DESC — most recent first)
-  for (const d of devices) {
-    if (d.browser === browser && d.os.startsWith(os)) return d.id;
-  }
-  return devices[0]?.id ?? null; // Fall back to most-recently-seen
-}
-
-function DeviceIcon({ type }: { type: string }) {
-  if (type === "mobile" || type === "tablet") return <Smartphone className="h-5 w-5 text-muted-foreground" />;
-  return <Monitor className="h-5 w-5 text-muted-foreground" />;
-}
+/* ── SecuritySettings — ONE RALD: managed at profiles.rald.cloud ─── */
 
 function SecuritySettings() {
-  const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [revoking, setRevoking] = useState<string | null>(null); // device id being revoked
-  const [revokeAllBusy, setRevokeAllBusy] = useState(false);
-  const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
-
-  const loadDevices = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await authFetch(`${API_BASE}/api/auth/devices`);
-      if (res.ok) {
-        const data = await res.json() as { devices: Device[] };
-        setDevices(data.devices ?? []);
-        setCurrentDeviceId(detectCurrentDevice(data.devices ?? []));
-      }
-    } catch { /* silent */ } finally {
-      setLoading(false);
-    }
-  }, [API_BASE]);
-
-  useEffect(() => { loadDevices(); }, [loadDevices]);
-
-  const revokeDevice = async (deviceId: string) => {
-    if (deviceId === currentDeviceId) return; // Never revoke current device from here
-    setRevoking(deviceId);
-    try {
-      const res = await authFetch(`${API_BASE}/api/auth/revoke-device`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ device_id: deviceId }),
-      });
-      if (res.ok) {
-        setDevices(prev => prev.filter(d => d.id !== deviceId));
-        toast.success("Device signed out");
-      } else {
-        toast.error("Could not revoke device");
-      }
-    } catch {
-      toast.error("Could not revoke device");
-    } finally {
-      setRevoking(null);
-    }
-  };
-
-  const revokeAll = async () => {
-    setRevokeAllBusy(true);
-    try {
-      const res = await authFetch(`${API_BASE}/api/auth/revoke-all`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (res.ok) {
-        const data = await res.json() as { access_token?: string };
-        if (data.access_token) setSessionToken(data.access_token);
-        toast.success("All other devices signed out");
-        // Reload device list — only current device should remain
-        await loadDevices();
-      } else {
-        toast.error("Could not revoke other sessions");
-      }
-    } catch {
-      toast.error("Could not revoke other sessions");
-    } finally {
-      setRevokeAllBusy(false);
-    }
-  };
-
-  const otherDevices = devices.filter(d => d.id !== currentDeviceId);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
+  const rt = encodeURIComponent(window.location.href);
   return (
-    <div className="px-5 py-6 space-y-6">
+    <div className="px-5 py-6 space-y-5">
 
-      {/* Revoke-all action */}
-      {otherDevices.length > 0 && (
-        <button
-          onClick={revokeAll}
-          disabled={revokeAllBusy}
-          className="w-full h-12 rounded-xl border border-destructive/40 bg-destructive/10 text-destructive font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 active:scale-[0.98] transition-transform"
+      {/* Authority banner */}
+      <div className="rounded-2xl border border-primary/20 bg-primary/5 px-5 py-5 flex items-start gap-4">
+        <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+          <Shield className="h-5 w-5 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold mb-1">Managed at RALD Account</p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Sessions, trusted devices, and security settings are managed centrally
+            at your RALD Account so changes apply instantly across all RALD products.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-2.5">
+        <a
+          href={`https://profiles.rald.cloud/security?app_id=loop&return_to=${rt}`}
+          className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-transform no-underline"
         >
-          {revokeAllBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
-          {revokeAllBusy ? "Signing out…" : `Sign out ${otherDevices.length} other device${otherDevices.length !== 1 ? "s" : ""}`}
-        </button>
-      )}
+          <ShieldAlert className="h-4 w-4" />
+          Manage Security &amp; Devices
+        </a>
+        <a
+          href={`https://profiles.rald.cloud/security?tab=sessions&app_id=loop&return_to=${rt}`}
+          className="w-full h-11 rounded-xl border border-border bg-surface text-sm font-medium flex items-center justify-center gap-2 no-underline text-foreground"
+        >
+          <Activity className="h-4 w-4 text-muted-foreground" />
+          View Active Sessions
+        </a>
+        <a
+          href={`https://profiles.rald.cloud/security?tab=devices&app_id=loop&return_to=${rt}`}
+          className="w-full h-11 rounded-xl border border-border bg-surface text-sm font-medium flex items-center justify-center gap-2 no-underline text-foreground"
+        >
+          <Smartphone className="h-4 w-4 text-muted-foreground" />
+          View Trusted Devices
+        </a>
+      </div>
 
-      {/* Current device */}
-      {currentDeviceId && devices.find(d => d.id === currentDeviceId) && (() => {
-        const d = devices.find(dev => dev.id === currentDeviceId)!;
-        return (
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">This device</p>
-            <div className="rounded-2xl border border-primary/30 bg-primary/5 px-4 py-4 flex items-start gap-3">
-              <div className="h-9 w-9 rounded-xl bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
-                <DeviceIcon type={d.device_type} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm font-semibold">{d.device_name}</p>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-full">Current</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">{d.browser} · {d.os}</p>
-                {(d.city || d.country) && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                    <Globe className="h-3 w-3 inline" />
-                    {[d.city, d.country].filter(Boolean).join(", ")}
-                  </p>
-                )}
-                <p className="text-xs text-muted-foreground mt-0.5">Active {relativeTime(d.last_seen_at)}</p>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Other devices */}
-      {otherDevices.length > 0 && (
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Other sessions</p>
-          <div className="overflow-hidden rounded-2xl border border-border bg-surface divide-y divide-border">
-            {otherDevices.map((d) => (
-              <div key={d.id} className="px-4 py-3.5 flex items-start gap-3">
-                <div className="h-9 w-9 rounded-xl bg-secondary flex items-center justify-center shrink-0 mt-0.5">
-                  <DeviceIcon type={d.device_type} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold">{d.device_name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{d.browser} · {d.os}</p>
-                  {(d.city || d.country) && (
-                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                      <Globe className="h-3 w-3 inline" />
-                      {[d.city, d.country].filter(Boolean).join(", ")}
-                    </p>
-                  )}
-                  <p className="text-xs text-muted-foreground mt-0.5">Last active {relativeTime(d.last_seen_at)}</p>
-                </div>
-                <button
-                  onClick={() => revokeDevice(d.id)}
-                  disabled={revoking === d.id}
-                  className="shrink-0 h-8 px-3 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:border-destructive/50 hover:text-destructive transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  {revoking === d.id
-                    ? <Loader2 className="h-3 w-3 animate-spin" />
-                    : <LogOut className="h-3 w-3" />}
-                  {revoking === d.id ? "…" : "Sign out"}
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Empty state */}
-      {devices.length === 0 && (
-        <div className="text-center py-12 space-y-2">
-          <Smartphone className="h-8 w-8 text-muted-foreground/40 mx-auto" />
-          <p className="text-sm text-muted-foreground">No devices found</p>
-          <p className="text-xs text-muted-foreground/60">Devices appear here after each sign-in</p>
-        </div>
-      )}
-
-      {otherDevices.length === 0 && devices.length > 0 && (
-        <div className="rounded-xl border border-border bg-surface px-4 py-3.5 text-center">
-          <p className="text-sm font-medium text-muted-foreground">Only signed in on this device</p>
-        </div>
-      )}
-
-      <p className="text-xs text-muted-foreground">
-        Signing out a device immediately revokes its session. The device will need to sign in again.
-        If you don't recognise a session, sign out all other devices immediately.
+      <p className="text-xs text-center text-muted-foreground">
+        Changes at{" "}
+        <a href="https://profiles.rald.cloud/security" className="text-primary underline" target="_blank" rel="noopener noreferrer">
+          profiles.rald.cloud
+        </a>{" "}
+        take effect on Loop immediately.
       </p>
     </div>
   );
 }
-
-/* ── AppearanceSettings ──────────────────────────────────────────────── */
 
 function AppearanceSettings() {
   const [theme, setTheme] = useState<"light" | "dark" | "system">("dark");

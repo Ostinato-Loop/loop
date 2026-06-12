@@ -105,3 +105,95 @@ export async function recordOnboardingStep(step: string, product = "loop"): Prom
     });
   } catch { /* non-fatal */ }
 }
+
+// ── Sprint 3: ONE RALD canonical-redirect helpers ────────────────────
+
+export type IdentityAction =
+  | "profile" | "username" | "security" | "sessions" | "devices"
+  | "verification" | "recovery" | "developer" | "privacy" | "country"
+  | "workspace" | "delete";
+
+const ACTION_PATHS: Record<IdentityAction, string> = {
+  profile:      "/account",
+  username:     "/account",
+  country:      "/account",
+  verification: "/account",
+  workspace:    "/account",
+  security:     "/security",
+  sessions:     "/security",
+  devices:      "/security",
+  privacy:      "/privacy",
+  delete:       "/privacy",
+  recovery:     "/login",
+  developer:    "/developer",
+};
+
+/**
+ * Resolve the canonical profiles.rald.cloud URL for an identity action.
+ * Calls GET /identity/canonical-redirect; falls back to constructing from ACTION_PATHS.
+ */
+export async function getIdentityCanonicalUrl(
+  action: IdentityAction,
+  returnTo?: string,
+): Promise<string> {
+  const token  = getSessionToken();
+  const params = new URLSearchParams({ action, app_id: "loop" });
+  if (returnTo) params.set("return_to", returnTo);
+  try {
+    const res = await fetch(`${RALD_AUTH}/identity/canonical-redirect?${params}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal:  AbortSignal.timeout(4000),
+    });
+    if (!res.ok) throw new Error("non-ok");
+    const data = await res.json() as { canonical: string };
+    return data.canonical;
+  } catch {
+    const path = ACTION_PATHS[action] ?? "/account";
+    const url  = new URL(`https://profiles.rald.cloud${path}`);
+    url.searchParams.set("app_id", "loop");
+    if (returnTo) url.searchParams.set("return_to", returnTo);
+    return url.toString();
+  }
+}
+
+/**
+ * Immediately navigate the user to profiles.rald.cloud for a given identity action.
+ * Uses an optimistic direct URL — no network round-trip so the redirect is instant.
+ */
+export function redirectToIdentity(action: IdentityAction, returnTo?: string): void {
+  const rt   = returnTo ?? window.location.href;
+  const path = ACTION_PATHS[action] ?? "/account";
+  const params = new URLSearchParams({ app_id: "loop", return_to: rt });
+  window.location.href = `https://profiles.rald.cloud${path}?${params}`;
+}
+
+export type IdentityCapabilities = {
+  canonical_identity_host:     string;
+  supports_username_change:    boolean;
+  supports_email_change:       boolean;
+  supports_phone_change:       boolean;
+  supports_mfa:                boolean;
+  supports_device_management:  boolean;
+  supports_session_management: boolean;
+  supported_actions:           string[];
+};
+
+/**
+ * Fetch capability flags so Loop can self-configure which identity actions to surface.
+ * See GET /identity/capabilities on rald-auth-core.
+ */
+export async function getIdentityCapabilities(): Promise<IdentityCapabilities | null> {
+  const token = getSessionToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${RALD_AUTH}/identity/capabilities`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal:  AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    return res.json() as Promise<IdentityCapabilities>;
+  } catch {
+    return null;
+  }
+}
+
