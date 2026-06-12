@@ -279,7 +279,13 @@ raldSso.post("/", async (c) => {
       service: "loop-api",
       ...logCtx,
     }));
-    return c.json({ error: "Invalid or expired RALD token" }, 401);
+    // IDENTITY-CONTINUITY-001: Never expose infrastructure terms to users.
+    // "Invalid or expired RALD token" is internal — replaced with human language.
+    return c.json({
+      error:   "Your session couldn't be verified. Please sign in again.",
+      code:    "session_reconnect_required",
+      action:  "sign_in",
+    }, 401);
   }
 
   const sbUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
