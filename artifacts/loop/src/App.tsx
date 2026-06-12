@@ -15,6 +15,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { UsernameSetupDialog } from "@/components/username-setup-dialog";
 import { LoopStoreProvider } from "@/lib/loop-store";
 import { Loader2 } from "lucide-react";
 import { Component } from "react";
@@ -171,6 +172,7 @@ export default function App() {
               </Suspense>
             </BrowserRouter>
             <Toaster position="top-center" />
+            <UsernameSetupDialog />
           </LoopStoreProvider>
         </AuthProvider>
       </QueryClientProvider>
