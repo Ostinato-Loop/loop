@@ -871,16 +871,34 @@ auth.post("/username/claim", requireAuth(), async (c) => {
 
   if (!username) return c.json({ error: "username is required" }, 400);
 
+  // USN-001: Extract caller session token to forward as Bearer to rald-auth-core
+  const authHeader  = c.req.header("Authorization");
+  const cookieHdr   = c.req.header("Cookie");
+  const sessionToken: string | null =
+    (authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null)
+    ?? parseSessionCookie(cookieHdr);
+
   const authUrl = (c.env as unknown as Record<string, string>).RALD_AUTH_URL ?? "https://auth.rald.cloud";
   try {
     const r = await fetch(`${authUrl}/username/claim`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ username }),  // rald-auth-core reads user_id from JWT
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+      },
+      body: JSON.stringify({ username }),
       signal: AbortSignal.timeout(5000),
     });
     if (r.ok) {
       const data = await r.json();
+      // USN-001: Sync username to profiles table so refreshProfile() works immediately
+      const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = c.env;
+      await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${user.id}`, {
+        method: "PATCH",
+        headers: { apikey: SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+        body: JSON.stringify({ username }),
+      }).catch(() => null);
       return c.json(data);
     }
     const err = await r.json().catch(() => ({})) as { error?: string };
