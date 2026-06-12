@@ -17,6 +17,7 @@ import type { CloudflareEnv } from "../types/env.js";
 
 const PRODUCTION_ALLOWLIST = [
   "https://loop.rald.cloud",
+  "https://chat.rald.cloud",
   "https://messenger.rald.cloud",
   "https://profiles.rald.cloud",
   "https://sv.rald.cloud",
