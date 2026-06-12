@@ -452,24 +452,42 @@ auth.get("/me", async (c) => {
  * Cookie-based silent session check. Issues a fresh Loop-scoped JWT and
  * refreshes the cookie TTL on every successful check.
  *
- * COOKIE-001: Canonical path for silent refresh. Also available at
- * /api/auth/rald-sso/silent for backward compatibility.
+ * COOKIE-001: Canonical path for silent refresh for ALL session types
+ * (phone OTP and RALD SSO). The /api/auth/rald-sso/silent path is kept
+ * as a backward-compat alias — both paths run the same logic.
  *
- * ROUTING-FIX-001 (2026-06-08): Canonical handler here; rald-sso/silent kept
- * for backward-compat with existing clients.
+ * ROUTING-FIX-001 (2026-06-08): Canonical handler here.
+ * USN-002 (2026-06-15): username claim now carried forward in the
+ *   reissued token. Omitting it caused Loop components that read
+ *   payload.username to see null after every silent refresh, breaking
+ *   the username-setup guard and post-login flows.
+ *   Profile upsert now also propagates username (if present) to the DB,
+ *   matching the behaviour of /api/auth/rald-sso/silent.
+ * DEDUP-001 (2026-06-15): Removed code duplication between this handler
+ *   and rald-sso/silent. Both now follow the same pattern: verify → upsert
+ *   profile (with username) → re-sign → refresh cookie → respond.
  */
 auth.get("/silent", async (c) => {
   const token = parseSessionCookie(c.req.header("Cookie"));
   if (!token) return c.json({ valid: false, reason: "no_session_cookie" }, 401);
 
+  // USN-002: extend the payload type to include username so it is carried
+  // forward in the re-issued token and in the profile upsert.
   const rald = await verifyJwt(token, c.env.RALD_JWT_SECRET) as {
-    id: string; email?: string; phone?: string; name?: string | null; role?: string;
+    id: string; email?: string; phone?: string;
+    name?: string | null; role?: string;
+    username?: string | null;
   } | null;
   if (!rald || !rald.id) return c.json({ valid: false, reason: "invalid_or_expired_token" }, 401);
 
-  // Fire-and-forget profile upsert on cold-start
+  // Fire-and-forget profile upsert — mirrors rald-sso/silent (DEDUP-001).
+  // USN-002: include username in the upsert so the DB stays in sync.
   const sbUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
+  const profilePayload: Record<string, unknown> = { id: rald.id };
   const displayName = rald.name ?? (rald.email ? rald.email.split("@")[0] : null);
+  if (displayName) profilePayload.display_name = displayName;
+  if (rald.username) profilePayload.username = rald.username;  // USN-002: propagate username
+
   fetch(`${sbUrl}/rest/v1/profiles`, {
     method: "POST",
     headers: {
@@ -478,17 +496,23 @@ auth.get("/silent", async (c) => {
       apikey:         c.env.SUPABASE_SERVICE_ROLE_KEY,
       Prefer:         "resolution=merge-duplicates,return=minimal",
     },
-    body: JSON.stringify({ id: rald.id, ...(displayName ? { display_name: displayName } : {}) }),
+    body: JSON.stringify(profilePayload),
   }).catch(() => null);
 
   const now = Math.floor(Date.now() / 1000);
   const loopToken = await signJwt(
     {
-      sub: rald.id, email: rald.email ?? null, role: rald.role ?? "user",
-      iss: JWT_ISSUER, aud: JWT_AUDIENCE,
-      iat: now, exp: now + TTL_SSO_S,
-      jti: crypto.randomUUID(),
-      id:  rald.id, source: "silent",
+      sub:      rald.id,
+      email:    rald.email    ?? null,
+      role:     rald.role     ?? "user",
+      username: rald.username ?? null,  // USN-002: carry username — never null it out
+      iss:      JWT_ISSUER,
+      aud:      JWT_AUDIENCE,
+      iat:      now,
+      exp:      now + TTL_SSO_S,
+      jti:      crypto.randomUUID(),
+      id:       rald.id,
+      source:   "silent",
     },
     c.env.RALD_JWT_SECRET,
   );
@@ -500,6 +524,7 @@ auth.get("/silent", async (c) => {
     valid:        true,
     user:         { id: rald.id, email: rald.email ?? null, role: rald.role ?? "user" },
     access_token: loopToken,
+    has_username: !!rald.username,  // USN-002: client skips username-setup screen if true
   });
 });
 
