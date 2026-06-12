@@ -138,7 +138,7 @@ crons = []
 [env.production.vars]
 ENVIRONMENT   = "production"
 SUPABASE_URL  = "https://onxdcikfttdmnhofsuwo.supabase.co"
-CORS_ORIGIN   = "https://loop.rald.cloud,https://loop.ostinato-loop.pages.dev"
+CORS_ORIGIN   = "https://loop.rald.cloud,https://chat.rald.cloud,https://profiles.rald.cloud,https://app.rald.cloud,https://sv.rald.cloud,https://rald.cloud,https://business.rald.cloud,https://control.rald.cloud,https://loop.ostinato-loop.pages.dev"
 RALD_AUTH_URL = "https://auth.rald.cloud"
 
 # Production secrets — pushed by deploy.yml via wrangler secret put:
