@@ -520,6 +520,7 @@ auth.get("/silent", async (c) => {
   // COOKIE-001: Refresh cookie TTL on every valid silent check
   c.header("Set-Cookie", buildSessionCookie(loopToken, TTL_SSO_S));
 
+  c.header("X-RALD-Identity-Portal", "https://profiles.rald.cloud");
   return c.json({
     valid:        true,
     user:         { id: rald.id, email: rald.email ?? null, role: rald.role ?? "user" },
