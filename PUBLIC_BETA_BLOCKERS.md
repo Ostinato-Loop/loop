@@ -1,6 +1,6 @@
 # Public Beta Blockers
 
-**Last Updated:** 2026-06-12 (G.16 — Identity Intelligence Layer)
+**Last Updated:** 2026-06-12 (G.16 — Identity Intelligence Layer + Developer Console)
 
 ---
 
@@ -28,6 +28,45 @@ Cron cannot be set via wrangler.toml without additional API token scope.
 ---
 
 ## 🟢 RESOLVED in G.16 (2026-06-12)
+
+### [SHIPPED] RALD Developer Identity & API Platform — `rald-dev-console`
+**Deliverable:** Complete Developer Portal at `console.rald.cloud`
+**Repo:** `Ostinato-Loop/rald-dev-console` (commit `2f48fc9`)
+**Implementation:**
+- 39-file React 18 + Vite + TypeScript app, typecheck CLEAN
+- **Pages:** Login (RALD SSO), Callback, Dashboard (stats + dev ID card),
+  API Keys (MASTER / PRODUCT / WORKSPACE / SERVICE — create/rotate/revoke/suspend),
+  Applications (register + list), Webhooks (subscribe to ecosystem events),
+  Audit Logs (paginated, color-coded by action), Organizations, Settings, Onboarding (2-step)
+- **Auth:** RALD SSO via `identity.rald.cloud?app_id=rald-dev-console&redirect_to=.../callback`
+  → token exchange → `GET /session` → `localStorage`
+- **Brand:** Primary `#00FF88`, Surface `#080D14`, Cyber Slate border, JetBrains Mono for keys
+- **Deploy:** GitHub Actions → Cloudflare Pages (`rald-dev-console` project)
+
+### [SHIPPED] `/developer/*` API routes — `rald-auth-core`
+**Repo:** `Ostinato-Loop/rald-auth-core` (commit `343b4e1`)
+**16 new routes registered at `/developer`:**
+- `POST /developer/onboard` — create profile + auto-generates Master Key
+- `GET  /developer/profile` — developer identity card
+- `GET  /developer/stats` — dashboard aggregate stats
+- `GET  /developer/keys` — list API keys
+- `POST /developer/keys` — create key (MASTER/PRODUCT/WORKSPACE/SERVICE)
+- `POST /developer/keys/:id/rotate` — rotate a key (new secret, same metadata)
+- `POST /developer/keys/:id/revoke` — permanent revocation
+- `POST /developer/keys/:id/suspend` — temporary suspension
+- `GET/POST /developer/apps` — app registry (list + register)
+- `PATCH /developer/apps/:id` — update app metadata
+- `GET/POST /developer/webhooks` — webhook subscriptions
+- `DELETE /developer/webhooks/:id` — remove webhook
+- `GET /developer/audit` — paginated audit log (user-scoped)
+- `GET /developer/usage` — API usage statistics
+
+### [SHIPPED] Supabase migration `20260612100000_developer_platform.sql`
+**New tables with RLS + updated_at triggers:**
+- `developer_profiles` — dev identity (dev_id, org, tier, trust_level)
+- `developer_api_keys` — key metadata (type, prefix, hash, scopes, status)
+- `developer_registered_apps` — OAuth app registry
+- `developer_webhooks` — event subscriptions
 
 ### [FIXED] RALD Identity Intelligence Layer — sprint implementation
 **Root cause:** N/A — new feature sprint.
@@ -116,5 +155,9 @@ HTTP 200 confirmed.
 ## 📋 Known P1 items (non-blocking for beta launch)
 
 - P1-001: No search results yet — SearchPage shell exists, backend needs index
+- P1-002: `console.rald.cloud` DNS + Cloudflare Pages project setup — operator must run:
+  `wrangler pages project create rald-dev-console` + add `console.rald.cloud` custom domain
 - P1-003: Category emoji inconsistency across screens
 - P1-004: Loop P0-001 (no audio) — LiveKit WebRTC requires Apple/Google push cert — 2-4 week task
+- P1-005: Supabase migration `20260612100000_developer_platform.sql` — must be applied to
+  production Supabase project before developer onboarding will succeed
