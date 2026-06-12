@@ -18,7 +18,7 @@ import { getSessionToken } from "@/lib/session-store";
 
 export const RALD_APPS = {
   loop:      "https://loop.rald.cloud",
-  messenger: "https://messenger.rald.cloud",
+  messenger: "https://chat.rald.cloud",
   profiles:  "https://profiles.rald.cloud",
   business:  "https://business.rald.cloud",
   payrald:   "https://payrald.rald.cloud",
