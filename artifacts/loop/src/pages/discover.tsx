@@ -15,7 +15,7 @@
  * LILCKY STUDIO LIMITED
  */
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase, authedSupabase } from "@/integrations/supabase/client";
@@ -32,6 +32,7 @@ import { Search, Sparkles, Radio, Globe2, TrendingUp, Calendar, Briefcase, Newsp
 import { cn } from "@/lib/utils";
 import { useFollow } from "@/hooks/use-follow";
 import { useRoomQuota } from "@/hooks/use-room-quota";
+import { IdentityPromptSheet } from "@/components/identity-prompt-sheet";
 
 /* ── Feed tab types ─────────────────────────────────────────────────── */
 type FeedTab = "all" | "live" | "near" | "trending" | "events" | "people" | "creator" | "civic" | "communities";
@@ -586,6 +587,19 @@ export default function DiscoverPage() {
   const [category, setCategory] = useState<RoomCategory | "all">("all");
   const { quota } = useRoomQuota(user?.id ?? null);
 
+  /* ── IDENTITY-002: Civic room country gate ───────────────────────── */
+  const [civicRoomPending, setCivicRoomPending] = useState<string | null>(null);
+  const [civicCountryOpen, setCivicCountryOpen] = useState(false);
+
+  const handleCivicRoomTap = useCallback((room: Room) => {
+    if (profile?.country) {
+      navigate(`/rooms/${room.id}`);
+    } else {
+      setCivicRoomPending(room.id);
+      setCivicCountryOpen(true);
+    }
+  }, [profile?.country, navigate]);
+
   // Auth + onboarding gate now handled by ProtectedRoute in App.tsx
 
   useEffect(() => {
@@ -817,7 +831,9 @@ export default function DiscoverPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {allRooms.map((r) => <RoomCard key={r.id} room={r} />)}
+                  {allRooms.map((r) => (
+                    <RoomCard key={r.id} room={r} onClick={() => handleCivicRoomTap(r)} />
+                  ))}
                 </div>
               )}
             </section>
@@ -984,6 +1000,30 @@ export default function DiscoverPage() {
           </section>
         )}
       </div>
+
+      {/* ── IDENTITY-002: Country gate for Civic rooms ── */}
+      <IdentityPromptSheet
+        field={civicCountryOpen ? "country" : null}
+        onSaved={async () => {
+          await refreshProfile();
+          if (civicRoomPending) {
+            navigate(`/rooms/${civicRoomPending}`);
+            setCivicRoomPending(null);
+          }
+          setCivicCountryOpen(false);
+        }}
+        onDismiss={() => {
+          // User skipped country — still navigate to the room
+          if (civicRoomPending) {
+            navigate(`/rooms/${civicRoomPending}`);
+            setCivicRoomPending(null);
+          }
+          setCivicCountryOpen(false);
+        }}
+        onOpenChange={(open) => {
+          if (!open) setCivicCountryOpen(false);
+        }}
+      />
     </AppShell>
   );
 }
