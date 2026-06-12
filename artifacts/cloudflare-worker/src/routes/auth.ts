@@ -239,29 +239,41 @@ const sendOtpHandler = async (c: Context<{ Bindings: CloudflareEnv; Variables: {
     }),
   });
 
-  // TERMII-FALLBACK: if the configured sender ID is not approved on Termii (HTTP 5xx),
-  // retry once with the generic channel and the default N-Alert sender.
-  // This ensures OTPs still reach users even if the custom sender needs re-approval.
+  // TERMII-FALLBACK: If the Termii OTP API rejects our sender ID (applicationId not
+  // registered / sender not approved), fall back to a direct SMS via /api/sms/send.
+  // That endpoint uses "Termii" as the default generic sender, which requires no
+  // per-account registration and works on all Termii accounts.
   if (!resp.ok) {
     const errBody = await resp.text().catch(() => "");
     const isSenderError = errBody.includes("ApplicationSenderId") || errBody.includes("senderName");
     if (isSenderError) {
-      console.warn("[auth/send-otp] sender ID not approved — retrying with generic/N-Alert");
-      resp = await fetch("https://api.ng.termii.com/api/sms/otp/send", {
+      console.warn("[auth/send-otp] OTP sender not approved — falling back to direct SMS");
+      // Generate a 6-digit code and send it ourselves via the plain SMS endpoint.
+      const directCode = String(Math.floor(100000 + Math.random() * 900000));
+      const smsResp = await fetch("https://api.ng.termii.com/api/sms/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...termiiBase,
-          from:    "N-Alert",
+          api_key: c.env.TERMII_API_KEY,
+          to:      phone,
+          from:    "Termii",
+          sms:     `Your Loop verification code is ${directCode}. Valid for 10 minutes. Do not share.`,
+          type:    "plain",
           channel: "generic",
         }),
       });
+      if (smsResp.ok) {
+        // Store the raw code under a different KV key so verify-otp can distinguish the two flows.
+        await c.env.CACHE.put(`otp:direct:${phone}`, directCode, { expirationTtl: 600 });
+        return c.json({ ok: true, message: "OTP sent", remainingPhone: phoneCheck.remaining - 1, remainingIp: ipCheck.remaining - 1 });
+      }
+      const smsErr = await smsResp.text().catch(() => "");
+      console.error("[auth/send-otp] direct SMS fallback also failed:", smsResp.status, smsErr.slice(0, 300));
+      return c.json({ error: "Failed to send OTP. Please try again later." }, 502);
     }
-    if (!resp.ok) {
-      const err2 = await resp.text().catch(() => errBody);
-      console.error("[auth/send-otp] Termii error:", resp.status, err2.slice(0, 400));
-      return c.json({ error: "Failed to send OTP", _debug: { termii_status: resp.status, termii_body: err2.slice(0, 400) } }, 502);
-    }
+    const err2 = await resp.text().catch(() => errBody);
+    console.error("[auth/send-otp] Termii error:", resp.status, err2.slice(0, 400));
+    return c.json({ error: "Failed to send OTP", _debug: { termii_status: resp.status, termii_body: err2.slice(0, 400) } }, 502);
   }
 
   const data = (await resp.json()) as { pinId?: string };
@@ -299,21 +311,32 @@ auth.post("/verify-otp", async (c) => {
     return c.json({ error: "Too many verification attempts", resetAtSec: verifyIpCheck.resetAtSec }, 429);
   }
 
-  const pinId = await c.env.CACHE.get(`otp:pin:${phone}`);
-  if (!pinId) return c.json({ error: "No OTP pending for this phone" }, 400);
+  // Support two OTP storage modes:
+  //   otp:pin:{phone}    — Termii OTP API issued a pinId (primary path)
+  //   otp:direct:{phone} — direct SMS fallback; we stored the raw 6-digit code
+  const pinId      = await c.env.CACHE.get(`otp:pin:${phone}`);
+  const directCode = await c.env.CACHE.get(`otp:direct:${phone}`);
+  if (!pinId && !directCode) return c.json({ error: "No OTP pending for this phone" }, 400);
 
-  const verifyResp = await fetch("https://api.ng.termii.com/api/sms/otp/verify", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ api_key: c.env.TERMII_API_KEY, pin_id: pinId, pin: code }),
-  });
-  if (!verifyResp.ok) return c.json({ error: "OTP verification failed" }, 401);
+  if (directCode) {
+    // Direct-SMS path: compare code locally, no Termii verify call needed.
+    if (code !== directCode) return c.json({ error: "Invalid OTP code" }, 401);
+    await c.env.CACHE.delete(`otp:direct:${phone}`);
+  } else {
+    // Termii OTP API path: delegate verification to Termii.
+    const verifyResp = await fetch("https://api.ng.termii.com/api/sms/otp/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: c.env.TERMII_API_KEY, pin_id: pinId, pin: code }),
+    });
+    if (!verifyResp.ok) return c.json({ error: "OTP verification failed" }, 401);
 
-  const verifyData = (await verifyResp.json()) as { verified?: boolean | string; msisdn?: string };
-  const verified = verifyData.verified === true || verifyData.verified === "True";
-  if (!verified) return c.json({ error: "Invalid OTP code" }, 401);
+    const verifyData = (await verifyResp.json()) as { verified?: boolean | string; msisdn?: string };
+    const verified = verifyData.verified === true || verifyData.verified === "True";
+    if (!verified) return c.json({ error: "Invalid OTP code" }, 401);
 
-  await c.env.CACHE.delete(`otp:pin:${phone}`);
+    await c.env.CACHE.delete(`otp:pin:${phone}`);
+  }
 
   const sbUrl = c.env.SUPABASE_URL.replace(/\/$/, "");
   const sbKey = c.env.SUPABASE_SERVICE_ROLE_KEY;
