@@ -876,7 +876,7 @@ auth.post("/username/claim", requireAuth(), async (c) => {
     const r = await fetch(`${authUrl}/username/claim`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ username, user_id: user.id }),
+      body: JSON.stringify({ username }),  // rald-auth-core reads user_id from JWT
       signal: AbortSignal.timeout(5000),
     });
     if (r.ok) {
