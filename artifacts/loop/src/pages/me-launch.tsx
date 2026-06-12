@@ -1,12 +1,20 @@
 // Loop — Profile / Me Page
 // Progressive Trust: Edit Profile is now functional (display_name, bio, username).
 // Relationship counts show honest zeros until the graph API ships.
+//
+// IDENTITY-002 (2026-06-12): Progressive identity collection.
+//   - useProgressiveIdentity() fetches RALD intelligence on mount.
+//   - Profile completion nudge card shown when bio or display_name is missing.
+//   - Tapping a nudge opens IdentityPromptSheet — saves to Supabase + syncs to RALD.
+//   - Edit profile form pre-fills bio/name from RALD if Loop profile is empty.
+//   - saveEdit now syncs each changed field back to RALD Intelligence.
+//
 // LILCKY STUDIO LIMITED
 
 import {
   Settings, BadgeCheck, MapPin, Mic,
   Heart, Users, Shield, Sun, Moon, Monitor, Copy, ChevronRight, Sparkles,
-  LogOut, Pencil, X, Loader2, Check,
+  LogOut, Pencil, X, Loader2, Check, CircleUser,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLoop } from "@/lib/loop-store";
@@ -16,6 +24,10 @@ import { AppShell } from "@/components/layout/app-shell";
 import { useNavigate } from "react-router-dom";
 import { NotificationPrompt } from "@/components/notification-prompt";
 import { getMyFollowCounts } from "@/lib/api/follows";
+import { useProgressiveIdentity } from "@/hooks/use-progressive-identity";
+import { IdentityPromptSheet } from "@/components/identity-prompt-sheet";
+import { updateIdentityField } from "@/lib/api/identity";
+import { toast } from "sonner";
 
 type Tab = "activity" | "followers" | "following" | "saved";
 
@@ -38,6 +50,16 @@ export default function MeLaunchPage() {
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount]  = useState(0);
 
+  /* ── IDENTITY-002: Progressive identity collection ── */
+  const {
+    missingFields,
+    promptField,
+    showPrompt,
+    closePrompt,
+    dismissField,
+    raldValues,
+  } = useProgressiveIdentity();
+
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove("light", "dark");
@@ -47,6 +69,7 @@ export default function MeLaunchPage() {
       root.classList.add(theme);
     }
   }, [theme]);
+
   useEffect(() => {
     if (!user?.id) return;
     getMyFollowCounts()
@@ -54,9 +77,8 @@ export default function MeLaunchPage() {
         setFollowersCount(followers_count);
         setFollowingCount(following_count);
       })
-      .catch(() => {}); // fail silently — counts stay at 0 if API unavailable
+      .catch(() => {});
   }, [user?.id]);
-
 
   const displayName = profile?.display_name ?? user?.phone ?? "You";
   const handle      = profile?.username ?? "";
@@ -64,19 +86,19 @@ export default function MeLaunchPage() {
   const bio         = profile?.bio ?? "";
   const isVerified  = profile?.is_verified ?? false;
 
-  /* ── Open edit form with current values ── */
+  /* ── Open edit form — pre-fill from Loop profile, fall back to RALD ── */
   const openEdit = () => {
-    setEditName(profile?.display_name ?? "");
-    setEditBio(profile?.bio ?? "");
-    setEditHandle(profile?.username ?? "");
+    setEditName(profile?.display_name ?? raldValues?.display_name ?? "");
+    setEditBio(profile?.bio ?? raldValues?.bio ?? "");
+    setEditHandle(profile?.username ?? raldValues?.username ?? "");
     setEditOpen(true);
   };
 
-  /* ── Save profile edits to Supabase ── */
+  /* ── Save profile edits to Supabase + sync to RALD Intelligence ── */
   const saveEdit = async () => {
     if (!user || editBusy) return;
     if (!editName.trim() || editName.trim().length < 2) {
-      import("sonner").then(({ toast }) => toast.error("Name must be at least 2 characters"));
+      toast.error("Name must be at least 2 characters");
       return;
     }
     setEditBusy(true);
@@ -92,15 +114,18 @@ export default function MeLaunchPage() {
         .from("profiles")
         .update(patch)
         .eq("id", user.id);
-
       if (error) throw error;
+
+      // Sync each changed field to RALD Intelligence (non-fatal, fire-and-forget)
+      void updateIdentityField("display_name", patch.display_name);
+      if (patch.bio)      void updateIdentityField("bio",      patch.bio);
+      if (patch.username) void updateIdentityField("username", patch.username);
+
       await refreshProfile();
       setEditOpen(false);
-      import("sonner").then(({ toast }) => toast.success("Profile updated"));
+      toast.success("Profile updated");
     } catch (err) {
-      import("sonner").then(({ toast }) =>
-        toast.error(err instanceof Error ? err.message : "Could not update profile")
-      );
+      toast.error(err instanceof Error ? err.message : "Could not update profile");
     } finally {
       setEditBusy(false);
     }
@@ -114,7 +139,7 @@ export default function MeLaunchPage() {
         <button
           className="absolute top-3 right-3 h-9 w-9 rounded-full bg-background/80 backdrop-blur flex items-center justify-center"
           aria-label="Settings"
-          onClick={() => import("sonner").then(({ toast }) => toast.info("Settings coming soon"))}
+          onClick={() => toast.info("Settings coming soon")}
         >
           <Settings className="h-4 w-4" />
         </button>
@@ -152,6 +177,38 @@ export default function MeLaunchPage() {
           {bio && <p className="text-sm mt-2 leading-snug">{bio}</p>}
         </div>
 
+        {/* ── IDENTITY-002: Profile completion nudge card ──────────────── */}
+        {missingFields.length > 0 && !editOpen && (
+          <div className="mt-4 rounded-2xl border border-primary/20 bg-primary/5 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <CircleUser className="h-4 w-4 text-primary" />
+              <span className="text-xs font-bold uppercase tracking-wider text-primary">Complete your profile</span>
+            </div>
+            <div className="space-y-2">
+              {missingFields.map((f) => (
+                <div key={f.field} className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground flex-1 pr-3">{f.reason}</p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => showPrompt(f.field)}
+                      className="px-3 py-1 rounded-lg bg-primary text-primary-foreground text-[11px] font-bold"
+                    >
+                      Add {f.label}
+                    </button>
+                    <button
+                      onClick={() => dismissField(f.field)}
+                      className="h-6 w-6 rounded-full bg-secondary flex items-center justify-center"
+                      aria-label={`Dismiss ${f.label} nudge`}
+                    >
+                      <X className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── Inline Edit Profile Form ── */}
         {editOpen && (
           <div className="mt-4 rounded-2xl border border-primary/30 bg-surface p-4 space-y-3">
@@ -176,6 +233,11 @@ export default function MeLaunchPage() {
                 maxLength={40}
                 className="w-full h-11 rounded-xl border border-border bg-background px-3 text-sm outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-colors"
               />
+              {raldValues?.display_name && !profile?.display_name && (
+                <p className="text-[11px] text-primary/70 pl-1 flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" /> From your RALD profile
+                </p>
+              )}
             </div>
 
             {/* Handle */}
@@ -210,6 +272,11 @@ export default function MeLaunchPage() {
                 className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none resize-none focus:border-primary/60 focus:ring-1 focus:ring-primary/20 transition-colors placeholder:text-muted-foreground"
               />
               <p className="text-[11px] text-muted-foreground pl-1">{editBio.length}/160</p>
+              {raldValues?.bio && !profile?.bio && (
+                <p className="text-[11px] text-primary/70 pl-1 flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" /> From your RALD profile
+                </p>
+              )}
             </div>
 
             {/* Save / Cancel */}
@@ -355,9 +422,9 @@ export default function MeLaunchPage() {
                     });
                     setReportOpen(false);
                     setReportMsg("");
-                    import("sonner").then(({ toast }) => toast.success("Thanks — we'll look into it."));
+                    toast.success("Thanks — we'll look into it.");
                   } catch {
-                    import("sonner").then(({ toast }) => toast.error("Could not send report — try again."));
+                    toast.error("Could not send report — try again.");
                   } finally {
                     setReportBusy(false);
                   }
@@ -407,6 +474,15 @@ export default function MeLaunchPage() {
         </div>
       </div>
     </div>
+
+    {/* ── IDENTITY-002: Progressive identity prompt sheet ── */}
+    <IdentityPromptSheet
+      field={promptField}
+      raldValues={raldValues}
+      onSaved={refreshProfile}
+      onDismiss={() => promptField && dismissField(promptField)}
+      onOpenChange={(open) => { if (!open) closePrompt(); }}
+    />
     </AppShell>
   );
 }
