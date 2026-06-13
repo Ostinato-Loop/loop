@@ -128,6 +128,8 @@ app.route("/api/push",              push);
 app.route("/api/analytics",         analytics);
 app.route("/api/retention",         retention);
 app.route("/api/metrics",           metrics);
+app.route("/api/civic",             civic);
+app.route("/api/creator",           creator);
 
 // ── 404 handler ───────────────────────────────────────────────────────
 app.notFound((c) =>
