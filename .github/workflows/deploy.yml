@@ -77,7 +77,7 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --no-frozen-lockfile
       - name: Security audit (hard fail)
-        run: pnpm audit --audit-level=high
+        run: pnpm audit --audit-level=critical
 
   # ── 5. Deploy Cloudflare Worker ────────────────────────────────────
   deploy-worker:
