@@ -4,17 +4,15 @@
  * REVOKE-ALL-001 (2026-06-09): Added Security & Devices section (Device Center).
  * LILCKY STUDIO LIMITED
  */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/use-auth";
-import { authFetch } from "@/lib/api-fetch";
-import { setSessionToken } from "@/lib/session-store";
 import { authedSupabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/layout/app-shell";
 import {
   ChevronLeft, ChevronRight, Bell, Shield, UserCircle, MapPin, Trash2,
   Download, Sun, Moon, Monitor, BellOff, BellRing, Volume2, Check,
-  Loader2, Lock, Smartphone, LogOut, ShieldAlert, Globe, Activity,
+  Loader2, Lock, Smartphone, ShieldAlert, Activity,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
