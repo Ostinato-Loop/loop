@@ -183,6 +183,15 @@ async function upsertProfile(sbUrl: string, sbKey: string, rald: RaldPayload): P
     profile.username = rald.username;
   }
 
+  // ZERO-FRICTION-001: SSO-provisioned users skip the onboarding gate.
+  // A user who authenticated via RALD Identity has already verified their
+  // identity — there is no registration step remaining. Setting onboarded=true
+  // here (merge-duplicates) means the Loop ProtectedRoute routes them to the
+  // feed immediately, not to /onboarding.
+  // merge-duplicates only writes columns present in the payload, so this only
+  // updates the field — it does not wipe any other profile data.
+  profile.onboarded = true;
+
   try {
     await sbAdmin(sbUrl, sbKey, "POST", "/rest/v1/profiles", profile,
       { Prefer: "resolution=merge-duplicates,return=minimal" });
