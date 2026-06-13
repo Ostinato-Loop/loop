@@ -454,7 +454,11 @@ export default function FeedPage() {
   const interests: string[] = (() => {
     if (profile?.interests && profile.interests.length > 0) {
       return [...new Set(
+        // CRASH-001 (2026-06-13): profile.interests can contain null elements from
+        // the Supabase JSON column. Filter non-strings before calling .toLowerCase()
+        // to prevent 'Cannot read properties of null' render-phase TypeError.
         profile.interests
+          .filter((i): i is string => typeof i === 'string' && i.length > 0)
           .map(i => INTEREST_TO_CATEGORY[i.toLowerCase()] ?? "")
           .filter(Boolean),
       )];
