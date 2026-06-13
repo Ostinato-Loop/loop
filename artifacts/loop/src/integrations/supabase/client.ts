@@ -45,13 +45,30 @@ export const supabase = createClient<Database>(SUPABASE_URL, _key, {
 });
 
 /**
- * Returns the stored Loop access token, or null if not signed in.
+ * Returns the in-memory Loop session token, or null if not signed in.
+ *
+ * COOKIE-001 (2026-06-09): Token migrated from localStorage["loop_token"] to
+ *   an in-memory session store (session-store.ts). The HttpOnly loop_session
+ *   cookie is the durable store; the in-memory token is the runtime accessor.
+ *
+ * CRASH-001 (2026-06-13): The old implementation read localStorage["loop_token"]
+ *   which is always null post-COOKIE-001. This caused Supabase realtime to run
+ *   unauthenticated (empty auth token), breaking notification subscriptions.
+ *   Fix: read from the in-memory session store instead; fall back to localStorage
+ *   only for legacy token compatibility during transition.
+ *
  * Tokens are signed by the Loop worker (RALD_JWT_SECRET). Supabase validates
  * them when the project's JWT secret is set to the same value, enabling
  * auth.uid() to resolve to the user's ID inside RLS policies.
  */
 export function getLoopToken(): string | null {
+  // COOKIE-001: Primary source is the in-memory session store
   try {
+    // Dynamic import avoided — read module-level export via window-attached ref
+    // set by session-store.ts on every setSessionToken() call.
+    const inMemory = (window as Window & { __loopSessionToken?: string | null }).__loopSessionToken;
+    if (inMemory) return inMemory;
+    // Legacy fallback: loop_token in localStorage (pre-COOKIE-001 sessions)
     return localStorage.getItem("loop_token");
   } catch {
     return null;
