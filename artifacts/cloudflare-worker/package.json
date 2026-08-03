@@ -11,14 +11,14 @@
     "cf-typegen": "wrangler types --env-interface CloudflareEnv src/types/env.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.8",
+    "@supabase/supabase-js": "^2.111.0",
     "@workspace/loop-shared-types": "workspace:*",
-    "hono": "^4.7.11"
+    "hono": "^4.12.32"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250620.0",
+    "@cloudflare/workers-types": "^4.20260702.1",
     "typescript": "~5.9.3",
-    "vitest": "^2.2.0",
-    "wrangler": "^4.23.0"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.116.0"
   }
 }
